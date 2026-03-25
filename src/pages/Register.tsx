@@ -1,41 +1,74 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { UserPlus, AlertCircle } from 'lucide-react';
+import { UserPlus, AlertCircle, Phone, KeyRound, Building2, User } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export default function Register() {
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [userType, setUserType] = useState<'c2c' | 'b2b'>('c2c');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'details' | 'code'>('details');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [simulated, setSimulated] = useState(false);
   
   const navigate = useNavigate();
   const { signIn } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleRequestOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
-    if (password.length < 6) {
-      setError('Parolei jābūt vismaz 6 simbolus garai');
+    if (name.length < 2) {
+      setError('Lūdzu, ievadiet derīgu vārdu vai nosaukumu');
       return;
     }
 
     setLoading(true);
     
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch('/api/auth/request-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({ phone })
       });
       
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.error || 'Reģistrācija neizdevās');
+        throw new Error(data.error || 'Neizdevās nosūtīt SMS');
+      }
+      
+      if (data.simulated) {
+        setSimulated(true);
+      }
+      
+      setStep('code');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code, name, user_type: userType })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Nepareizs kods');
       }
       
       signIn(data.token, data.user);
@@ -69,75 +102,141 @@ export default function Register() {
           </p>
         </div>
         
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md flex items-start">
-              <AlertCircle className="h-5 w-5 text-red-500 mr-3 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          )}
-          
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
-                Vārds (vai uzņēmums)
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                autoComplete="name"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                placeholder="Jānis Bērziņš"
-              />
-            </div>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
-                E-pasta adrese
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                placeholder="tavs@epasts.lv"
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
-                Parole
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                placeholder="Vismaz 6 simboli"
-              />
-            </div>
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md flex items-start">
+            <AlertCircle className="h-5 w-5 text-red-500 mr-3 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-red-700">{error}</p>
           </div>
+        )}
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {loading ? 'Notiek reģistrācija...' : 'Reģistrēties'}
-            </button>
-          </div>
-        </form>
+        {step === 'details' ? (
+          <form className="mt-8 space-y-6" onSubmit={handleRequestOTP}>
+            <div className="space-y-4">
+              {/* User Type Selection */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <button
+                  type="button"
+                  onClick={() => setUserType('c2c')}
+                  className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                    userType === 'c2c' 
+                      ? 'border-primary-600 bg-primary-50 text-primary-700' 
+                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                  }`}
+                >
+                  <User className="w-6 h-6 mb-2" />
+                  <span className="font-medium text-sm">Privātpersona</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserType('b2b')}
+                  className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                    userType === 'b2b' 
+                      ? 'border-primary-600 bg-primary-50 text-primary-700' 
+                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                  }`}
+                >
+                  <Building2 className="w-6 h-6 mb-2" />
+                  <span className="font-medium text-sm">Uzņēmums</span>
+                </button>
+              </div>
+
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
+                  {userType === 'c2c' ? 'Vārds, Uzvārds' : 'Uzņēmuma nosaukums'}
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  placeholder={userType === 'c2c' ? 'Jānis Bērziņš' : 'SIA Piemērs'}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
+                  Telefona numurs
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Phone className="h-5 w-5 text-slate-400" />
+                  </div>
+                  <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    placeholder="+371 20000000"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading || !phone || !name}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? 'Sūta SMS...' : 'Saņemt SMS kodu'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form className="mt-8 space-y-6" onSubmit={handleVerifyOTP}>
+            {simulated && (
+              <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-md mb-4">
+                <p className="text-sm text-blue-700">
+                  <strong>Izstrādes režīms:</strong> SMS netika nosūtīta. Izmantojiet kodu <strong>123456</strong>, lai turpinātu.
+                </p>
+              </div>
+            )}
+            <div>
+              <label htmlFor="code" className="block text-sm font-medium text-slate-700 mb-1">
+                SMS Kods
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <KeyRound className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  id="code"
+                  name="code"
+                  type="text"
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm text-center tracking-widest text-lg font-mono"
+                  placeholder="000000"
+                  maxLength={6}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col space-y-3">
+              <button
+                type="submit"
+                disabled={loading || code.length < 4}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? 'Pārbauda...' : 'Apstiprināt un reģistrēties'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep('details')}
+                className="w-full flex justify-center py-2.5 px-4 border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+              >
+                Atgriezties
+              </button>
+            </div>
+          </form>
+        )}
       </motion.div>
     </div>
   );

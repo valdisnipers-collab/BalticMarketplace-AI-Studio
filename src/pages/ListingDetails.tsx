@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { ArrowLeft, MapPin, Clock, User, Mail, Image as ImageIcon, Star, BadgeCheck, MessageCircle, Gavel, Car, Settings, Calendar, Info, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, User, Mail, Image as ImageIcon, Star, BadgeCheck, MessageCircle, Gavel, Car, Settings, Calendar, Info, ShieldCheck, Flag } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface ListingDetails {
@@ -16,6 +16,7 @@ interface ListingDetails {
   author_name: string;
   author_email: string;
   attributes?: string;
+  is_highlighted?: number;
 }
 
 interface Review {
@@ -35,7 +36,7 @@ interface Bid {
 
 export default function ListingDetails() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [listing, setListing] = useState<ListingDetails | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [bids, setBids] = useState<Bid[]>([]);
@@ -52,6 +53,9 @@ export default function ListingDetails() {
   const [bidAmount, setBidAmount] = useState('');
   const [submittingBid, setSubmittingBid] = useState(false);
   const [bidError, setBidError] = useState('');
+
+  // Highlight state
+  const [highlighting, setHighlighting] = useState(false);
 
   useEffect(() => {
     const fetchListingAndReviews = async () => {
@@ -120,6 +124,39 @@ export default function ListingDetails() {
       setBidError(err.message);
     } finally {
       setSubmittingBid(false);
+    }
+  };
+
+  const handleHighlight = async () => {
+    if (!user || !listing) return;
+    
+    if (!window.confirm('Vai tiešām vēlies izcelt šo sludinājumu par 100 punktiem?')) {
+      return;
+    }
+
+    setHighlighting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/listings/${id}/highlight`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās izcelt sludinājumu');
+
+      alert('Sludinājums veiksmīgi izcelts!');
+      setListing({ ...listing, is_highlighted: 1 });
+      
+      if (data.points !== undefined) {
+        updateUser({ points: data.points });
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setHighlighting(false);
     }
   };
 
@@ -265,9 +302,26 @@ export default function ListingDetails() {
               className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8"
             >
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
-                <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 leading-tight">
-                  {listing.title}
-                </h1>
+                <div>
+                  <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 leading-tight mb-2">
+                    {listing.title}
+                  </h1>
+                  {listing.is_highlighted ? (
+                    <div className="inline-flex items-center bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm font-semibold">
+                      <Star className="w-4 h-4 mr-1 fill-amber-800" />
+                      Izcelts sludinājums
+                    </div>
+                  ) : user?.id === listing.user_id ? (
+                    <button
+                      onClick={handleHighlight}
+                      disabled={highlighting}
+                      className="inline-flex items-center bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                    >
+                      <Star className="w-4 h-4 mr-1" />
+                      {highlighting ? 'Izceļ...' : 'Izcelt sludinājumu (100 punkti)'}
+                    </button>
+                  ) : null}
+                </div>
                 <div className="flex-shrink-0">
                   <p className="text-3xl sm:text-4xl font-extrabold text-primary-600">
                     € {listing.price.toFixed(2)}
@@ -297,50 +351,42 @@ export default function ListingDetails() {
                 <div className="py-6 border-b border-slate-100">
                   <h3 className="text-lg font-semibold text-slate-900 mb-4">Galvenā informācija</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {parsedAttributes.brand && (
-                      <div className="flex items-start">
-                        <div className="p-2 bg-primary-50 rounded-lg mr-3 text-primary-600">
-                          <Car className="w-5 h-5" />
+                    {Object.entries(parsedAttributes).map(([key, value]) => {
+                      if (key === 'features' || key === 'saleType' || !value) return null;
+                      
+                      let icon = <Info className="w-5 h-5" />;
+                      let label = key;
+                      
+                      // Map some common keys to better labels and icons
+                      switch (key) {
+                        case 'brand': label = 'Marka/Ražotājs'; icon = <Car className="w-5 h-5" />; break;
+                        case 'model': label = 'Modelis'; icon = <Settings className="w-5 h-5" />; break;
+                        case 'year': label = 'Gads'; icon = <Calendar className="w-5 h-5" />; break;
+                        case 'condition': label = 'Stāvoklis'; break;
+                        case 'mileage': label = 'Nobraukums (km)'; break;
+                        case 'engine': label = 'Dzinējs'; break;
+                        case 'transmission': label = 'Ātrumkārba'; break;
+                        case 'type': label = 'Tips'; break;
+                        case 'action': label = 'Darījuma veids'; break;
+                        case 'area': label = 'Platība (m²)'; break;
+                        case 'rooms': label = 'Istabu skaits'; break;
+                        case 'floor': label = 'Stāvs'; break;
+                        case 'location': label = 'Atrašanās vieta'; icon = <MapPin className="w-5 h-5" />; break;
+                        case 'experience': label = 'Pieredze'; break;
+                      }
+
+                      return (
+                        <div key={key} className="flex items-start">
+                          <div className="p-2 bg-primary-50 rounded-lg mr-3 text-primary-600">
+                            {icon}
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 font-medium">{label}</p>
+                            <p className="font-semibold text-slate-900">{value as string}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium">Marka</p>
-                          <p className="font-semibold text-slate-900">{parsedAttributes.brand}</p>
-                        </div>
-                      </div>
-                    )}
-                    {parsedAttributes.model && (
-                      <div className="flex items-start">
-                        <div className="p-2 bg-primary-50 rounded-lg mr-3 text-primary-600">
-                          <Settings className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium">Modelis</p>
-                          <p className="font-semibold text-slate-900">{parsedAttributes.model}</p>
-                        </div>
-                      </div>
-                    )}
-                    {parsedAttributes.year && (
-                      <div className="flex items-start">
-                        <div className="p-2 bg-primary-50 rounded-lg mr-3 text-primary-600">
-                          <Calendar className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium">Gads</p>
-                          <p className="font-semibold text-slate-900">{parsedAttributes.year}</p>
-                        </div>
-                      </div>
-                    )}
-                    {parsedAttributes.condition && (
-                      <div className="flex items-start">
-                        <div className="p-2 bg-primary-50 rounded-lg mr-3 text-primary-600">
-                          <Info className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium">Stāvoklis</p>
-                          <p className="font-semibold text-slate-900">{parsedAttributes.condition}</p>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
                   
                   {parsedAttributes.features && (
@@ -547,13 +593,13 @@ export default function ListingDetails() {
               <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
                 <h3 className="text-lg font-bold text-slate-900 mb-4">Sazināties</h3>
                 <div className="space-y-3">
-                  <a 
-                    href={`mailto:${listing.author_email}?subject=Par sludinājumu: ${listing.title}`}
+                  <Link 
+                    to={`/chat?userId=${listing.user_id}&listingId=${listing.id}`}
                     className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl shadow-sm text-base font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
                   >
                     <MessageCircle className="w-5 h-5 mr-2" />
                     Rakstīt ziņu
-                  </a>
+                  </Link>
                   
                   {isAuction ? (
                     <button 
@@ -567,9 +613,12 @@ export default function ListingDetails() {
                       Solīt cenu
                     </button>
                   ) : (
-                    <button className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl border-2 border-slate-200 text-base font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors">
+                    <Link 
+                      to={`/chat?userId=${listing.user_id}&listingId=${listing.id}`}
+                      className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl border-2 border-slate-200 text-base font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                    >
                       Piedāvāt cenu
-                    </button>
+                    </Link>
                   )}
                 </div>
               </div>
@@ -601,6 +650,39 @@ export default function ListingDetails() {
                     <p className="text-sm font-semibold text-green-800">Drošs darījums</p>
                     <p className="text-xs text-green-700 mt-1">Šis pārdevējs ir verificējis savu identitāti ar Smart-ID.</p>
                   </div>
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                  <button 
+                    onClick={() => {
+                      const reason = window.prompt('Lūdzu, norādiet sūdzības iemeslu:');
+                      if (reason) {
+                        const token = localStorage.getItem('auth_token');
+                        if (!token) {
+                          alert('Lūdzu, ienāciet sistēmā, lai iesniegtu sūdzību.');
+                          return;
+                        }
+                        fetch('/api/reports', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                          },
+                          body: JSON.stringify({ listingId: listing.id, reason })
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.error) alert(data.error);
+                          else alert('Sūdzība veiksmīgi iesniegta. Paldies!');
+                        })
+                        .catch(err => alert('Kļūda iesniedzot sūdzību'));
+                      }
+                    }}
+                    className="w-full flex items-center justify-center py-2 px-4 rounded-lg text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <Flag className="w-4 h-4 mr-2" />
+                    Ziņot par pārkāpumu
+                  </button>
                 </div>
               </div>
             </motion.div>

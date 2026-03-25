@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, Clock, MapPin, Image as ImageIcon, X, Heart } from 'lucide-react';
+import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, Clock, MapPin, Image as ImageIcon, X, Heart, Star } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const categories = [
@@ -22,6 +22,7 @@ interface Listing {
   image_url: string;
   created_at: string;
   author_name: string;
+  is_highlighted?: number;
 }
 
 export default function Home() {
@@ -273,7 +274,9 @@ export default function Home() {
               >
                 <Link 
                   to={`/listing/${listing.id}`}
-                  className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md hover:border-primary-300 transition-all group flex flex-col h-full"
+                  className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${
+                    listing.is_highlighted ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-primary-300'
+                  }`}
                 >
                   <div className="aspect-[4/3] bg-slate-100 relative overflow-hidden">
                     {listing.image_url ? (
@@ -288,8 +291,16 @@ export default function Home() {
                         <ImageIcon className="w-12 h-12 opacity-20" />
                       </div>
                     )}
-                    <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 shadow-sm">
-                      {listing.category}
+                    <div className="absolute top-3 left-3 flex flex-col gap-2">
+                      <div className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 shadow-sm">
+                        {listing.category}
+                      </div>
+                      {listing.is_highlighted ? (
+                        <div className="bg-amber-400 text-amber-900 px-2.5 py-1 rounded-md text-xs font-bold shadow-sm flex items-center">
+                          <Star className="w-3 h-3 mr-1 fill-amber-900" />
+                          TOP
+                        </div>
+                      ) : null}
                     </div>
                     <button 
                       onClick={(e) => toggleFavorite(e, listing.id)}

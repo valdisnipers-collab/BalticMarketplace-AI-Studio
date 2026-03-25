@@ -109,6 +109,19 @@ db.exec(`
     FOREIGN KEY (buyer_id) REFERENCES users (id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_id INTEGER NOT NULL,
+    listing_id INTEGER,
+    user_id INTEGER,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'resolved', 'dismissed'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  );
+
   -- FTS5 Virtual Table for Search MVP
   CREATE VIRTUAL TABLE IF NOT EXISTS listings_fts USING fts5(
     id UNINDEXED,
@@ -189,6 +202,18 @@ try {
 
 try {
   db.exec('ALTER TABLE listings ADD COLUMN views INTEGER DEFAULT 0');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE listings ADD COLUMN is_highlighted BOOLEAN DEFAULT 0');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE users ADD COLUMN early_access_until DATETIME');
 } catch (e) {
   // Column might already exist
 }

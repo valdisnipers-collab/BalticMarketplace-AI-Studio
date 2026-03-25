@@ -13,6 +13,42 @@ const categories = [
   'Cits'
 ];
 
+const categoryFields: Record<string, { name: string, label: string, type: string, options?: string[], placeholder?: string }[]> = {
+  'Transports': [
+    { name: 'brand', label: 'Marka/Ražotājs', type: 'text', placeholder: 'Piem., BMW, Audi' },
+    { name: 'model', label: 'Modelis', type: 'text', placeholder: 'Piem., 320i, A4' },
+    { name: 'year', label: 'Izlaiduma gads', type: 'number', placeholder: 'Piem., 2015' },
+    { name: 'mileage', label: 'Nobraukums (km)', type: 'number', placeholder: 'Piem., 150000' },
+    { name: 'engine', label: 'Dzinējs', type: 'text', placeholder: 'Piem., 2.0 Dīzelis' },
+    { name: 'transmission', label: 'Ātrumkārba', type: 'select', options: ['Manuāla', 'Automāts'] },
+    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots', 'Bojāts'] },
+  ],
+  'Nekustamais īpašums': [
+    { name: 'type', label: 'Īpašuma tips', type: 'select', options: ['Dzīvoklis', 'Māja', 'Zeme', 'Komerctelpas'] },
+    { name: 'action', label: 'Darījuma veids', type: 'select', options: ['Pārdod', 'Izīrē', 'Pērk', 'Īrē'] },
+    { name: 'area', label: 'Platība (m²)', type: 'number', placeholder: 'Piem., 55' },
+    { name: 'rooms', label: 'Istabu skaits', type: 'number', placeholder: 'Piem., 2' },
+    { name: 'floor', label: 'Stāvs', type: 'text', placeholder: 'Piem., 3/5' },
+    { name: 'location', label: 'Atrašanās vieta', type: 'text', placeholder: 'Piem., Rīga, Centrs' },
+  ],
+  'Elektronika': [
+    { name: 'brand', label: 'Ražotājs', type: 'text', placeholder: 'Piem., Apple, Samsung' },
+    { name: 'model', label: 'Modelis', type: 'text', placeholder: 'Piem., iPhone 13' },
+    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots (Kā jauns)', 'Lietots', 'Bojāts'] },
+  ],
+  'Darbs un pakalpojumi': [
+    { name: 'type', label: 'Tips', type: 'select', options: ['Piedāvā darbu', 'Meklē darbu', 'Piedāvā pakalpojumu', 'Meklē pakalpojumu'] },
+    { name: 'experience', label: 'Pieredze', type: 'text', placeholder: 'Piem., 3 gadi' },
+    { name: 'location', label: 'Atrašanās vieta', type: 'text', placeholder: 'Piem., Attālināti vai Rīga' },
+  ],
+  'Mājai un dārzam': [
+    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots', 'Bojāts'] },
+  ],
+  'Cits': [
+    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots', 'Bojāts'] },
+  ]
+};
+
 export default function AddListing() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -27,13 +63,9 @@ export default function AddListing() {
   const [price, setPrice] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   
-  // Attributes state
-  const [brand, setBrand] = useState('');
-  const [model, setModel] = useState('');
-  const [year, setYear] = useState('');
-  const [condition, setCondition] = useState('Lietots');
-  const [features, setFeatures] = useState('');
-  const [saleType, setSaleType] = useState('Fiksēta cena');
+  // Dynamic attributes state
+  const [attributes, setAttributes] = useState<Record<string, string>>({});
+  const [saleType, setSaleType] = useState('fixed');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -45,6 +77,20 @@ export default function AddListing() {
     }
   }, [user, loading, navigate]);
 
+  // Reset attributes when category changes
+  useEffect(() => {
+    const defaultAttrs: Record<string, string> = {};
+    const fields = categoryFields[category] || [];
+    fields.forEach(f => {
+      if (f.type === 'select' && f.options && f.options.length > 0) {
+        defaultAttrs[f.name] = f.options[0];
+      } else {
+        defaultAttrs[f.name] = '';
+      }
+    });
+    setAttributes(defaultAttrs);
+  }, [category]);
+
   if (loading || !user) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
@@ -52,6 +98,10 @@ export default function AddListing() {
       </div>
     );
   }
+
+  const handleAttributeChange = (name: string, value: string) => {
+    setAttributes(prev => ({ ...prev, [name]: value }));
+  };
 
   const handleGenerateDescription = async () => {
     setIsGenerating(true);
@@ -66,11 +116,8 @@ export default function AddListing() {
         },
         body: JSON.stringify({
           category,
-          brand,
-          model,
-          year,
-          condition,
-          features
+          title,
+          ...attributes
         })
       });
 
@@ -110,11 +157,7 @@ export default function AddListing() {
           category,
           image_url: imageUrl,
           attributes: {
-            brand,
-            model,
-            year,
-            condition,
-            features,
+            ...attributes,
             saleType
           }
         })
@@ -147,6 +190,8 @@ export default function AddListing() {
     setError('');
     setStep(prev => Math.max(prev - 1, 1));
   };
+
+  const currentFields = categoryFields[category] || [];
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -253,62 +298,34 @@ export default function AddListing() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Marka/Ražotājs</label>
-                        <input
-                          type="text"
-                          value={brand}
-                          onChange={(e) => setBrand(e.target.value)}
-                          className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                          placeholder="Piem., Apple, BMW"
-                        />
+                    {currentFields.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {currentFields.map(field => (
+                          <div key={field.name}>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">{field.label}</label>
+                            {field.type === 'select' ? (
+                              <select
+                                value={attributes[field.name] || ''}
+                                onChange={(e) => handleAttributeChange(field.name, e.target.value)}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 bg-white"
+                              >
+                                {field.options?.map(opt => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type={field.type}
+                                value={attributes[field.name] || ''}
+                                onChange={(e) => handleAttributeChange(field.name, e.target.value)}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                                placeholder={field.placeholder}
+                              />
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Modelis</label>
-                        <input
-                          type="text"
-                          value={model}
-                          onChange={(e) => setModel(e.target.value)}
-                          className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                          placeholder="Piem., iPhone 13, 320i"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Gads</label>
-                        <input
-                          type="text"
-                          value={year}
-                          onChange={(e) => setYear(e.target.value)}
-                          className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                          placeholder="Piem., 2021"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Stāvoklis</label>
-                        <select
-                          value={condition}
-                          onChange={(e) => setCondition(e.target.value)}
-                          className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 bg-white"
-                        >
-                          <option>Jauns</option>
-                          <option>Lietots (Kā jauns)</option>
-                          <option>Lietots</option>
-                          <option>Bojāts / Rezerves daļām</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Papildus informācija/Ekstras</label>
-                      <input
-                        type="text"
-                        value={features}
-                        onChange={(e) => setFeatures(e.target.value)}
-                        className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                        placeholder="Piem., Līdzi dodu lādētāju, garantija vēl 1 gadu"
-                      />
-                    </div>
+                    )}
 
                     <div className="pt-2">
                       <div className="flex items-center justify-between mb-2">
@@ -366,17 +383,17 @@ export default function AddListing() {
                       <label className="block text-sm font-medium text-slate-700 mb-1">Pārdošanas veids</label>
                       <div className="grid grid-cols-2 gap-4">
                         <div 
-                          onClick={() => setSaleType('Fiksēta cena')}
+                          onClick={() => setSaleType('fixed')}
                           className={`p-4 rounded-xl border-2 cursor-pointer text-center transition-all
-                            ${saleType === 'Fiksēta cena' ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-700'}
+                            ${saleType === 'fixed' ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-700'}
                           `}
                         >
                           <span className="font-medium">Fiksēta cena</span>
                         </div>
                         <div 
-                          onClick={() => setSaleType('Izsole')}
+                          onClick={() => setSaleType('auction')}
                           className={`p-4 rounded-xl border-2 cursor-pointer text-center transition-all
-                            ${saleType === 'Izsole' ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-700'}
+                            ${saleType === 'auction' ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-700'}
                           `}
                         >
                           <span className="font-medium">Izsole</span>
@@ -386,7 +403,7 @@ export default function AddListing() {
 
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">
-                        {saleType === 'Izsole' ? 'Sākuma cena (€) *' : 'Cena (€) *'}
+                        {saleType === 'auction' ? 'Sākuma cena (€) *' : 'Cena (€) *'}
                       </label>
                       <input
                         type="number"

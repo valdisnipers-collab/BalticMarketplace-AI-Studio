@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus } from 'lucide-react';
+import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface Listing {
@@ -11,6 +11,14 @@ interface Listing {
   category: string;
   image_url: string;
   created_at: string;
+  is_highlighted?: number;
+}
+
+interface PointsHistory {
+  id: number;
+  points: number;
+  reason: string;
+  created_at: string;
 }
 
 export default function Profile() {
@@ -19,12 +27,15 @@ export default function Profile() {
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [favorites, setFavorites] = useState<Listing[]>([]);
   const [balance, setBalance] = useState<number>(0);
+  const [pointsHistory, setPointsHistory] = useState<PointsHistory[]>([]);
   const [isLoadingListings, setIsLoadingListings] = useState(true);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet'>('listings');
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
   const [addingFunds, setAddingFunds] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
 
   useEffect(() => {
     if (!loading && !user) {
@@ -90,10 +101,29 @@ export default function Profile() {
       }
     };
 
+    const fetchPointsHistory = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch('/api/wallet/points-history', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setPointsHistory(data);
+        }
+      } catch (err) {
+        console.error("Error fetching points history:", err);
+      }
+    };
+
     if (user) {
       fetchMyListings();
       fetchFavorites();
       fetchBalance();
+      fetchPointsHistory();
     }
   }, [user, loading, navigate]);
 
@@ -160,6 +190,54 @@ export default function Profile() {
     }
   };
 
+  const handleSmartIdVerification = async () => {
+    setVerifying(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const initRes = await fetch('/api/auth/smart-id/init', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ personalCode: '123456-12345', country: 'LV' })
+      });
+
+      if (!initRes.ok) throw new Error('Neizdevās uzsākt Smart-ID verifikāciju');
+
+      const initData = await initRes.json();
+      setVerificationCode(initData.verificationCode);
+
+      // Simulate waiting for user to approve on their phone
+      setTimeout(async () => {
+        try {
+          const statusRes = await fetch('/api/auth/smart-id/status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ sessionId: initData.sessionId })
+          });
+
+          if (!statusRes.ok) throw new Error('Verifikācija neizdevās');
+          
+          alert('Veiksmīgi verificēts! Jums piešķirti 300 punkti.');
+          window.location.reload(); // Reload to get updated user data
+        } catch (err: any) {
+          alert(err.message);
+        } finally {
+          setVerifying(false);
+          setVerificationCode('');
+        }
+      }, 3000);
+
+    } catch (err: any) {
+      alert(err.message);
+      setVerifying(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('lv-LV', { 
@@ -182,14 +260,72 @@ export default function Profile() {
       <div className="max-w-5xl mx-auto space-y-8">
         
         {/* Lietotāja info bloks */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 flex items-center space-x-6">
-          <div className="h-20 w-20 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center flex-shrink-0">
-            <User className="h-10 w-10" />
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="flex items-center space-x-6">
+            <div className="h-20 w-20 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center flex-shrink-0 relative">
+              <User className="h-10 w-10" />
+              {user.is_verified ? (
+                <div className="absolute bottom-0 right-0 bg-green-500 text-white p-1 rounded-full border-2 border-white" title="Verificēts lietotājs">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+              ) : (
+                <div className="absolute bottom-0 right-0 bg-amber-500 text-white p-1 rounded-full border-2 border-white" title="Nepārbaudīts lietotājs">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+              )}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                {user.name || 'Lietotājs'}
+                <span className="text-sm font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 uppercase tracking-wider">
+                  {user.user_type === 'b2b' ? 'Uzņēmums' : 'Privātpersona'}
+                </span>
+              </h1>
+              <p className="text-slate-500">{user.phone}</p>
+              {user.email && <p className="text-slate-500 text-sm">{user.email}</p>}
+              <div className="mt-2 flex items-center gap-2 text-sm font-medium text-primary-600">
+                <span className="bg-primary-50 px-2 py-1 rounded-md">
+                  {user.points} Punkti
+                </span>
+              </div>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">{user.name || 'Lietotājs'}</h1>
-            <p className="text-slate-500">{user.email}</p>
-          </div>
+
+          {!user.is_verified && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 max-w-sm w-full md:w-auto">
+              <h3 className="text-amber-800 font-semibold mb-1 flex items-center">
+                <ShieldAlert className="w-4 h-4 mr-2" />
+                Paaugstiniet uzticamību
+              </h3>
+              <p className="text-amber-700 text-sm mb-3">
+                Verificējiet savu identitāti ar Smart-ID un saņemiet 300 bonusa punktus!
+              </p>
+              {verifying ? (
+                <div className="text-center p-3 bg-white rounded-lg border border-amber-200">
+                  {verificationCode ? (
+                    <>
+                      <p className="text-sm text-slate-500 mb-1">Jūsu drošības kods:</p>
+                      <p className="text-2xl font-mono font-bold text-slate-900 tracking-widest">{verificationCode}</p>
+                      <p className="text-xs text-slate-400 mt-2">Lūdzu, apstipriniet Smart-ID lietotnē...</p>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-center text-amber-600 text-sm font-medium">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-amber-600 mr-2"></div>
+                      Sazinās ar Smart-ID...
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={handleSmartIdVerification}
+                  className="w-full flex items-center justify-center px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Fingerprint className="w-4 h-4 mr-2" />
+                  Verificēt ar Smart-ID
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
@@ -234,25 +370,57 @@ export default function Profile() {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8"
+            className="space-y-6"
           >
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 mb-2 flex items-center">
-                  <Wallet className="w-6 h-6 mr-2 text-primary-600" />
-                  Konta atlikums
-                </h2>
-                <p className="text-4xl font-extrabold text-slate-900">
-                  € {balance.toFixed(2)}
-                </p>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 mb-2 flex items-center">
+                    <Wallet className="w-6 h-6 mr-2 text-primary-600" />
+                    Konta atlikums
+                  </h2>
+                  <p className="text-4xl font-extrabold text-slate-900">
+                    € {balance.toFixed(2)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsAddFundsModalOpen(true)}
+                  className="w-full sm:w-auto flex items-center justify-center px-6 py-3 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 transition-colors shadow-sm"
+                >
+                  <Plus className="w-5 h-5 mr-2" />
+                  Papildināt
+                </button>
               </div>
-              <button
-                onClick={() => setIsAddFundsModalOpen(true)}
-                className="w-full sm:w-auto flex items-center justify-center px-6 py-3 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 transition-colors shadow-sm"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Papildināt
-              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+              <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center">
+                <Star className="w-6 h-6 mr-2 text-amber-500" />
+                Bonusa punkti
+              </h2>
+              <div className="mb-6">
+                <p className="text-sm text-slate-500 mb-1">Pieejamie punkti</p>
+                <p className="text-3xl font-extrabold text-slate-900">{user?.points || 0}</p>
+              </div>
+              
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Vēsture</h3>
+              {pointsHistory.length === 0 ? (
+                <p className="text-slate-500 text-center py-4">Nav punktu vēstures</p>
+              ) : (
+                <div className="space-y-3">
+                  {pointsHistory.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-4 rounded-lg border border-slate-100 bg-slate-50">
+                      <div>
+                        <p className="font-medium text-slate-900">{item.reason}</p>
+                        <p className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString('lv-LV')}</p>
+                      </div>
+                      <div className={`font-bold ${item.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {item.points > 0 ? '+' : ''}{item.points}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -301,7 +469,7 @@ export default function Profile() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <ul className="divide-y divide-slate-200">
                   {myListings.map((listing) => (
-                    <li key={listing.id} className="p-4 sm:p-6 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+                    <li key={listing.id} className={`p-4 sm:p-6 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 ${listing.is_highlighted ? 'bg-amber-50/30' : ''}`}>
                       {/* Attēls */}
                       <div className="w-full sm:w-32 h-32 sm:h-24 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 relative">
                         {listing.image_url ? (
@@ -321,8 +489,14 @@ export default function Profile() {
                       {/* Informācija */}
                       <div className="flex-grow min-w-0">
                         <Link to={`/listing/${listing.id}`} className="block focus:outline-none">
-                          <h3 className="text-lg font-semibold text-slate-900 truncate hover:text-primary-600 transition-colors">
+                          <h3 className="text-lg font-semibold text-slate-900 truncate hover:text-primary-600 transition-colors flex items-center gap-2">
                             {listing.title}
+                            {listing.is_highlighted ? (
+                              <span className="inline-flex items-center bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-xs font-bold">
+                                <Star className="w-3 h-3 mr-1 fill-amber-800" />
+                                TOP
+                              </span>
+                            ) : null}
                           </h3>
                         </Link>
                         <p className="text-lg font-bold text-primary-600 mt-1">
@@ -396,7 +570,7 @@ export default function Profile() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <ul className="divide-y divide-slate-200">
                   {favorites.map((listing) => (
-                    <li key={listing.id} className="p-4 sm:p-6 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+                    <li key={listing.id} className={`p-4 sm:p-6 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 ${listing.is_highlighted ? 'bg-amber-50/30' : ''}`}>
                       {/* Attēls */}
                       <div className="w-full sm:w-32 h-32 sm:h-24 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 relative">
                         {listing.image_url ? (
@@ -416,8 +590,14 @@ export default function Profile() {
                       {/* Informācija */}
                       <div className="flex-grow min-w-0">
                         <Link to={`/listing/${listing.id}`} className="block focus:outline-none">
-                          <h3 className="text-lg font-semibold text-slate-900 truncate hover:text-primary-600 transition-colors">
+                          <h3 className="text-lg font-semibold text-slate-900 truncate hover:text-primary-600 transition-colors flex items-center gap-2">
                             {listing.title}
+                            {listing.is_highlighted ? (
+                              <span className="inline-flex items-center bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-xs font-bold">
+                                <Star className="w-3 h-3 mr-1 fill-amber-800" />
+                                TOP
+                              </span>
+                            ) : null}
                           </h3>
                         </Link>
                         <p className="text-lg font-bold text-primary-600 mt-1">

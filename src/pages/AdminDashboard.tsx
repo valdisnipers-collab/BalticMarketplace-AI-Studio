@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { Users, Package, Trash2, ShieldAlert } from 'lucide-react';
+import { Users, Package, Trash2, ShieldAlert, Flag, CheckCircle, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface UserData {
@@ -23,12 +23,26 @@ interface ListingData {
   author_email: string;
 }
 
+interface ReportData {
+  id: number;
+  reporter_id: number;
+  listing_id: number | null;
+  user_id: number | null;
+  reason: string;
+  status: string;
+  created_at: string;
+  reporter_name: string;
+  reported_user_name: string | null;
+  reported_listing_title: string | null;
+}
+
 export default function AdminDashboard() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'listings'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'listings' | 'reports'>('users');
   const [users, setUsers] = useState<UserData[]>([]);
   const [listings, setListings] = useState<ListingData[]>([]);
+  const [reports, setReports] = useState<ReportData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -63,6 +77,13 @@ export default function AdminDashboard() {
       if (!listingsRes.ok) throw new Error('Failed to fetch listings');
       const listingsData = await listingsRes.json();
       setListings(listingsData);
+      
+      const reportsRes = await fetch('/api/admin/reports', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!reportsRes.ok) throw new Error('Failed to fetch reports');
+      const reportsData = await reportsRes.json();
+      setReports(reportsData);
       
     } catch (err: any) {
       setError(err.message);
@@ -101,6 +122,24 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleUpdateReportStatus = async (id: number, status: string) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/admin/reports/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status })
+      });
+      if (!res.ok) throw new Error('Neizdevās atjaunināt sūdzību');
+      setReports(reports.map(r => r.id === id ? { ...r, status } : r));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   if (loading || isLoading) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-slate-50">
@@ -119,7 +158,7 @@ export default function AdminDashboard() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Admin Panelis</h1>
-            <p className="text-slate-500">Pārvaldi lietotājus un sludinājumus</p>
+            <p className="text-slate-500">Pārvaldi lietotājus, sludinājumus un sūdzības</p>
           </div>
         </div>
 
@@ -152,6 +191,17 @@ export default function AdminDashboard() {
           >
             <Package className="w-4 h-4 mr-2" />
             Sludinājumi ({listings.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === 'reports' 
+                ? 'border-primary-600 text-primary-600' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <Flag className="w-4 h-4 mr-2" />
+            Sūdzības ({reports.length})
           </button>
         </div>
 
@@ -236,6 +286,71 @@ export default function AdminDashboard() {
                         >
                           <Trash2 className="w-4 h-4 mr-1" /> Dzēst
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Reports Tab */}
+        {activeTab === 'reports' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
+          >
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Sūdzības iesniedzējs</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Mērķis</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Iemesls</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Statuss</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Darbības</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-slate-200">
+                  {reports.map((r) => (
+                    <tr key={r.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{r.id}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{r.reporter_name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                        {r.listing_id ? `Sludinājums: ${r.reported_listing_title}` : `Lietotājs: ${r.reported_user_name}`}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-500 max-w-xs truncate" title={r.reason}>{r.reason}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          r.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
+                          r.status === 'resolved' ? 'bg-green-100 text-green-800' : 
+                          'bg-slate-100 text-slate-800'
+                        }`}>
+                          {r.status === 'pending' ? 'Gaida' : r.status === 'resolved' ? 'Atrisināts' : 'Noraidīts'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        {r.status === 'pending' && (
+                          <div className="flex items-center justify-end space-x-2">
+                            <button 
+                              onClick={() => handleUpdateReportStatus(r.id, 'resolved')}
+                              className="text-green-600 hover:text-green-900"
+                              title="Atzīmēt kā atrisinātu"
+                            >
+                              <CheckCircle className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => handleUpdateReportStatus(r.id, 'dismissed')}
+                              className="text-slate-400 hover:text-slate-600"
+                              title="Noraidīt"
+                            >
+                              <XCircle className="w-5 h-5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
