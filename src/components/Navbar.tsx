@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { PlusCircle, User, LogOut } from 'lucide-react';
+import { PlusCircle, User, LogOut, MessageCircle, ShieldAlert } from 'lucide-react';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
@@ -26,6 +26,22 @@ export default function Navbar() {
             
             {user ? (
               <div className="flex items-center space-x-4 border-l border-slate-200 pl-6">
+                {user.role === 'admin' && (
+                  <Link 
+                    to="/admin"
+                    className="flex items-center text-sm font-medium text-red-600 hover:text-red-700 transition-colors"
+                    title="Admin Panelis"
+                  >
+                    <ShieldAlert className="w-5 h-5" />
+                  </Link>
+                )}
+                <Link 
+                  to="/chat"
+                  className="flex items-center text-sm font-medium text-slate-700 hover:text-primary-600 transition-colors"
+                  title="Ziņojumi"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                </Link>
                 <Link 
                   to="/profile"
                   className="flex items-center text-sm font-medium text-slate-700 hover:text-primary-600 transition-colors"

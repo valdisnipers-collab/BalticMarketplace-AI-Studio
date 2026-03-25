@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { UserPlus, AlertCircle } from 'lucide-react';
+import { motion } from 'motion/react';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -48,7 +49,11 @@ export default function Register() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-slate-200"
+      >
         <div>
           <div className="mx-auto h-12 w-12 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center">
             <UserPlus className="h-6 w-6" />
@@ -133,7 +138,7 @@ export default function Register() {
             </button>
           </div>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 }
