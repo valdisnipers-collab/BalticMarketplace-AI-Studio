@@ -3,51 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-const categories = [
-  'Transports',
-  'Nekustamais īpašums',
-  'Elektronika',
-  'Darbs un pakalpojumi',
-  'Mājai un dārzam',
-  'Cits'
-];
-
-const categoryFields: Record<string, { name: string, label: string, type: string, options?: string[], placeholder?: string }[]> = {
-  'Transports': [
-    { name: 'brand', label: 'Marka/Ražotājs', type: 'text', placeholder: 'Piem., BMW, Audi' },
-    { name: 'model', label: 'Modelis', type: 'text', placeholder: 'Piem., 320i, A4' },
-    { name: 'year', label: 'Izlaiduma gads', type: 'number', placeholder: 'Piem., 2015' },
-    { name: 'mileage', label: 'Nobraukums (km)', type: 'number', placeholder: 'Piem., 150000' },
-    { name: 'engine', label: 'Dzinējs', type: 'text', placeholder: 'Piem., 2.0 Dīzelis' },
-    { name: 'transmission', label: 'Ātrumkārba', type: 'select', options: ['Manuāla', 'Automāts'] },
-    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots', 'Bojāts'] },
-  ],
-  'Nekustamais īpašums': [
-    { name: 'type', label: 'Īpašuma tips', type: 'select', options: ['Dzīvoklis', 'Māja', 'Zeme', 'Komerctelpas'] },
-    { name: 'action', label: 'Darījuma veids', type: 'select', options: ['Pārdod', 'Izīrē', 'Pērk', 'Īrē'] },
-    { name: 'area', label: 'Platība (m²)', type: 'number', placeholder: 'Piem., 55' },
-    { name: 'rooms', label: 'Istabu skaits', type: 'number', placeholder: 'Piem., 2' },
-    { name: 'floor', label: 'Stāvs', type: 'text', placeholder: 'Piem., 3/5' },
-    { name: 'location', label: 'Atrašanās vieta', type: 'text', placeholder: 'Piem., Rīga, Centrs' },
-  ],
-  'Elektronika': [
-    { name: 'brand', label: 'Ražotājs', type: 'text', placeholder: 'Piem., Apple, Samsung' },
-    { name: 'model', label: 'Modelis', type: 'text', placeholder: 'Piem., iPhone 13' },
-    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots (Kā jauns)', 'Lietots', 'Bojāts'] },
-  ],
-  'Darbs un pakalpojumi': [
-    { name: 'type', label: 'Tips', type: 'select', options: ['Piedāvā darbu', 'Meklē darbu', 'Piedāvā pakalpojumu', 'Meklē pakalpojumu'] },
-    { name: 'experience', label: 'Pieredze', type: 'text', placeholder: 'Piem., 3 gadi' },
-    { name: 'location', label: 'Atrašanās vieta', type: 'text', placeholder: 'Piem., Attālināti vai Rīga' },
-  ],
-  'Mājai un dārzam': [
-    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots', 'Bojāts'] },
-  ],
-  'Cits': [
-    { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots', 'Bojāts'] },
-  ]
-};
+import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 
 export default function AddListing() {
   const { user, loading } = useAuth();
@@ -57,15 +13,48 @@ export default function AddListing() {
   const [step, setStep] = useState(1);
   
   // Form state
-  const [category, setCategory] = useState(categories[0]);
+  const [category, setCategory] = useState(CATEGORY_NAMES[0]);
+  const [subcategory, setSubcategory] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   
   // Dynamic attributes state
   const [attributes, setAttributes] = useState<Record<string, string>>({});
   const [saleType, setSaleType] = useState('fixed');
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!res.ok) {
+        throw new Error('Neizdevās augšupielādēt attēlu');
+      }
+
+      const data = await res.json();
+      setImageUrl(data.url);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -77,10 +66,21 @@ export default function AddListing() {
     }
   }, [user, loading, navigate]);
 
-  // Reset attributes when category changes
+  // Reset subcategory when category changes
   useEffect(() => {
-    const defaultAttrs: Record<string, string> = {};
-    const fields = categoryFields[category] || [];
+    const subcats = Object.keys(CATEGORY_SCHEMAS[category]?.subcategories || {});
+    if (subcats.length > 0) {
+      setSubcategory(subcats[0]);
+    } else {
+      setSubcategory('');
+    }
+  }, [category]);
+
+  // Reset attributes when subcategory changes
+  useEffect(() => {
+    if (!subcategory) return;
+    const defaultAttrs: Record<string, string> = { subcategory };
+    const fields = CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields || [];
     fields.forEach(f => {
       if (f.type === 'select' && f.options && f.options.length > 0) {
         defaultAttrs[f.name] = f.options[0];
@@ -89,7 +89,7 @@ export default function AddListing() {
       }
     });
     setAttributes(defaultAttrs);
-  }, [category]);
+  }, [subcategory, category]);
 
   if (loading || !user) {
     return (
@@ -134,7 +134,7 @@ export default function AddListing() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (step < 3) {
+    if (step < 4) {
       setStep(step + 1);
       return;
     }
@@ -178,12 +178,13 @@ export default function AddListing() {
 
   const nextStep = () => {
     if (step === 1 && !category) return;
-    if (step === 2 && !title) {
+    if (step === 2 && !subcategory) return;
+    if (step === 3 && !title) {
       setError('Lūdzu, ievadiet sludinājuma virsrakstu');
       return;
     }
     setError('');
-    setStep(prev => Math.min(prev + 1, 3));
+    setStep(prev => Math.min(prev + 1, 4));
   };
 
   const prevStep = () => {
@@ -191,7 +192,8 @@ export default function AddListing() {
     setStep(prev => Math.max(prev - 1, 1));
   };
 
-  const currentFields = categoryFields[category] || [];
+  const currentFields = CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields || [];
+  const subcategories = Object.keys(CATEGORY_SCHEMAS[category]?.subcategories || {});
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -202,10 +204,10 @@ export default function AddListing() {
             <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-full h-1 bg-slate-200 rounded-full z-0"></div>
             <div 
               className="absolute left-0 top-1/2 transform -translate-y-1/2 h-1 bg-primary-600 rounded-full z-0 transition-all duration-300"
-              style={{ width: `${((step - 1) / 2) * 100}%` }}
+              style={{ width: `${((step - 1) / 3) * 100}%` }}
             ></div>
             
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3, 4].map((i) => (
               <div 
                 key={i} 
                 className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-full border-2 font-bold transition-colors duration-300
@@ -218,6 +220,7 @@ export default function AddListing() {
           </div>
           <div className="flex justify-between mt-2 text-xs font-medium text-slate-500">
             <span>Kategorija</span>
+            <span>Apakškategorija</span>
             <span>Detaļas</span>
             <span>Cena</span>
           </div>
@@ -232,13 +235,15 @@ export default function AddListing() {
               <div>
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
                   {step === 1 && "Izvēlies kategoriju"}
-                  {step === 2 && "Sludinājuma detaļas"}
-                  {step === 3 && "Cena un publicēšana"}
+                  {step === 2 && "Izvēlies apakškategoriju"}
+                  {step === 3 && "Sludinājuma detaļas"}
+                  {step === 4 && "Cena un publicēšana"}
                 </h2>
                 <p className="text-sm text-slate-500">
                   {step === 1 && "Kādai kategorijai atbilst tavs sludinājums?"}
-                  {step === 2 && "Aizpildi informāciju un ļauj AI uzrakstīt aprakstu."}
-                  {step === 3 && "Norādi cenu un pārdošanas veidu."}
+                  {step === 2 && "Precizē sludinājuma veidu."}
+                  {step === 3 && "Aizpildi informāciju un ļauj AI uzrakstīt aprakstu."}
+                  {step === 4 && "Norādi cenu un pārdošanas veidu."}
                 </p>
               </div>
             </div>
@@ -261,7 +266,7 @@ export default function AddListing() {
                     className="space-y-4"
                   >
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {categories.map(cat => (
+                      {CATEGORY_NAMES.map(cat => (
                         <div 
                           key={cat}
                           onClick={() => setCategory(cat)}
@@ -281,6 +286,32 @@ export default function AddListing() {
                 {step === 2 && (
                   <motion.div 
                     key="step2"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    className="space-y-4"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {subcategories.map(subcat => (
+                        <div 
+                          key={subcat}
+                          onClick={() => setSubcategory(subcat)}
+                          className={`p-4 rounded-xl border-2 cursor-pointer transition-all
+                            ${subcategory === subcat ? 'border-primary-600 bg-primary-50' : 'border-slate-200 hover:border-primary-300'}
+                          `}
+                        >
+                          <span className={`font-medium ${subcategory === subcat ? 'text-primary-700' : 'text-slate-700'}`}>
+                            {subcat}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {step === 3 && (
+                  <motion.div 
+                    key="step3"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
@@ -354,26 +385,73 @@ export default function AddListing() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Attēla saite (URL)</label>
-                      <div className="relative rounded-md shadow-sm">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <ImageIcon className="h-5 w-5 text-slate-400" />
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Attēls</label>
+                      <div className="space-y-4">
+                        {/* File Upload */}
+                        <div className="flex items-center justify-center w-full">
+                          <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                              {isUploading ? (
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mb-2"></div>
+                              ) : (
+                                <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
+                              )}
+                              <p className="mb-2 text-sm text-slate-500">
+                                <span className="font-semibold">Noklikšķiniet, lai augšupielādētu</span>
+                              </p>
+                              <p className="text-xs text-slate-500">PNG, JPG, GIF (Max 5MB)</p>
+                            </div>
+                            <input 
+                              type="file" 
+                              className="hidden" 
+                              accept="image/*"
+                              onChange={handleImageUpload}
+                              disabled={isUploading}
+                            />
+                          </label>
                         </div>
-                        <input
-                          type="url"
-                          value={imageUrl}
-                          onChange={(e) => setImageUrl(e.target.value)}
-                          className="w-full pl-10 px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                          placeholder="https://piemers.lv/bilde.jpg"
-                        />
+
+                        <div className="flex items-center">
+                          <div className="flex-grow border-t border-slate-200"></div>
+                          <span className="flex-shrink-0 mx-4 text-slate-400 text-sm">vai ievadiet URL</span>
+                          <div className="flex-grow border-t border-slate-200"></div>
+                        </div>
+
+                        {/* URL Input */}
+                        <div className="relative rounded-md shadow-sm">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <ImageIcon className="h-5 w-5 text-slate-400" />
+                          </div>
+                          <input
+                            type="url"
+                            value={imageUrl}
+                            onChange={(e) => setImageUrl(e.target.value)}
+                            className="w-full pl-10 px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                            placeholder="https://piemers.lv/bilde.jpg"
+                          />
+                        </div>
+
+                        {/* Preview */}
+                        {imageUrl && (
+                          <div className="mt-4 relative rounded-lg overflow-hidden h-48 bg-slate-100 border border-slate-200">
+                            <img 
+                              src={imageUrl} 
+                              alt="Priekšskatījums" 
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Kļūda+ielādējot+attēlu';
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </motion.div>
                 )}
 
-                {step === 3 && (
+                {step === 4 && (
                   <motion.div 
-                    key="step3"
+                    key="step4"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
@@ -434,7 +512,7 @@ export default function AddListing() {
                   <div></div>
                 )}
 
-                {step < 3 ? (
+                {step < 4 ? (
                   <button
                     type="button"
                     onClick={nextStep}

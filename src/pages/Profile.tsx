@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star } from 'lucide-react';
+import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface Listing {
   id: number;
@@ -21,21 +22,53 @@ interface PointsHistory {
   created_at: string;
 }
 
+interface AdData {
+  id: number;
+  title: string;
+  image_url: string;
+  link_url: string;
+  size: string;
+  start_date: string;
+  end_date: string;
+  is_active: number;
+  views: number;
+  clicks: number;
+  created_at: string;
+  category: string | null;
+  status: string;
+}
+
 export default function Profile() {
-  const { user, loading } = useAuth();
+  const { user, loading, updateUser } = useAuth();
   const navigate = useNavigate();
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [favorites, setFavorites] = useState<Listing[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [pointsHistory, setPointsHistory] = useState<PointsHistory[]>([]);
+  const [myAds, setMyAds] = useState<AdData[]>([]);
   const [isLoadingListings, setIsLoadingListings] = useState(true);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
+  const [isLoadingAds, setIsLoadingAds] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet'>('listings');
+  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet' | 'ads'>('listings');
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
+  const [isAdModalOpen, setIsAdModalOpen] = useState(false);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+  const [adStats, setAdStats] = useState<{date: string, views: number, clicks: number}[]>([]);
   const [addingFunds, setAddingFunds] = useState(false);
+  const [settings, setSettings] = useState<Record<string, string>>({});
   const [verifying, setVerifying] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
+  const [selectedAd, setSelectedAd] = useState<AdData | null>(null);
+  const [adForm, setAdForm] = useState({
+    title: '',
+    image_url: '',
+    link_url: '',
+    size: '300x250',
+    start_date: new Date().toISOString().slice(0, 16),
+    end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+    category: ''
+  });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -119,11 +152,44 @@ export default function Profile() {
       }
     };
 
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        if (res.ok) {
+          setSettings(await res.json());
+        }
+      } catch (error) {
+        console.error("Error fetching settings:", error);
+      }
+    };
+
+    const fetchMyAds = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch('/api/users/me/ads', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!res.ok) throw new Error('Neizdevās ielādēt reklāmas');
+        
+        const data = await res.json();
+        setMyAds(data);
+      } catch (err: any) {
+        console.error(err);
+      } finally {
+        setIsLoadingAds(false);
+      }
+    };
+
     if (user) {
       fetchMyListings();
       fetchFavorites();
       fetchBalance();
       fetchPointsHistory();
+      fetchSettings();
+      fetchMyAds();
     }
   }, [user, loading, navigate]);
 
@@ -149,6 +215,127 @@ export default function Profile() {
       alert(err.message);
     } finally {
       setAddingFunds(false);
+    }
+  };
+
+  const openStatsModal = async (ad: AdData) => {
+    setSelectedAd(ad);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/users/me/ads/${ad.id}/stats`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch stats');
+      const data = await res.json();
+      setAdStats(data);
+      setIsStatsModalOpen(true);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleAddAd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const price = parseInt(settings.ad_price_points || '500', 10);
+    if (!window.confirm(`Vai vēlies izveidot reklāmu par ${price} punktiem?`)) return;
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/users/me/ads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(adForm)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās izveidot reklāmu');
+
+      alert('Reklāma veiksmīgi izveidota un gaida apstiprinājumu!');
+      setIsAdModalOpen(false);
+      
+      // Refresh ads and points
+      const adsRes = await fetch('/api/users/me/ads', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (adsRes.ok) setMyAds(await adsRes.json());
+      
+      const historyRes = await fetch('/api/wallet/points-history', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (historyRes.ok) setPointsHistory(await historyRes.json());
+      
+      if (user) {
+         updateUser({ points: user.points - price });
+      }
+
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleBuyEarlyAccess = async () => {
+    const price = settings.early_access_price || 150;
+    const duration = settings.early_access_duration_hours || 24;
+    if (!window.confirm(`Vai vēlies iegādāties agro piekļuvi uz ${duration} stundām par ${price} punktiem?`)) return;
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/wallet/buy-early-access', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās iegādāties agro piekļuvi');
+
+      updateUser({ points: data.points, early_access_until: data.early_access_until });
+      alert(data.message);
+      
+      // Refresh points history
+      const historyRes = await fetch('/api/wallet/points-history', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (historyRes.ok) {
+        setPointsHistory(await historyRes.json());
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleBuyPoints = async (amount: number) => {
+    if (!window.confirm(`Vai vēlies iegādāties ${amount} punktus?`)) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/wallet/buy-points', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ points: amount })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās iegādāties punktus');
+
+      updateUser({ points: data.points });
+      alert(data.message);
+      
+      // Refresh points history
+      const historyRes = await fetch('/api/wallet/points-history', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (historyRes.ok) {
+        setPointsHistory(await historyRes.json());
+      }
+    } catch (err: any) {
+      alert(err.message);
     }
   };
 
@@ -363,6 +550,17 @@ export default function Profile() {
             <Wallet className="w-4 h-4 mr-2" />
             Mans Maks
           </button>
+          <button
+            onClick={() => setActiveTab('ads')}
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === 'ads' 
+                ? 'border-primary-600 text-primary-600' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <Star className="w-4 h-4 mr-2" />
+            Reklāmas
+          </button>
         </div>
 
         {/* Mans Maks */}
@@ -401,6 +599,53 @@ export default function Profile() {
               <div className="mb-6">
                 <p className="text-sm text-slate-500 mb-1">Pieejamie punkti</p>
                 <p className="text-3xl font-extrabold text-slate-900">{user?.points || 0}</p>
+              </div>
+
+              <div className="mb-8 p-6 bg-amber-50 rounded-xl border border-amber-200">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-amber-900 mb-1">Agrā piekļuve</h3>
+                    <p className="text-amber-700 text-sm">
+                      Iegūsti iespēju redzēt jaunākos sludinājumus 15 minūtes pirms citiem!
+                    </p>
+                    {user?.early_access_until && new Date(user.early_access_until) > new Date() && (
+                      <p className="mt-2 text-sm font-semibold text-green-700">
+                        Aktīvs līdz: {new Date(user.early_access_until).toLocaleString('lv-LV')}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleBuyEarlyAccess}
+                    disabled={user?.points ? user.points < (parseInt(settings.early_access_price) || 150) : true}
+                    className="w-full sm:w-auto px-6 py-2 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    Pirkt ({settings.early_access_price || 150} punkti)
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Iegādāties punktus</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {[100, 500, 1000].map(amount => {
+                    const pricePer100 = parseFloat(settings.points_price_eur_per_100) || 1.00;
+                    const price = (amount / 100) * pricePer100;
+                    return (
+                      <button
+                        key={amount}
+                        onClick={() => handleBuyPoints(amount)}
+                        className="p-4 border border-slate-200 rounded-xl hover:border-amber-400 hover:bg-amber-50 transition-colors text-center group"
+                      >
+                        <div className="text-2xl font-bold text-slate-900 group-hover:text-amber-600 mb-1">
+                          {amount}
+                        </div>
+                        <div className="text-sm text-slate-500">
+                          {price.toFixed(2)} €
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Vēsture</h3>
@@ -631,6 +876,105 @@ export default function Profile() {
             )}
           </motion.div>
         )}
+        {/* Reklāmas */}
+        {activeTab === 'ads' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center">
+                Manas reklāmas
+              </h2>
+              <button
+                onClick={() => setIsAdModalOpen(true)}
+                className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Pievienot reklāmu
+              </button>
+            </div>
+
+            {isLoadingAds ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              </div>
+            ) : myAds.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 border-dashed p-12 text-center">
+                <Star className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-slate-900 mb-1">Tev vēl nav pievienotu reklāmu</h3>
+                <p className="text-slate-500 mb-6">Izveido reklāmu, lai piesaistītu vairāk uzmanības.</p>
+                <button 
+                  onClick={() => setIsAdModalOpen(true)}
+                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 transition-colors shadow-sm"
+                >
+                  Izveidot reklāmu
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <ul className="divide-y divide-slate-200">
+                  {myAds.map((ad) => (
+                    <li key={ad.id} className="p-4 sm:p-6 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+                      <div className="w-full sm:w-32 h-32 sm:h-24 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 relative">
+                        {ad.image_url ? (
+                          <img 
+                            src={ad.image_url} 
+                            alt={ad.title} 
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-400">
+                            <ImageIcon className="w-8 h-8 opacity-20" />
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex-grow min-w-0">
+                        <h3 className="text-lg font-semibold text-slate-900 truncate flex items-center gap-2">
+                          {ad.title}
+                        </h3>
+                        <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full w-fit ${
+                            ad.status === 'approved' ? 'bg-green-100 text-green-800' :
+                            ad.status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {ad.status === 'approved' ? 'Apstiprināta' :
+                             ad.status === 'pending' ? 'Gaida' : 'Noraidīta'}
+                          </span>
+                          <span className="bg-slate-100 px-2.5 py-0.5 rounded-md font-medium text-slate-700">
+                            {ad.size}
+                          </span>
+                          {ad.category && (
+                            <span className="bg-slate-100 px-2.5 py-0.5 rounded-md font-medium text-slate-700">
+                              {ad.category}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
+                          <span>Skatījumi: {ad.views}</span>
+                          <span>Klikšķi: {ad.clicks}</span>
+                          <span>Līdz: {formatDate(ad.end_date)}</span>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 w-full sm:w-auto flex sm:flex-col gap-2 mt-4 sm:mt-0">
+                        <button 
+                          onClick={() => openStatsModal(ad)}
+                          className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 border border-slate-200 text-indigo-600 hover:bg-slate-50 hover:border-slate-300 rounded-lg transition-colors text-sm font-medium"
+                        >
+                          <BarChart3 className="w-4 h-4 mr-2" />
+                          <span>Statistika</span>
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </motion.div>
+        )}
       </div>
 
       {/* Add Funds Modal */}
@@ -665,6 +1009,209 @@ export default function Profile() {
           </div>
         </div>
       )}
+
+      {/* Ad Modal */}
+      {isAdModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col"
+          >
+            <div className="p-6 border-b border-slate-200">
+              <h3 className="text-xl font-bold text-slate-900">
+                Izveidot jaunu reklāmu
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Reklāmas izveide maksā {settings.ad_price_points || '500'} punktus. Pēc izveides tā tiks nosūtīta apstiprināšanai.
+              </p>
+            </div>
+            
+            <form onSubmit={handleAddAd} className="p-6 overflow-y-auto space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Virsraksts
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adForm.title}
+                  onChange={e => setAdForm({...adForm, title: e.target.value})}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Reklāmas virsraksts"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Attēla URL
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={adForm.image_url}
+                  onChange={e => setAdForm({...adForm, image_url: e.target.value})}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="https://example.com/image.jpg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Saites URL
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={adForm.link_url}
+                  onChange={e => setAdForm({...adForm, link_url: e.target.value})}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="https://example.com"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Izmērs
+                  </label>
+                  <select
+                    value={adForm.size}
+                    onChange={e => setAdForm({...adForm, size: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="300x250">Vidējs taisnstūris (300x250)</option>
+                    <option value="300x600">Puslapa (300x600)</option>
+                    <option value="728x90">Liels baneris (728x90)</option>
+                    <option value="970x250">Milzu baneris (970x250)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Kategorija (neobligāti)
+                  </label>
+                  <select
+                    value={adForm.category}
+                    onChange={e => setAdForm({...adForm, category: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="">Visas kategorijas</option>
+                    <option value="Elektronika">Elektronika</option>
+                    <option value="Transports">Transports</option>
+                    <option value="Mājoklis">Mājoklis</option>
+                    <option value="Darbs">Darbs</option>
+                    <option value="Pakalpojumi">Pakalpojumi</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Sākuma datums
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={adForm.start_date}
+                    onChange={e => setAdForm({...adForm, start_date: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Beigu datums
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={adForm.end_date}
+                    onChange={e => setAdForm({...adForm, end_date: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-slate-200 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsAdModalOpen(false)}
+                  className="px-4 py-2 text-slate-700 font-medium hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Atcelt
+                </button>
+                <button
+                  type="submit"
+                  disabled={user && user.points < parseInt(settings.ad_price_points || '500', 10)}
+                  className="px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Izveidot un apmaksāt
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Stats Modal */}
+      {isStatsModalOpen && selectedAd && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden"
+          >
+            <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-slate-900">
+                Statistika: {selectedAd.title}
+              </h3>
+              <button 
+                onClick={() => setIsStatsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <div className="text-sm font-medium text-slate-500 mb-1">Kopējie skatījumi</div>
+                  <div className="text-2xl font-bold text-slate-900">{selectedAd.views}</div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <div className="text-sm font-medium text-slate-500 mb-1">Kopējie klikšķi</div>
+                  <div className="text-2xl font-bold text-slate-900">{selectedAd.clicks}</div>
+                </div>
+              </div>
+
+              {adStats.length > 0 ? (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={adStats} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="date" tick={{fontSize: 12}} tickMargin={10} stroke="#94a3b8" />
+                      <YAxis yAxisId="left" tick={{fontSize: 12}} stroke="#94a3b8" />
+                      <YAxis yAxisId="right" orientation="right" tick={{fontSize: 12}} stroke="#94a3b8" />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                      <Legend />
+                      <Line yAxisId="left" type="monotone" dataKey="views" name="Skatījumi" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      <Line yAxisId="right" type="monotone" dataKey="clicks" name="Klikšķi" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-slate-500">
+                  Nav pietiekami daudz datu grafika attēlošanai.
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
     </div>
   );
 }

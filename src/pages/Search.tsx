@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../components/AuthContext';
+import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 
 interface Listing {
   id: number;
@@ -15,15 +16,7 @@ interface Listing {
   is_highlighted?: number;
 }
 
-const categories = [
-  'Visi',
-  'Transports',
-  'Nekustamais īpašums',
-  'Elektronika',
-  'Darbs un pakalpojumi',
-  'Mājai un dārzam',
-  'Cits'
-];
+const categories = ['Visi', ...CATEGORY_NAMES];
 
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -38,9 +31,22 @@ export default function Search() {
   // Filter states
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState(initialCategory);
+  const [subcategory, setSubcategory] = useState('');
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  const [attributeFilters, setAttributeFilters] = useState<Record<string, string>>({});
   const [showFilters, setShowFilters] = useState(false);
+
+  // Reset attributes when category changes
+  useEffect(() => {
+    setSubcategory('');
+    setAttributeFilters({});
+  }, [category]);
+
+  // Reset attributes when subcategory changes
+  useEffect(() => {
+    setAttributeFilters({});
+  }, [subcategory]);
 
   const fetchListings = async () => {
     setLoading(true);
@@ -51,11 +57,19 @@ export default function Search() {
       if (query) {
         url = '/api/listings/search';
         params.append('q', query);
-      } else {
-        if (category !== 'Visi') params.append('category', category);
-        if (minPrice) params.append('minPrice', minPrice);
-        if (maxPrice) params.append('maxPrice', maxPrice);
       }
+      
+      if (category !== 'Visi') params.append('category', category);
+      if (subcategory) params.append('subcategory', subcategory);
+      if (minPrice) params.append('minPrice', minPrice);
+      if (maxPrice) params.append('maxPrice', maxPrice);
+      
+      // Append attribute filters
+      Object.entries(attributeFilters).forEach(([key, value]) => {
+        if (value) {
+          params.append(`attr_${key}`, value);
+        }
+      });
 
       const queryString = params.toString();
       const finalUrl = queryString ? `${url}?${queryString}` : url;
@@ -146,6 +160,13 @@ export default function Search() {
 
   const filteredListings = listings; // We now rely on server-side filtering
 
+  const isEarlyAccess = (createdAt: string) => {
+    const created = new Date(createdAt);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+    return diffMinutes <= 15;
+  };
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 flex flex-col md:flex-row">
       {/* Mobile filter toggle */}
@@ -210,6 +231,23 @@ export default function Search() {
               </div>
             </div>
 
+            {/* Subcategory */}
+            {category !== 'Visi' && CATEGORY_SCHEMAS[category]?.subcategories && Object.keys(CATEGORY_SCHEMAS[category].subcategories).length > 0 && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-900 mb-2">Apakškategorija</label>
+                <select
+                  value={subcategory}
+                  onChange={(e) => setSubcategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm bg-white"
+                >
+                  <option value="">Visas</option>
+                  {Object.keys(CATEGORY_SCHEMAS[category].subcategories).map(subcat => (
+                    <option key={subcat} value={subcat}>{subcat}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Price Range */}
             <div>
               <label className="block text-sm font-semibold text-slate-900 mb-2">Cena (€)</label>
@@ -231,6 +269,33 @@ export default function Search() {
                 />
               </div>
             </div>
+
+            {/* Dynamic Attributes */}
+            {category !== 'Visi' && subcategory && CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields.map(field => (
+              <div key={field.name}>
+                <label className="block text-sm font-semibold text-slate-900 mb-2">{field.label}</label>
+                {field.type === 'select' ? (
+                  <select
+                    value={attributeFilters[field.name] || ''}
+                    onChange={(e) => setAttributeFilters(prev => ({ ...prev, [field.name]: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm bg-white"
+                  >
+                    <option value="">Visi</option>
+                    {field.options?.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={field.type === 'number' ? 'number' : 'text'}
+                    placeholder={field.placeholder || 'Jebkāds'}
+                    value={attributeFilters[field.name] || ''}
+                    onChange={(e) => setAttributeFilters(prev => ({ ...prev, [field.name]: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
+                  />
+                )}
+              </div>
+            ))}
 
             <button 
               type="submit"
@@ -310,6 +375,12 @@ export default function Search() {
                           TOP
                         </div>
                       ) : null}
+                      {isEarlyAccess(listing.created_at) && (
+                        <div className="bg-indigo-500 text-white px-2.5 py-1 rounded-md text-xs font-bold shadow-sm flex items-center">
+                          <Clock className="w-3 h-3 mr-1" />
+                          Agrā piekļuve
+                        </div>
+                      )}
                       <div className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 shadow-sm">
                         {listing.category}
                       </div>

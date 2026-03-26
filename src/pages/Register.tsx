@@ -1,33 +1,137 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { UserPlus, AlertCircle, Phone, KeyRound, Building2, User } from 'lucide-react';
+import { UserPlus, AlertCircle, Phone, KeyRound, Building2, User, Mail, Lock, ArrowLeft, Fingerprint } from 'lucide-react';
 import { motion } from 'motion/react';
 
+type RegisterMethod = 'select' | 'email' | 'phone' | 'smart-id';
+
 export default function Register() {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [registerMethod, setRegisterMethod] = useState<RegisterMethod>('select');
   const [userType, setUserType] = useState<'c2c' | 'b2b'>('c2c');
+  
+  // Common fields
+  const [name, setName] = useState('');
+  
+  // B2B specific fields
+  const [companyName, setCompanyName] = useState('');
+  const [companyRegNumber, setCompanyRegNumber] = useState('');
+  const [companyVat, setCompanyVat] = useState('');
+
+  // Phone state
+  const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
-  const [step, setStep] = useState<'details' | 'code'>('details');
+  const [phoneStep, setPhoneStep] = useState<'details' | 'code'>('details');
+  const [simulated, setSimulated] = useState(false);
+
+  // Email state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Smart-ID state
+  const [personalCode, setPersonalCode] = useState('');
+  const [country, setCountry] = useState('LV');
+  const [smartIdSession, setSmartIdSession] = useState('');
+  const [smartIdCode, setSmartIdCode] = useState('');
+  const [smartIdStep, setSmartIdStep] = useState<'details' | 'polling'>('details');
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [simulated, setSimulated] = useState(false);
   
   const navigate = useNavigate();
   const { signIn } = useAuth();
 
-  const handleRequestOTP = async (e: React.FormEvent) => {
+  const validateCommonFields = () => {
+    if (name.length < 2) {
+      setError('Lūdzu, ievadiet derīgu vārdu');
+      return false;
+    }
+    if (userType === 'b2b' && (!companyName || !companyRegNumber)) {
+      setError('Lūdzu, aizpildiet obligātos uzņēmuma datus');
+      return false;
+    }
+    return true;
+  };
+
+  // --- Smart-ID Registration Handlers ---
+  const handleSmartIdInit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
-    if (name.length < 2) {
-      setError('Lūdzu, ievadiet derīgu vārdu vai nosaukumu');
+    if (!validateCommonFields()) return;
+    if (!personalCode) {
+      setError('Lūdzu, ievadiet personas kodu');
       return;
     }
 
     setLoading(true);
+    try {
+      const res = await fetch('/api/auth/smart-id/register/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          personalCode, 
+          country,
+          name, 
+          user_type: userType,
+          company_name: userType === 'b2b' ? companyName : undefined,
+          company_reg_number: userType === 'b2b' ? companyRegNumber : undefined,
+          company_vat: userType === 'b2b' ? companyVat : undefined
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās uzsākt Smart-ID');
+      
+      setSmartIdSession(data.sessionId);
+      setSmartIdCode(data.verificationCode);
+      setSmartIdStep('polling');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (smartIdStep === 'polling' && smartIdSession) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch('/api/auth/smart-id/register/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              sessionId: smartIdSession, 
+              personalCode,
+              name, 
+              user_type: userType,
+              company_name: userType === 'b2b' ? companyName : undefined,
+              company_reg_number: userType === 'b2b' ? companyRegNumber : undefined,
+              company_vat: userType === 'b2b' ? companyVat : undefined
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.status === 'OK') {
+            clearInterval(interval);
+            signIn(data.token, data.user);
+            navigate('/');
+          }
+        } catch (err) {
+          console.error("Polling error", err);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [smartIdStep, smartIdSession, personalCode, name, userType, companyName, companyRegNumber, companyVat, navigate, signIn]);
+
+  // --- Phone Registration Handlers ---
+  const handleRequestOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
     
+    if (!validateCommonFields()) return;
+
+    setLoading(true);
     try {
       const res = await fetch('/api/auth/request-otp', {
         method: 'POST',
@@ -36,16 +140,10 @@ export default function Register() {
       });
       
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās nosūtīt SMS');
       
-      if (!res.ok) {
-        throw new Error(data.error || 'Neizdevās nosūtīt SMS');
-      }
-      
-      if (data.simulated) {
-        setSimulated(true);
-      }
-      
-      setStep('code');
+      if (data.simulated) setSimulated(true);
+      setPhoneStep('code');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -62,14 +160,19 @@ export default function Register() {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code, name, user_type: userType })
+        body: JSON.stringify({ 
+          phone, 
+          code, 
+          name, 
+          user_type: userType,
+          company_name: userType === 'b2b' ? companyName : undefined,
+          company_reg_number: userType === 'b2b' ? companyRegNumber : undefined,
+          company_vat: userType === 'b2b' ? companyVat : undefined
+        })
       });
       
       const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Nepareizs kods');
-      }
+      if (!res.ok) throw new Error(data.error || 'Nepareizs kods');
       
       signIn(data.token, data.user);
       navigate('/');
@@ -80,6 +183,95 @@ export default function Register() {
     }
   };
 
+  // --- Email Registration Handlers ---
+  const handleEmailRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!validateCommonFields()) return;
+    if (password.length < 6) {
+      setError('Parolei jābūt vismaz 6 simbolus garai');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          user_type: userType,
+          company_name: userType === 'b2b' ? companyName : undefined,
+          company_reg_number: userType === 'b2b' ? companyRegNumber : undefined,
+          company_vat: userType === 'b2b' ? companyVat : undefined
+        })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās reģistrēties');
+      
+      signIn(data.token, data.user);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderB2BFields = () => {
+    if (userType !== 'b2b') return null;
+    return (
+      <>
+        <div>
+          <label htmlFor="companyName" className="block text-sm font-medium text-slate-700 mb-1">Uzņēmuma nosaukums *</label>
+          <input
+            id="companyName" type="text" required
+            value={companyName} onChange={(e) => setCompanyName(e.target.value)}
+            className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+          />
+        </div>
+        <div>
+          <label htmlFor="companyRegNumber" className="block text-sm font-medium text-slate-700 mb-1">Reģistrācijas numurs *</label>
+          <input
+            id="companyRegNumber" type="text" required
+            value={companyRegNumber} onChange={(e) => setCompanyRegNumber(e.target.value)}
+            className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+          />
+        </div>
+        <div>
+          <label htmlFor="companyVat" className="block text-sm font-medium text-slate-700 mb-1">PVN numurs (neobligāti)</label>
+          <input
+            id="companyVat" type="text"
+            value={companyVat} onChange={(e) => setCompanyVat(e.target.value)}
+            className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+          />
+        </div>
+      </>
+    );
+  };
+
+  const renderCommonFields = () => (
+    <div>
+      <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
+        {userType === 'b2b' ? 'Kontaktpersonas vārds, uzvārds *' : 'Vārds, uzvārds *'}
+      </label>
+      <div className="relative">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <User className="h-5 w-5 text-slate-400" />
+        </div>
+        <input
+          id="name" type="text" required
+          value={name} onChange={(e) => setName(e.target.value)}
+          className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <motion.div 
@@ -88,6 +280,19 @@ export default function Register() {
         className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-slate-200"
       >
         <div>
+          {registerMethod !== 'select' && (
+            <button 
+              onClick={() => {
+                setRegisterMethod('select');
+                setError('');
+                setPhoneStep('details');
+              }}
+              className="mb-4 flex items-center text-sm text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Atpakaļ
+            </button>
+          )}
           <div className="mx-auto h-12 w-12 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center">
             <UserPlus className="h-6 w-6" />
           </div>
@@ -109,133 +314,266 @@ export default function Register() {
           </div>
         )}
 
-        {step === 'details' ? (
-          <form className="mt-8 space-y-6" onSubmit={handleRequestOTP}>
-            <div className="space-y-4">
-              {/* User Type Selection */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <button
-                  type="button"
-                  onClick={() => setUserType('c2c')}
-                  className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                    userType === 'c2c' 
-                      ? 'border-primary-600 bg-primary-50 text-primary-700' 
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                  }`}
-                >
-                  <User className="w-6 h-6 mb-2" />
-                  <span className="font-medium text-sm">Privātpersona</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUserType('b2b')}
-                  className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                    userType === 'b2b' 
-                      ? 'border-primary-600 bg-primary-50 text-primary-700' 
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                  }`}
-                >
-                  <Building2 className="w-6 h-6 mb-2" />
-                  <span className="font-medium text-sm">Uzņēmums</span>
-                </button>
-              </div>
-
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
-                  {userType === 'c2c' ? 'Vārds, Uzvārds' : 'Uzņēmuma nosaukums'}
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  placeholder={userType === 'c2c' ? 'Jānis Bērziņš' : 'SIA Piemērs'}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
-                  Telefona numurs
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Phone className="h-5 w-5 text-slate-400" />
-                  </div>
-                  <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    placeholder="+371 20000000"
-                  />
+        {registerMethod === 'select' && (
+          <div className="mt-8 space-y-4">
+            <button
+              onClick={() => setRegisterMethod('email')}
+              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+            >
+              <div className="flex items-center">
+                <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-white flex items-center justify-center mr-4">
+                  <Mail className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
+                </div>
+                <div className="text-left">
+                  <div className="font-medium text-slate-900">Ar e-pastu</div>
+                  <div className="text-sm text-slate-500">Reģistrēties ar e-pastu un paroli</div>
                 </div>
               </div>
-            </div>
+            </button>
 
-            <div>
-              <button
-                type="submit"
-                disabled={loading || !phone || !name}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {loading ? 'Sūta SMS...' : 'Saņemt SMS kodu'}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form className="mt-8 space-y-6" onSubmit={handleVerifyOTP}>
-            {simulated && (
-              <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-md mb-4">
-                <p className="text-sm text-blue-700">
-                  <strong>Izstrādes režīms:</strong> SMS netika nosūtīta. Izmantojiet kodu <strong>123456</strong>, lai turpinātu.
-                </p>
-              </div>
-            )}
-            <div>
-              <label htmlFor="code" className="block text-sm font-medium text-slate-700 mb-1">
-                SMS Kods
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <KeyRound className="h-5 w-5 text-slate-400" />
+            <button
+              onClick={() => setRegisterMethod('phone')}
+              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+            >
+              <div className="flex items-center">
+                <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-white flex items-center justify-center mr-4">
+                  <Phone className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
                 </div>
-                <input
-                  id="code"
-                  name="code"
-                  type="text"
-                  required
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm text-center tracking-widest text-lg font-mono"
-                  placeholder="000000"
-                  maxLength={6}
-                />
+                <div className="text-left">
+                  <div className="font-medium text-slate-900">Ar telefona numuru</div>
+                  <div className="text-sm text-slate-500">Reģistrēties ar SMS kodu</div>
+                </div>
               </div>
-            </div>
+            </button>
 
-            <div className="flex flex-col space-y-3">
+            <button
+              onClick={() => setRegisterMethod('smart-id')}
+              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+            >
+              <div className="flex items-center">
+                <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-white flex items-center justify-center mr-4">
+                  <Fingerprint className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
+                </div>
+                <div className="text-left">
+                  <div className="font-medium text-slate-900">Ar Smart-ID</div>
+                  <div className="text-sm text-slate-500">Droša reģistrācija ar Smart-ID</div>
+                </div>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {registerMethod !== 'select' && (
+          <div className="mt-8">
+            <div className="flex rounded-lg shadow-sm p-1 bg-slate-100 mb-6">
               <button
-                type="submit"
-                disabled={loading || code.length < 4}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                type="button"
+                onClick={() => setUserType('c2c')}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center ${
+                  userType === 'c2c' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
               >
-                {loading ? 'Pārbauda...' : 'Apstiprināt un reģistrēties'}
+                <User className="h-4 w-4 mr-2" />
+                Privātpersona
               </button>
               <button
                 type="button"
-                onClick={() => setStep('details')}
-                className="w-full flex justify-center py-2.5 px-4 border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+                onClick={() => setUserType('b2b')}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center ${
+                  userType === 'b2b' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
               >
-                Atgriezties
+                <Building2 className="h-4 w-4 mr-2" />
+                Uzņēmums
               </button>
             </div>
-          </form>
+
+            {registerMethod === 'email' && (
+              <form className="space-y-6" onSubmit={handleEmailRegister}>
+                <div className="space-y-4">
+                  {renderB2BFields()}
+                  {renderCommonFields()}
+
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">E-pasts *</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-5 w-5 text-slate-400" />
+                      </div>
+                      <input
+                        id="email" type="email" required
+                        value={email} onChange={(e) => setEmail(e.target.value)}
+                        className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">Parole *</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock className="h-5 w-5 text-slate-400" />
+                      </div>
+                      <input
+                        id="password" type="password" required minLength={6}
+                        value={password} onChange={(e) => setPassword(e.target.value)}
+                        className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? 'Reģistrē...' : 'Reģistrēties'}
+                </button>
+              </form>
+            )}
+
+            {registerMethod === 'phone' && (
+              <>
+                {phoneStep === 'details' ? (
+                  <form className="space-y-6" onSubmit={handleRequestOTP}>
+                    <div className="space-y-4">
+                      {renderB2BFields()}
+                      {renderCommonFields()}
+
+                      <div>
+                        <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
+                          Telefona numurs *
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Phone className="h-5 w-5 text-slate-400" />
+                          </div>
+                          <input
+                            id="phone" type="tel" required
+                            value={phone} onChange={(e) => setPhone(e.target.value)}
+                            className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                            placeholder="+371 20000000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !phone || !name}
+                      className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                    >
+                      {loading ? 'Sūta SMS...' : 'Saņemt SMS kodu'}
+                    </button>
+                  </form>
+                ) : (
+                  <form className="space-y-6" onSubmit={handleVerifyOTP}>
+                    {simulated && (
+                      <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-md mb-4">
+                        <p className="text-sm text-blue-700">
+                          <strong>Izstrādes režīms:</strong> SMS netika nosūtīta. Izmantojiet kodu <strong>123456</strong>.
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="code" className="block text-sm font-medium text-slate-700 mb-1">
+                        SMS Kods
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <KeyRound className="h-5 w-5 text-slate-400" />
+                        </div>
+                        <input
+                          id="code" type="text" required maxLength={6}
+                          value={code} onChange={(e) => setCode(e.target.value)}
+                          className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm text-center tracking-widest text-lg font-mono"
+                          placeholder="000000"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col space-y-3">
+                      <button
+                        type="submit"
+                        disabled={loading || code.length < 4}
+                        className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                      >
+                        {loading ? 'Pārbauda...' : 'Apstiprināt un reģistrēties'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPhoneStep('details')}
+                        className="w-full flex justify-center py-2.5 px-4 border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+                      >
+                        Atgriezties
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </>
+            )}
+
+            {registerMethod === 'smart-id' && (
+              <>
+                {smartIdStep === 'details' ? (
+                  <form className="space-y-6" onSubmit={handleSmartIdInit}>
+                    <div className="space-y-4">
+                      {renderB2BFields()}
+                      {renderCommonFields()}
+
+                      <div>
+                        <label htmlFor="personalCode" className="block text-sm font-medium text-slate-700 mb-1">
+                          Personas kods *
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Fingerprint className="h-5 w-5 text-slate-400" />
+                          </div>
+                          <input
+                            id="personalCode" type="text" required
+                            value={personalCode} onChange={(e) => setPersonalCode(e.target.value)}
+                            className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                            placeholder="123456-12345"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !personalCode || !name}
+                      className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                    >
+                      {loading ? 'Sazinās ar Smart-ID...' : 'Reģistrēties ar Smart-ID'}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="text-center space-y-6">
+                    <div className="mx-auto w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mb-4">
+                      <Fingerprint className="w-8 h-8 text-primary-600 animate-pulse" />
+                    </div>
+                    <h3 className="text-lg font-medium text-slate-900">Apstipriniet Smart-ID lietotnē</h3>
+                    <p className="text-sm text-slate-500">
+                      Lūdzu, pārbaudiet savu viedtālruni un apstipriniet reģistrāciju.
+                    </p>
+                    <div className="text-4xl font-mono font-bold tracking-widest text-primary-600 py-4">
+                      {smartIdCode}
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Pārliecinieties, ka kods sakrīt ar to, ko redzat savā ierīcē.
+                    </p>
+                    <button
+                      onClick={() => setSmartIdStep('details')}
+                      className="mt-4 text-sm font-medium text-primary-600 hover:text-primary-500"
+                    >
+                      Atcelt
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         )}
       </motion.div>
     </div>

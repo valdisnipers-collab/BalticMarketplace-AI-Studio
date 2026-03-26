@@ -25,10 +25,20 @@ interface Listing {
   is_highlighted?: number;
 }
 
+interface AdData {
+  id: number;
+  title: string;
+  image_url: string;
+  link_url: string;
+  size: string;
+  category?: string;
+}
+
 export default function Home() {
   const { user } = useAuth();
   const [listings, setListings] = useState<Listing[]>([]);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
+  const [ads, setAds] = useState<AdData[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Filtrēšanas stāvokļi
@@ -36,14 +46,22 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/listings')
-      .then(res => res.json())
-      .then(data => {
-        setListings(data);
+    Promise.all([
+      fetch('/api/listings').then(res => res.json()),
+      fetch('/api/ads').then(res => res.json())
+    ])
+      .then(([listingsData, adsData]) => {
+        setListings(listingsData);
+        setAds(adsData);
         setLoading(false);
+        
+        // Record views for fetched ads
+        adsData.forEach((ad: AdData) => {
+          fetch(`/api/ads/${ad.id}/view`, { method: 'POST' }).catch(() => {});
+        });
       })
       .catch(err => {
-        console.error("Failed to fetch listings", err);
+        console.error("Failed to fetch data", err);
         setLoading(false);
       });
   }, []);
@@ -65,6 +83,10 @@ export default function Home() {
       setFavorites(new Set());
     }
   }, [user]);
+
+  const handleAdClick = (adId: number) => {
+    fetch(`/api/ads/${adId}/click`, { method: 'POST' }).catch(() => {});
+  };
 
   const toggleFavorite = async (e: React.MouseEvent, listingId: number) => {
     e.preventDefault(); // Prevent navigating to listing details
@@ -121,6 +143,13 @@ export default function Home() {
     return matchesSearch && matchesCategory;
   });
 
+  const isEarlyAccess = (createdAt: string) => {
+    const created = new Date(createdAt);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+    return diffMinutes <= 15;
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Hero Section - Kompakts ar vietu pārklājumam */}
@@ -143,8 +172,11 @@ export default function Home() {
           <motion.form 
             onSubmit={(e) => {
               e.preventDefault();
-              if (searchQuery.trim()) {
-                window.location.href = `/search?q=${encodeURIComponent(searchQuery)}`;
+              if (searchQuery.trim() || selectedCategory) {
+                const params = new URLSearchParams();
+                if (searchQuery.trim()) params.append('q', searchQuery.trim());
+                if (selectedCategory) params.append('category', selectedCategory);
+                window.location.href = `/search?${params.toString()}`;
               }
             }}
             initial={{ opacity: 0, scale: 0.95 }}
@@ -217,6 +249,26 @@ export default function Home() {
         </motion.div>
       </div>
       
+      {/* Top Banner Ad */}
+      {ads.filter(ad => (!ad.category || ad.category === selectedCategory) && (ad.size === '970x250' || ad.size === '728x90')).slice(0, 1).map(ad => (
+        <div key={ad.id} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12 flex justify-center">
+          <a 
+            href={ad.link_url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            onClick={() => handleAdClick(ad.id)}
+            className="block overflow-hidden rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow"
+          >
+            <img 
+              src={ad.image_url} 
+              alt={ad.title} 
+              className={`w-full object-cover ${ad.size === '970x250' ? 'max-w-[970px] max-h-[250px]' : 'max-w-[728px] max-h-[90px]'}`} 
+              referrerPolicy="no-referrer"
+            />
+          </a>
+        </div>
+      ))}
+
       {/* Listings Section */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
         <div className="flex items-center justify-between mb-8">
@@ -264,75 +316,116 @@ export default function Home() {
             transition={{ staggerChildren: 0.1 }}
             className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
           >
-            {filteredListings.map((listing) => (
-              <motion.div
-                key={listing.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ y: -5 }}
-                transition={{ duration: 0.3 }}
-              >
-                <Link 
-                  to={`/listing/${listing.id}`}
-                  className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${
-                    listing.is_highlighted ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-primary-300'
-                  }`}
+            {filteredListings.reduce((acc: React.ReactNode[], listing, index) => {
+              acc.push(
+                <motion.div
+                  key={`listing-${listing.id}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  whileHover={{ y: -5 }}
+                  transition={{ duration: 0.3 }}
                 >
-                  <div className="aspect-[4/3] bg-slate-100 relative overflow-hidden">
-                    {listing.image_url ? (
+                  <Link 
+                    to={`/listing/${listing.id}`}
+                    className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${
+                      listing.is_highlighted ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-primary-300'
+                    }`}
+                  >
+                    <div className="aspect-[4/3] bg-slate-100 relative overflow-hidden">
+                      {listing.image_url ? (
+                        <img 
+                          src={listing.image_url} 
+                          alt={listing.title} 
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400">
+                          <ImageIcon className="w-12 h-12 opacity-20" />
+                        </div>
+                      )}
+                      <div className="absolute top-3 left-3 flex flex-col gap-2">
+                        <div className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 shadow-sm">
+                          {listing.category}
+                        </div>
+                        {listing.is_highlighted ? (
+                          <div className="bg-amber-400 text-amber-900 px-2.5 py-1 rounded-md text-xs font-bold shadow-sm flex items-center">
+                            <Star className="w-3 h-3 mr-1 fill-amber-900" />
+                            TOP
+                          </div>
+                        ) : null}
+                        {isEarlyAccess(listing.created_at) && (
+                          <div className="bg-indigo-500 text-white px-2.5 py-1 rounded-md text-xs font-bold shadow-sm flex items-center">
+                            <Clock className="w-3 h-3 mr-1" />
+                            Agrā piekļuve
+                          </div>
+                        )}
+                      </div>
+                      <button 
+                        onClick={(e) => toggleFavorite(e, listing.id)}
+                        className="absolute top-3 right-3 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:bg-white transition-colors"
+                      >
+                        <Heart 
+                          className={`w-4 h-4 ${favorites.has(listing.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} 
+                        />
+                      </button>
+                    </div>
+                    
+                    <div className="p-5 flex flex-col flex-grow">
+                      <h3 className="text-lg font-bold text-slate-900 mb-1 line-clamp-2 group-hover:text-primary-600 transition-colors">
+                        {listing.title}
+                      </h3>
+                      <p className="text-xl font-extrabold text-primary-600 mb-4">
+                        € {listing.price.toFixed(2)}
+                      </p>
+                      
+                      <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                        <div className="flex items-center">
+                          <Clock className="w-3.5 h-3.5 mr-1" />
+                          {formatDate(listing.created_at)}
+                        </div>
+                        <div className="font-medium truncate max-w-[100px]">
+                          {listing.author_name}
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                </motion.div>
+              );
+
+              // Insert an ad every 4 listings (if available)
+              const adIndex = Math.floor(index / 4);
+              const inlineAds = ads.filter(a => (!a.category || a.category === selectedCategory) && (a.size === '300x250' || a.size === '300x600'));
+              if ((index + 1) % 4 === 0 && inlineAds[adIndex]) {
+                const ad = inlineAds[adIndex];
+                acc.push(
+                  <motion.div
+                    key={`ad-${ad.id}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center p-4"
+                  >
+                    <a 
+                      href={ad.link_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      onClick={() => handleAdClick(ad.id)}
+                      className="block w-full h-full flex flex-col items-center justify-center text-center group"
+                    >
+                      <span className="text-[10px] uppercase tracking-wider text-slate-400 mb-2 block">Reklāma</span>
                       <img 
-                        src={listing.image_url} 
-                        alt={listing.title} 
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        src={ad.image_url} 
+                        alt={ad.title} 
+                        className="max-w-full max-h-[250px] object-contain rounded-lg group-hover:opacity-90 transition-opacity" 
                         referrerPolicy="no-referrer"
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400">
-                        <ImageIcon className="w-12 h-12 opacity-20" />
-                      </div>
-                    )}
-                    <div className="absolute top-3 left-3 flex flex-col gap-2">
-                      <div className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 shadow-sm">
-                        {listing.category}
-                      </div>
-                      {listing.is_highlighted ? (
-                        <div className="bg-amber-400 text-amber-900 px-2.5 py-1 rounded-md text-xs font-bold shadow-sm flex items-center">
-                          <Star className="w-3 h-3 mr-1 fill-amber-900" />
-                          TOP
-                        </div>
-                      ) : null}
-                    </div>
-                    <button 
-                      onClick={(e) => toggleFavorite(e, listing.id)}
-                      className="absolute top-3 right-3 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:bg-white transition-colors"
-                    >
-                      <Heart 
-                        className={`w-4 h-4 ${favorites.has(listing.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} 
-                      />
-                    </button>
-                  </div>
-                  
-                  <div className="p-5 flex flex-col flex-grow">
-                    <h3 className="text-lg font-bold text-slate-900 mb-1 line-clamp-2 group-hover:text-primary-600 transition-colors">
-                      {listing.title}
-                    </h3>
-                    <p className="text-xl font-extrabold text-primary-600 mb-4">
-                      € {listing.price.toFixed(2)}
-                    </p>
-                    
-                    <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                      <div className="flex items-center">
-                        <Clock className="w-3.5 h-3.5 mr-1" />
-                        {formatDate(listing.created_at)}
-                      </div>
-                      <div className="font-medium truncate max-w-[100px]">
-                        {listing.author_name}
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              </motion.div>
-            ))}
+                    </a>
+                  </motion.div>
+                );
+              }
+
+              return acc;
+            }, [])}
           </motion.div>
         )}
       </div>

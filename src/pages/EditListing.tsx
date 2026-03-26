@@ -3,15 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { Pencil, Image as ImageIcon, AlertCircle, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
-
-const categories = [
-  'Transports',
-  'Nekustamais īpašums',
-  'Elektronika',
-  'Darbs un pakalpojumi',
-  'Mājai un dārzam',
-  'Cits'
-];
+import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 
 export default function EditListing() {
   const { user, loading } = useAuth();
@@ -21,12 +13,46 @@ export default function EditListing() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [category, setCategory] = useState(categories[0]);
+  const [category, setCategory] = useState(CATEGORY_NAMES[0]);
+  const [subcategory, setSubcategory] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [attributes, setAttributes] = useState<Record<string, string>>({});
   
   const [isFetching, setIsFetching] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!res.ok) {
+        throw new Error('Neizdevās augšupielādēt attēlu');
+      }
+
+      const data = await res.json();
+      setImageUrl(data.url);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   // Aizsargāts ceļš - ja nav ielogojies, sūta uz login lapu
   useEffect(() => {
@@ -50,6 +76,23 @@ export default function EditListing() {
         setPrice(data.price.toString());
         setCategory(data.category);
         setImageUrl(data.image_url || '');
+        if (data.attributes) {
+          try {
+            const parsed = JSON.parse(data.attributes);
+            setAttributes(parsed);
+            if (parsed.subcategory) {
+              setSubcategory(parsed.subcategory);
+            } else {
+              const subcats = Object.keys(CATEGORY_SCHEMAS[data.category]?.subcategories || {});
+              if (subcats.length > 0) setSubcategory(subcats[0]);
+            }
+          } catch (e) {
+            console.error("Failed to parse attributes", e);
+          }
+        } else {
+          const subcats = Object.keys(CATEGORY_SCHEMAS[data.category]?.subcategories || {});
+          if (subcats.length > 0) setSubcategory(subcats[0]);
+        }
         setIsFetching(false);
       })
       .catch(err => {
@@ -57,6 +100,38 @@ export default function EditListing() {
         setIsFetching(false);
       });
   }, [id]);
+
+  const handleCategoryChange = (newCategory: string) => {
+    setCategory(newCategory);
+    const subcats = Object.keys(CATEGORY_SCHEMAS[newCategory]?.subcategories || {});
+    const newSubcategory = subcats.length > 0 ? subcats[0] : '';
+    setSubcategory(newSubcategory);
+    
+    const defaultAttrs: Record<string, string> = { subcategory: newSubcategory };
+    const fields = CATEGORY_SCHEMAS[newCategory]?.subcategories[newSubcategory]?.fields || [];
+    fields.forEach(f => {
+      if (f.type === 'select' && f.options && f.options.length > 0) {
+        defaultAttrs[f.name] = f.options[0];
+      } else {
+        defaultAttrs[f.name] = '';
+      }
+    });
+    setAttributes(defaultAttrs);
+  };
+
+  const handleSubcategoryChange = (newSubcategory: string) => {
+    setSubcategory(newSubcategory);
+    const defaultAttrs: Record<string, string> = { subcategory: newSubcategory };
+    const fields = CATEGORY_SCHEMAS[category]?.subcategories[newSubcategory]?.fields || [];
+    fields.forEach(f => {
+      if (f.type === 'select' && f.options && f.options.length > 0) {
+        defaultAttrs[f.name] = f.options[0];
+      } else {
+        defaultAttrs[f.name] = '';
+      }
+    });
+    setAttributes(defaultAttrs);
+  };
 
   if (loading || isFetching) {
     return (
@@ -84,7 +159,8 @@ export default function EditListing() {
           description,
           price: parseFloat(price),
           category,
-          image_url: imageUrl
+          image_url: imageUrl,
+          attributes: JSON.stringify({ ...attributes, subcategory })
         })
       });
 
@@ -101,6 +177,9 @@ export default function EditListing() {
       setIsSubmitting(false);
     }
   };
+
+  const currentFields = CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields || [];
+  const subcategories = Object.keys(CATEGORY_SCHEMAS[category]?.subcategories || {});
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -164,10 +243,10 @@ export default function EditListing() {
                       id="category"
                       required
                       value={category}
-                      onChange={(e) => setCategory(e.target.value)}
+                      onChange={(e) => handleCategoryChange(e.target.value)}
                       className="block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white"
                     >
-                      {categories.map(cat => (
+                      {CATEGORY_NAMES.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
@@ -190,6 +269,59 @@ export default function EditListing() {
                   </div>
                 </div>
 
+                {/* Apakškategorija */}
+                {subcategories.length > 0 && (
+                  <div>
+                    <label htmlFor="subcategory" className="block text-sm font-medium text-slate-700 mb-1">
+                      Apakškategorija *
+                    </label>
+                    <select
+                      id="subcategory"
+                      required
+                      value={subcategory}
+                      onChange={(e) => handleSubcategoryChange(e.target.value)}
+                      className="block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white"
+                    >
+                      {subcategories.map(subcat => (
+                        <option key={subcat} value={subcat}>{subcat}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Dynamic Attributes */}
+                {currentFields.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-200">
+                    {currentFields.map(field => (
+                      <div key={field.name}>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {field.label}
+                        </label>
+                        {field.type === 'select' ? (
+                          <select
+                            value={attributes[field.name] || ''}
+                            onChange={(e) => setAttributes({...attributes, [field.name]: e.target.value})}
+                            className="block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white"
+                          >
+                            <option value="">Izvēlieties...</option>
+                            {field.options?.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={field.type === 'number' ? 'number' : 'text'}
+                            placeholder={field.placeholder}
+                            value={attributes[field.name] || ''}
+                            onChange={(e) => setAttributes({...attributes, [field.name]: e.target.value})}
+                            className="appearance-none block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Apraksts */}
                 <div>
                   <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1">
@@ -206,24 +338,67 @@ export default function EditListing() {
 
                 {/* Attēla URL */}
                 <div>
-                  <label htmlFor="imageUrl" className="block text-sm font-medium text-slate-700 mb-1">
-                    Attēla saite (URL)
-                  </label>
-                  <div className="relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <ImageIcon className="h-5 w-5 text-slate-400" />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Attēls</label>
+                  <div className="space-y-4">
+                    {/* File Upload */}
+                    <div className="flex items-center justify-center w-full">
+                      <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          {isUploading ? (
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mb-2"></div>
+                          ) : (
+                            <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
+                          )}
+                          <p className="mb-2 text-sm text-slate-500">
+                            <span className="font-semibold">Noklikšķiniet, lai augšupielādētu</span>
+                          </p>
+                          <p className="text-xs text-slate-500">PNG, JPG, GIF (Max 5MB)</p>
+                        </div>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          disabled={isUploading}
+                        />
+                      </label>
                     </div>
-                    <input
-                      id="imageUrl"
-                      type="url"
-                      value={imageUrl}
-                      onChange={(e) => setImageUrl(e.target.value)}
-                      className="appearance-none block w-full pl-10 px-4 py-3 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    />
+
+                    <div className="flex items-center">
+                      <div className="flex-grow border-t border-slate-200"></div>
+                      <span className="flex-shrink-0 mx-4 text-slate-400 text-sm">vai ievadiet URL</span>
+                      <div className="flex-grow border-t border-slate-200"></div>
+                    </div>
+
+                    {/* URL Input */}
+                    <div className="relative rounded-md shadow-sm">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <ImageIcon className="h-5 w-5 text-slate-400" />
+                      </div>
+                      <input
+                        id="imageUrl"
+                        type="url"
+                        value={imageUrl}
+                        onChange={(e) => setImageUrl(e.target.value)}
+                        className="appearance-none block w-full pl-10 px-4 py-3 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        placeholder="https://piemers.lv/bilde.jpg"
+                      />
+                    </div>
+
+                    {/* Preview */}
+                    {imageUrl && (
+                      <div className="mt-4 relative rounded-lg overflow-hidden h-48 bg-slate-100 border border-slate-200">
+                        <img 
+                          src={imageUrl} 
+                          alt="Priekšskatījums" 
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Kļūda+ielādējot+attēlu';
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Pievieno publisku saiti uz attēlu (piemēram, no Imgur).
-                  </p>
                 </div>
               </div>
 

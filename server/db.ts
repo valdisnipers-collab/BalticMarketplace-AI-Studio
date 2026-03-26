@@ -150,7 +150,63 @@ db.exec(`
     INSERT INTO listings_fts(rowid, id, title, description, category, attributes)
     VALUES (new.id, new.id, new.title, new.description, new.category, new.attributes);
   END;
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS ads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    image_url TEXT NOT NULL,
+    link_url TEXT NOT NULL,
+    size TEXT NOT NULL,
+    start_date DATETIME NOT NULL,
+    end_date DATETIME NOT NULL,
+    is_active BOOLEAN DEFAULT 1,
+    views INTEGER DEFAULT 0,
+    clicks INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    category TEXT,
+    user_id INTEGER REFERENCES users(id),
+    status TEXT DEFAULT 'approved',
+    price_points INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS ad_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ad_id INTEGER NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    views INTEGER DEFAULT 0,
+    clicks INTEGER DEFAULT 0,
+    UNIQUE(ad_id, date)
+  );
 `);
+
+// Seed default settings if they don't exist
+db.exec(`
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('early_access_price', '150');
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('early_access_duration_hours', '24');
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('points_price_eur_per_100', '1.00');
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('ad_price_points', '500');
+`);
+
+try {
+  db.exec('ALTER TABLE ads ADD COLUMN category TEXT');
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE ads ADD COLUMN user_id INTEGER REFERENCES users(id)');
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE ads ADD COLUMN status TEXT DEFAULT "approved"');
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE ads ADD COLUMN price_points INTEGER DEFAULT 0');
+} catch (e) {}
 
 try {
   db.exec('ALTER TABLE listings ADD COLUMN attributes TEXT');
@@ -214,6 +270,24 @@ try {
 
 try {
   db.exec('ALTER TABLE users ADD COLUMN early_access_until DATETIME');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE users ADD COLUMN company_name TEXT');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE users ADD COLUMN company_reg_number TEXT');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE users ADD COLUMN company_vat TEXT');
 } catch (e) {
   // Column might already exist
 }

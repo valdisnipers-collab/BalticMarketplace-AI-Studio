@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { ArrowLeft, MapPin, Clock, User, Mail, Image as ImageIcon, Star, BadgeCheck, MessageCircle, Gavel, Car, Settings, Calendar, Info, ShieldCheck, Flag } from 'lucide-react';
 import { motion } from 'motion/react';
+import { CATEGORY_SCHEMAS } from '../lib/categories';
 
 interface ListingDetails {
   id: number;
@@ -221,6 +222,13 @@ export default function ListingDetails() {
     );
   };
 
+  const isEarlyAccess = (createdAt: string) => {
+    const created = new Date(createdAt);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+    return diffMinutes <= 15;
+  };
+
   if (loading) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-slate-50">
@@ -281,8 +289,20 @@ export default function ListingDetails() {
         </div>
 
         {/* Category Badge */}
-        <div className="absolute bottom-6 left-4 sm:left-6 lg:left-8 z-10">
-          <div className="bg-white/20 backdrop-blur-md border border-white/30 px-4 py-1.5 rounded-full text-sm font-semibold text-white shadow-lg inline-block mb-3">
+        <div className="absolute bottom-6 left-4 sm:left-6 lg:left-8 z-10 flex gap-2">
+          {listing.is_highlighted && (
+            <div className="bg-amber-400/90 backdrop-blur-md border border-amber-300/50 px-4 py-1.5 rounded-full text-sm font-bold text-amber-900 shadow-lg flex items-center">
+              <Star className="w-4 h-4 mr-1.5 fill-amber-900" />
+              TOP
+            </div>
+          )}
+          {isEarlyAccess(listing.created_at) && (
+            <div className="bg-indigo-500/90 backdrop-blur-md border border-indigo-400/50 px-4 py-1.5 rounded-full text-sm font-bold text-white shadow-lg flex items-center">
+              <Clock className="w-4 h-4 mr-1.5" />
+              Agrā piekļuve
+            </div>
+          )}
+          <div className="bg-white/20 backdrop-blur-md border border-white/30 px-4 py-1.5 rounded-full text-sm font-semibold text-white shadow-lg">
             {listing.category}
           </div>
         </div>
@@ -357,22 +377,41 @@ export default function ListingDetails() {
                       let icon = <Info className="w-5 h-5" />;
                       let label = key;
                       
-                      // Map some common keys to better labels and icons
+                      // Try to get label from schema
+                      let schemaField;
+                      if (parsedAttributes.subcategory) {
+                        schemaField = CATEGORY_SCHEMAS[listing.category]?.subcategories?.[parsedAttributes.subcategory]?.fields?.find(f => f.name === key);
+                      }
+                      
+                      if (schemaField) {
+                        label = schemaField.label;
+                      } else {
+                        // Fallback mapping
+                        switch (key) {
+                          case 'subcategory': label = 'Apakškategorija'; break;
+                          case 'brand': label = 'Marka/Ražotājs'; icon = <Car className="w-5 h-5" />; break;
+                          case 'model': label = 'Modelis'; icon = <Settings className="w-5 h-5" />; break;
+                          case 'year': label = 'Gads'; icon = <Calendar className="w-5 h-5" />; break;
+                          case 'condition': label = 'Stāvoklis'; break;
+                          case 'mileage': label = 'Nobraukums (km)'; break;
+                          case 'engine': label = 'Dzinējs'; break;
+                          case 'transmission': label = 'Ātrumkārba'; break;
+                          case 'type': label = 'Tips'; break;
+                          case 'action': label = 'Darījuma veids'; break;
+                          case 'area': label = 'Platība (m²)'; break;
+                          case 'rooms': label = 'Istabu skaits'; break;
+                          case 'floor': label = 'Stāvs'; break;
+                          case 'location': label = 'Atrašanās vieta'; icon = <MapPin className="w-5 h-5" />; break;
+                          case 'experience': label = 'Pieredze'; break;
+                        }
+                      }
+
+                      // Assign icons based on key even if label comes from schema
                       switch (key) {
-                        case 'brand': label = 'Marka/Ražotājs'; icon = <Car className="w-5 h-5" />; break;
-                        case 'model': label = 'Modelis'; icon = <Settings className="w-5 h-5" />; break;
-                        case 'year': label = 'Gads'; icon = <Calendar className="w-5 h-5" />; break;
-                        case 'condition': label = 'Stāvoklis'; break;
-                        case 'mileage': label = 'Nobraukums (km)'; break;
-                        case 'engine': label = 'Dzinējs'; break;
-                        case 'transmission': label = 'Ātrumkārba'; break;
-                        case 'type': label = 'Tips'; break;
-                        case 'action': label = 'Darījuma veids'; break;
-                        case 'area': label = 'Platība (m²)'; break;
-                        case 'rooms': label = 'Istabu skaits'; break;
-                        case 'floor': label = 'Stāvs'; break;
-                        case 'location': label = 'Atrašanās vieta'; icon = <MapPin className="w-5 h-5" />; break;
-                        case 'experience': label = 'Pieredze'; break;
+                        case 'brand': icon = <Car className="w-5 h-5" />; break;
+                        case 'model': icon = <Settings className="w-5 h-5" />; break;
+                        case 'year': icon = <Calendar className="w-5 h-5" />; break;
+                        case 'location': icon = <MapPin className="w-5 h-5" />; break;
                       }
 
                       return (
