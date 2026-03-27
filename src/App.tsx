@@ -26,8 +26,6 @@ const pageVariants = {
 };
 
 const pageTransition = {
-  type: 'tween',
-  ease: 'anticipate',
   duration: 0.3
 };
 
@@ -35,7 +33,6 @@ function AnimatedRoutes() {
   const location = useLocation();
   return (
     <AnimatePresence mode="wait">
-      {/* @ts-expect-error - key is needed for AnimatePresence to work with Routes */}
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Home /></motion.div>} />
         <Route path="/search" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Search /></motion.div>} />

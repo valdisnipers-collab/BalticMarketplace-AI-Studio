@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { UserPlus, AlertCircle, Phone, KeyRound, Building2, User, Mail, Lock, ArrowLeft, Fingerprint } from 'lucide-react';
 import { motion } from 'motion/react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 type RegisterMethod = 'select' | 'email' | 'phone' | 'smart-id';
 
@@ -228,26 +230,23 @@ export default function Register() {
       <>
         <div>
           <label htmlFor="companyName" className="block text-sm font-medium text-slate-700 mb-1">Uzņēmuma nosaukums *</label>
-          <input
+          <Input
             id="companyName" type="text" required
             value={companyName} onChange={(e) => setCompanyName(e.target.value)}
-            className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
           />
         </div>
         <div>
           <label htmlFor="companyRegNumber" className="block text-sm font-medium text-slate-700 mb-1">Reģistrācijas numurs *</label>
-          <input
+          <Input
             id="companyRegNumber" type="text" required
             value={companyRegNumber} onChange={(e) => setCompanyRegNumber(e.target.value)}
-            className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
           />
         </div>
         <div>
           <label htmlFor="companyVat" className="block text-sm font-medium text-slate-700 mb-1">PVN numurs (neobligāti)</label>
-          <input
+          <Input
             id="companyVat" type="text"
             value={companyVat} onChange={(e) => setCompanyVat(e.target.value)}
-            className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
           />
         </div>
       </>
@@ -263,10 +262,10 @@ export default function Register() {
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
           <User className="h-5 w-5 text-slate-400" />
         </div>
-        <input
+        <Input
           id="name" type="text" required
           value={name} onChange={(e) => setName(e.target.value)}
-          className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+          className="pl-10"
         />
       </div>
     </div>
@@ -281,17 +280,19 @@ export default function Register() {
       >
         <div>
           {registerMethod !== 'select' && (
-            <button 
+            <Button 
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setRegisterMethod('select');
                 setError('');
                 setPhoneStep('details');
               }}
-              className="mb-4 flex items-center text-sm text-slate-500 hover:text-slate-700 transition-colors"
+              className="mb-4 text-slate-500 hover:text-slate-700"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
               Atpakaļ
-            </button>
+            </Button>
           )}
           <div className="mx-auto h-12 w-12 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center">
             <UserPlus className="h-6 w-6" />
@@ -316,9 +317,10 @@ export default function Register() {
 
         {registerMethod === 'select' && (
           <div className="mt-8 space-y-4">
-            <button
+            <Button
+              variant="outline"
               onClick={() => setRegisterMethod('email')}
-              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+              className="w-full h-auto flex items-center justify-start p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
             >
               <div className="flex items-center">
                 <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-white flex items-center justify-center mr-4">
@@ -326,14 +328,15 @@ export default function Register() {
                 </div>
                 <div className="text-left">
                   <div className="font-medium text-slate-900">Ar e-pastu</div>
-                  <div className="text-sm text-slate-500">Reģistrēties ar e-pastu un paroli</div>
+                  <div className="text-sm text-slate-500 font-normal">Reģistrēties ar e-pastu un paroli</div>
                 </div>
               </div>
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="outline"
               onClick={() => setRegisterMethod('phone')}
-              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+              className="w-full h-auto flex items-center justify-start p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
             >
               <div className="flex items-center">
                 <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-white flex items-center justify-center mr-4">
@@ -341,14 +344,15 @@ export default function Register() {
                 </div>
                 <div className="text-left">
                   <div className="font-medium text-slate-900">Ar telefona numuru</div>
-                  <div className="text-sm text-slate-500">Reģistrēties ar SMS kodu</div>
+                  <div className="text-sm text-slate-500 font-normal">Reģistrēties ar SMS kodu</div>
                 </div>
               </div>
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="outline"
               onClick={() => setRegisterMethod('smart-id')}
-              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+              className="w-full h-auto flex items-center justify-start p-4 border-2 border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
             >
               <div className="flex items-center">
                 <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-white flex items-center justify-center mr-4">
@@ -356,36 +360,38 @@ export default function Register() {
                 </div>
                 <div className="text-left">
                   <div className="font-medium text-slate-900">Ar Smart-ID</div>
-                  <div className="text-sm text-slate-500">Droša reģistrācija ar Smart-ID</div>
+                  <div className="text-sm text-slate-500 font-normal">Droša reģistrācija ar Smart-ID</div>
                 </div>
               </div>
-            </button>
+            </Button>
           </div>
         )}
 
         {registerMethod !== 'select' && (
           <div className="mt-8">
             <div className="flex rounded-lg shadow-sm p-1 bg-slate-100 mb-6">
-              <button
+              <Button
                 type="button"
+                variant={userType === 'c2c' ? 'default' : 'ghost'}
                 onClick={() => setUserType('c2c')}
                 className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center ${
-                  userType === 'c2c' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  userType === 'c2c' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-transparent'
                 }`}
               >
                 <User className="h-4 w-4 mr-2" />
                 Privātpersona
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant={userType === 'b2b' ? 'default' : 'ghost'}
                 onClick={() => setUserType('b2b')}
                 className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center ${
-                  userType === 'b2b' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  userType === 'b2b' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-transparent'
                 }`}
               >
                 <Building2 className="h-4 w-4 mr-2" />
                 Uzņēmums
-              </button>
+              </Button>
             </div>
 
             {registerMethod === 'email' && (
@@ -400,10 +406,10 @@ export default function Register() {
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <Mail className="h-5 w-5 text-slate-400" />
                       </div>
-                      <input
+                      <Input
                         id="email" type="email" required
                         value={email} onChange={(e) => setEmail(e.target.value)}
-                        className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        className="pl-10"
                       />
                     </div>
                   </div>
@@ -414,22 +420,22 @@ export default function Register() {
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <Lock className="h-5 w-5 text-slate-400" />
                       </div>
-                      <input
+                      <Input
                         id="password" type="password" required minLength={6}
                         value={password} onChange={(e) => setPassword(e.target.value)}
-                        className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        className="pl-10"
                       />
                     </div>
                   </div>
                 </div>
 
-                <button
+                <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                  className="w-full"
                 >
                   {loading ? 'Reģistrē...' : 'Reģistrēties'}
-                </button>
+                </Button>
               </form>
             )}
 
@@ -449,23 +455,23 @@ export default function Register() {
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Phone className="h-5 w-5 text-slate-400" />
                           </div>
-                          <input
+                          <Input
                             id="phone" type="tel" required
                             value={phone} onChange={(e) => setPhone(e.target.value)}
-                            className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                            className="pl-10"
                             placeholder="+371 20000000"
                           />
                         </div>
                       </div>
                     </div>
 
-                    <button
+                    <Button
                       type="submit"
                       disabled={loading || !phone || !name}
-                      className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                      className="w-full"
                     >
                       {loading ? 'Sūta SMS...' : 'Saņemt SMS kodu'}
-                    </button>
+                    </Button>
                   </form>
                 ) : (
                   <form className="space-y-6" onSubmit={handleVerifyOTP}>
@@ -484,30 +490,31 @@ export default function Register() {
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                           <KeyRound className="h-5 w-5 text-slate-400" />
                         </div>
-                        <input
+                        <Input
                           id="code" type="text" required maxLength={6}
                           value={code} onChange={(e) => setCode(e.target.value)}
-                          className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm text-center tracking-widest text-lg font-mono"
+                          className="pl-10 text-center tracking-widest text-lg font-mono"
                           placeholder="000000"
                         />
                       </div>
                     </div>
 
                     <div className="flex flex-col space-y-3">
-                      <button
+                      <Button
                         type="submit"
                         disabled={loading || code.length < 4}
-                        className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                        className="w-full"
                       >
                         {loading ? 'Pārbauda...' : 'Apstiprināt un reģistrēties'}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
+                        variant="outline"
                         onClick={() => setPhoneStep('details')}
-                        className="w-full flex justify-center py-2.5 px-4 border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+                        className="w-full"
                       >
                         Atgriezties
-                      </button>
+                      </Button>
                     </div>
                   </form>
                 )}
@@ -530,23 +537,23 @@ export default function Register() {
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Fingerprint className="h-5 w-5 text-slate-400" />
                           </div>
-                          <input
+                          <Input
                             id="personalCode" type="text" required
                             value={personalCode} onChange={(e) => setPersonalCode(e.target.value)}
-                            className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                            className="pl-10"
                             placeholder="123456-12345"
                           />
                         </div>
                       </div>
                     </div>
 
-                    <button
+                    <Button
                       type="submit"
                       disabled={loading || !personalCode || !name}
-                      className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                      className="w-full"
                     >
                       {loading ? 'Sazinās ar Smart-ID...' : 'Reģistrēties ar Smart-ID'}
-                    </button>
+                    </Button>
                   </form>
                 ) : (
                   <div className="text-center space-y-6">
@@ -563,12 +570,13 @@ export default function Register() {
                     <p className="text-xs text-slate-400">
                       Pārliecinieties, ka kods sakrīt ar to, ko redzat savā ierīcē.
                     </p>
-                    <button
+                    <Button
+                      variant="link"
                       onClick={() => setSmartIdStep('details')}
-                      className="mt-4 text-sm font-medium text-primary-600 hover:text-primary-500"
+                      className="mt-4"
                     >
                       Atcelt
-                    </button>
+                    </Button>
                   </div>
                 )}
               </>

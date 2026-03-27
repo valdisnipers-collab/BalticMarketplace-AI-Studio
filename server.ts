@@ -412,6 +412,17 @@ async function startServer() {
     }
   });
 
+  app.get("/api/users/:id", (req, res) => {
+    try {
+      const user = db.prepare('SELECT id, name, created_at FROM users WHERE id = ?').get(req.params.id) as any;
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // Reviews Routes
   app.get("/api/users/:id/reviews", (req, res) => {
     try {
@@ -1369,10 +1380,10 @@ async function startServer() {
       
       if (currentAd && currentAd.status === 'pending' && status === 'rejected' && currentAd.user_id && currentAd.price_points) {
         // Refund points
-        db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(currentAd.price_points, currentAd.user_id);
+        db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(currentAd.price_points, currentAd.user_id);
         // Record transaction
-        db.prepare('INSERT INTO points_history (user_id, amount, type, description) VALUES (?, ?, ?, ?)')
-          .run(currentAd.user_id, currentAd.price_points, 'refund', `Reklāmas noraidīšana: ${title}`);
+        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)')
+          .run(currentAd.user_id, currentAd.price_points, `Reklāmas noraidīšana: ${title}`);
       }
 
       const stmt = db.prepare('UPDATE ads SET title = ?, image_url = ?, link_url = ?, size = ?, start_date = ?, end_date = ?, is_active = ?, category = ?, status = ? WHERE id = ?');
@@ -1396,10 +1407,10 @@ async function startServer() {
       
       if (currentAd && currentAd.status === 'pending' && currentAd.user_id && currentAd.price_points) {
         // Refund points
-        db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(currentAd.price_points, currentAd.user_id);
+        db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(currentAd.price_points, currentAd.user_id);
         // Record transaction
-        db.prepare('INSERT INTO points_history (user_id, amount, type, description) VALUES (?, ?, ?, ?)')
-          .run(currentAd.user_id, currentAd.price_points, 'refund', `Reklāmas dzēšana: ${currentAd.title}`);
+        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)')
+          .run(currentAd.user_id, currentAd.price_points, `Reklāmas dzēšana: ${currentAd.title}`);
       }
 
       db.prepare('DELETE FROM ads WHERE id = ?').run(id);
@@ -1481,18 +1492,18 @@ async function startServer() {
 
       db.exec('BEGIN TRANSACTION');
       
-      const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(decoded.userId) as {balance: number};
-      if (!user || user.balance < adPrice) {
+      const user = db.prepare('SELECT points FROM users WHERE id = ?').get(decoded.userId) as {points: number};
+      if (!user || user.points < adPrice) {
         db.exec('ROLLBACK');
         return res.status(400).json({ error: 'Nepietiekams punktu atlikums' });
       }
 
       // Deduct points
-      db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(adPrice, decoded.userId);
+      db.prepare('UPDATE users SET points = points - ? WHERE id = ?').run(adPrice, decoded.userId);
       
       // Record transaction
-      db.prepare('INSERT INTO points_history (user_id, amount, type, description) VALUES (?, ?, ?, ?)')
-        .run(decoded.userId, -adPrice, 'spend', `Reklāmas izveide: ${title}`);
+      db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)')
+        .run(decoded.userId, -adPrice, `Reklāmas izveide: ${title}`);
 
       // Create ad
       const stmt = db.prepare('INSERT INTO ads (title, image_url, link_url, size, start_date, end_date, is_active, category, user_id, status, price_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -1582,6 +1593,18 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
+    
+    app.get('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -1591,8 +1614,13 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server is starting...`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-startServer();
+console.log("Initializing server...");
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+});

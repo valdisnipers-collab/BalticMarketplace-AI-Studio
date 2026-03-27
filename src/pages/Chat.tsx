@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, ArrowLeft, Handshake, Search, MoreVertical, Loader2 } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../components/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface Conversation {
   id: number;
@@ -27,6 +29,7 @@ interface Message {
 export default function Chat() {
   const { token } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const queryParams = new URLSearchParams(location.search);
   const initialUserId = queryParams.get('userId');
   const initialListingId = queryParams.get('listingId');
@@ -43,6 +46,49 @@ export default function Chat() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [sendingOffer, setSendingOffer] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      if (!token) return;
+      
+      if (initialUserId && !activeConversation) {
+        try {
+          // Fetch user info
+          const userRes = await fetch(`/api/users/${initialUserId}`);
+          let userName = 'Lietotājs';
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            userName = userData.name;
+          }
+
+          // Fetch listing info if available
+          let listingTitle = 'Sludinājums';
+          if (initialListingId) {
+            const listingRes = await fetch(`/api/listings/${initialListingId}`);
+            if (listingRes.ok) {
+              const listingData = await listingRes.json();
+              listingTitle = listingData.title;
+            }
+          }
+
+          setActiveConversation({
+            id: 0,
+            other_user_id: parseInt(initialUserId),
+            other_user_name: userName,
+            listing_id: initialListingId ? parseInt(initialListingId) : 0,
+            item: listingTitle,
+            lastMessage: '',
+            time: '',
+            unread: 0
+          });
+        } catch (error) {
+          console.error('Error fetching initial chat data:', error);
+        }
+      }
+    };
+
+    fetchInitialData();
+  }, [initialUserId, initialListingId, token]);
 
   useEffect(() => {
     fetchConversations();
@@ -93,18 +139,6 @@ export default function Chat() {
           const existing = data.find((c: Conversation) => c.other_user_id.toString() === initialUserId);
           if (existing) {
             setActiveConversation(existing);
-          } else {
-            // Create a temporary active conversation for the UI
-            setActiveConversation({
-              id: 0,
-              other_user_id: parseInt(initialUserId),
-              other_user_name: 'Lietotājs', // Ideally we'd fetch this
-              listing_id: initialListingId ? parseInt(initialListingId) : 0,
-              item: 'Sludinājums', // Ideally we'd fetch this
-              lastMessage: '',
-              time: '',
-              unread: 0
-            });
           }
         } else if (data.length > 0 && !activeConversation && !isBackground) {
           setActiveConversation(data[0]);
@@ -221,9 +255,9 @@ export default function Chat() {
         <div className="text-center">
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Pievienojieties, lai sūtītu ziņas</h2>
           <p className="text-slate-600 mb-6">Jums ir jābūt reģistrētam lietotājam, lai sazinātos ar citiem.</p>
-          <Link to="/login" className="bg-primary-600 text-white px-6 py-2 rounded-xl font-semibold hover:bg-primary-700 transition-colors">
+          <Button size="lg" onClick={() => navigate('/login')}>
             Pieslēgties
-          </Link>
+          </Button>
         </div>
       </div>
     );
@@ -238,10 +272,10 @@ export default function Chat() {
           <h1 className="text-xl font-bold text-slate-900 mb-4">Ziņojumi</h1>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
+            <Input 
               type="text" 
               placeholder="Meklēt sarunas..." 
-              className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded-lg focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all text-sm"
+              className="pl-9"
             />
           </div>
         </div>
@@ -288,9 +322,9 @@ export default function Chat() {
             {/* Chat Header */}
             <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center">
               <div className="flex items-center">
-                <button onClick={() => setActiveConversation(null)} className="md:hidden mr-3 text-slate-500">
+                <Button variant="ghost" size="icon" onClick={() => setActiveConversation(null)} className="md:hidden mr-3 text-slate-500">
                   <ArrowLeft className="w-5 h-5" />
-                </button>
+                </Button>
                 <div>
                   <h2 className="font-bold text-slate-900">{activeConversation.other_user_name}</h2>
                   {activeConversation.item && (
@@ -298,9 +332,9 @@ export default function Chat() {
                   )}
                 </div>
               </div>
-              <button className="text-slate-400 hover:text-slate-600">
+              <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-600">
                 <MoreVertical className="w-5 h-5" />
-              </button>
+              </Button>
             </div>
 
             {/* Messages Area */}
@@ -336,13 +370,15 @@ export default function Chat() {
             <div className="p-4 bg-white border-t border-slate-200">
               {activeConversation.listing_id > 0 && (
                 <div className="mb-3 flex justify-center">
-                  <button 
+                  <Button 
                     onClick={() => setShowOfferModal(true)}
-                    className="flex items-center text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 px-4 py-1.5 rounded-full transition-colors"
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full bg-primary-50 text-primary-600 hover:bg-primary-100"
                   >
                     <Handshake className="w-4 h-4 mr-2" />
                     Piedāvāt savu cenu
-                  </button>
+                  </Button>
                 </div>
               )}
               
@@ -362,13 +398,14 @@ export default function Chat() {
                     rows={1}
                   />
                 </div>
-                <button 
+                <Button 
                   type="submit"
                   disabled={!message.trim() || sendingMessage}
-                  className="p-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                  size="icon"
+                  className="rounded-xl flex-shrink-0"
                 >
                   {sendingMessage ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                </button>
+                </Button>
               </form>
             </div>
           </>
@@ -401,32 +438,32 @@ export default function Chat() {
               <form onSubmit={handleSendOffer} className="p-6">
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-slate-700 mb-2">Jūsu piedāvājums (€)</label>
-                  <input 
+                  <Input 
                     type="number" 
                     value={offerAmount}
                     onChange={(e) => setOfferAmount(e.target.value)}
                     placeholder="Piem., 5000"
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-lg"
                     required
                     min="1"
                   />
                 </div>
                 <div className="flex gap-3">
-                  <button 
+                  <Button 
                     type="button"
+                    variant="outline"
                     onClick={() => setShowOfferModal(false)}
-                    className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors"
+                    className="flex-1"
                   >
                     Atcelt
-                  </button>
-                  <button 
+                  </Button>
+                  <Button 
                     type="submit"
                     disabled={sendingOffer}
-                    className="flex-1 py-2.5 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+                    className="flex-1"
                   >
-                    {sendingOffer ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
+                    {sendingOffer ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                     Nosūtīt piedāvājumu
-                  </button>
+                  </Button>
                 </div>
               </form>
             </motion.div>

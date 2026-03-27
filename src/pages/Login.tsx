@@ -3,6 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { LogIn, AlertCircle, Phone, KeyRound, Mail, Lock, Fingerprint, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 type AuthMethod = 'select' | 'email' | 'phone' | 'smart-id';
 
@@ -153,12 +156,14 @@ export default function Login() {
         className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-slate-200 relative"
       >
         {authMethod !== 'select' && (
-          <button 
+          <Button 
+            variant="ghost"
+            size="icon"
             onClick={() => setAuthMethod('select')}
-            className="absolute top-6 left-6 text-slate-400 hover:text-slate-600 transition-colors"
+            className="absolute top-6 left-6 text-slate-400 hover:text-slate-600"
           >
             <ArrowLeft className="h-5 w-5" />
-          </button>
+          </Button>
         )}
 
         <div>
@@ -185,9 +190,10 @@ export default function Login() {
 
         {authMethod === 'select' && (
           <div className="mt-8 space-y-4">
-            <button
+            <Button
+              variant="outline"
               onClick={() => setAuthMethod('phone')}
-              className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+              className="w-full h-auto flex items-center justify-start p-4 border border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
             >
               <div className="flex items-center">
                 <div className="h-10 w-10 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center group-hover:bg-primary-100 group-hover:text-primary-600 transition-colors">
@@ -195,14 +201,15 @@ export default function Login() {
                 </div>
                 <div className="ml-4 text-left">
                   <p className="text-sm font-medium text-slate-900">Telefona numurs</p>
-                  <p className="text-xs text-slate-500">Ātrā ienākšana ar SMS kodu</p>
+                  <p className="text-xs text-slate-500 font-normal">Ātrā ienākšana ar SMS kodu</p>
                 </div>
               </div>
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="outline"
               onClick={() => setAuthMethod('email')}
-              className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
+              className="w-full h-auto flex items-center justify-start p-4 border border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group"
             >
               <div className="flex items-center">
                 <div className="h-10 w-10 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center group-hover:bg-primary-100 group-hover:text-primary-600 transition-colors">
@@ -210,14 +217,15 @@ export default function Login() {
                 </div>
                 <div className="ml-4 text-left">
                   <p className="text-sm font-medium text-slate-900">E-pasts un parole</p>
-                  <p className="text-xs text-slate-500">Klasiskā ienākšana</p>
+                  <p className="text-xs text-slate-500 font-normal">Klasiskā ienākšana</p>
                 </div>
               </div>
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="outline"
               onClick={() => setAuthMethod('smart-id')}
-              className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group relative overflow-hidden"
+              className="w-full h-auto flex items-center justify-start p-4 border border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-all group relative overflow-hidden"
             >
               <div className="flex items-center">
                 <div className="h-10 w-10 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center group-hover:bg-primary-100 group-hover:text-primary-600 transition-colors">
@@ -226,14 +234,14 @@ export default function Login() {
                 <div className="ml-4 text-left">
                   <p className="text-sm font-medium text-slate-900 flex items-center gap-2">
                     Smart-ID
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800">
+                    <Badge variant="secondary" className="bg-primary-100 text-primary-800 hover:bg-primary-200">
                       Ieteicams uzņēmumiem
-                    </span>
+                    </Badge>
                   </p>
-                  <p className="text-xs text-slate-500">Droša ienākšana ar Smart-ID</p>
+                  <p className="text-xs text-slate-500 font-normal">Droša ienākšana ar Smart-ID</p>
                 </div>
               </div>
-            </button>
+            </Button>
           </div>
         )}
 
@@ -246,10 +254,10 @@ export default function Login() {
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Mail className="h-5 w-5 text-slate-400" />
                   </div>
-                  <input
+                  <Input
                     id="email" type="email" required
                     value={email} onChange={(e) => setEmail(e.target.value)}
-                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className="pl-10"
                     placeholder="tavs@epasts.lv"
                   />
                 </div>
@@ -260,21 +268,21 @@ export default function Login() {
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Lock className="h-5 w-5 text-slate-400" />
                   </div>
-                  <input
+                  <Input
                     id="password" type="password" required
                     value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className="pl-10"
                     placeholder="••••••••"
                   />
                 </div>
               </div>
             </div>
-            <button
+            <Button
               type="submit" disabled={loading}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+              className="w-full"
             >
               {loading ? 'Ienāk...' : 'Ienākt'}
-            </button>
+            </Button>
           </form>
         )}
 
@@ -287,20 +295,20 @@ export default function Login() {
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Phone className="h-5 w-5 text-slate-400" />
                   </div>
-                  <input
+                  <Input
                     id="phone" type="tel" required
                     value={phone} onChange={(e) => setPhone(e.target.value)}
-                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className="pl-10"
                     placeholder="+371 20000000"
                   />
                 </div>
               </div>
-              <button
+              <Button
                 type="submit" disabled={loading || !phone}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                className="w-full"
               >
                 {loading ? 'Sūta SMS...' : 'Saņemt SMS kodu'}
-              </button>
+              </Button>
             </form>
           ) : (
             <form className="mt-8 space-y-6" onSubmit={handleVerifyOTP}>
@@ -317,27 +325,29 @@ export default function Login() {
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <KeyRound className="h-5 w-5 text-slate-400" />
                   </div>
-                  <input
+                  <Input
                     id="code" type="text" required
                     value={code} onChange={(e) => setCode(e.target.value)}
-                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm text-center tracking-widest text-lg font-mono"
+                    className="pl-10 text-center tracking-widest text-lg font-mono"
                     placeholder="000000" maxLength={6}
                   />
                 </div>
               </div>
               <div className="flex flex-col space-y-3">
-                <button
+                <Button
                   type="submit" disabled={loading || code.length < 4}
-                  className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                  className="w-full"
                 >
                   {loading ? 'Pārbauda...' : 'Apstiprināt un ienākt'}
-                </button>
-                <button
-                  type="button" onClick={() => setPhoneStep('phone')}
-                  className="w-full flex justify-center py-2.5 px-4 border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+                </Button>
+                <Button
+                  type="button" 
+                  variant="outline"
+                  onClick={() => setPhoneStep('phone')}
+                  className="w-full"
                 >
                   Mainīt telefona numuru
-                </button>
+                </Button>
               </div>
             </form>
           )
@@ -360,20 +370,19 @@ export default function Login() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Personas kods</label>
-                  <input
+                  <Input
                     type="text" required
                     value={personalCode} onChange={(e) => setPersonalCode(e.target.value)}
-                    className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="123456-12345"
                   />
                 </div>
               </div>
-              <button
+              <Button
                 type="submit" disabled={loading || !personalCode}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
+                className="w-full"
               >
                 {loading ? 'Sazinās ar Smart-ID...' : 'Ienākt ar Smart-ID'}
-              </button>
+              </Button>
             </form>
           ) : (
             <div className="mt-8 space-y-6 text-center">
@@ -387,12 +396,14 @@ export default function Login() {
               <div className="flex justify-center pt-4">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
               </div>
-              <button
-                type="button" onClick={() => setSmartIdStep('init')}
-                className="mt-4 text-sm text-primary-600 hover:text-primary-500"
+              <Button
+                type="button" 
+                variant="link"
+                onClick={() => setSmartIdStep('init')}
+                className="mt-4"
               >
                 Atcelt
-              </button>
+              </Button>
             </div>
           )
         )}

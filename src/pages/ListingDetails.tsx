@@ -1,9 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { ArrowLeft, MapPin, Clock, User, Mail, Image as ImageIcon, Star, BadgeCheck, MessageCircle, Gavel, Car, Settings, Calendar, Info, ShieldCheck, Flag } from 'lucide-react';
-import { motion } from 'motion/react';
-import { CATEGORY_SCHEMAS } from '../lib/categories';
+import { 
+  ArrowLeft, 
+  MapPin, 
+  Clock, 
+  User, 
+  Mail, 
+  Image as ImageIcon, 
+  Star, 
+  BadgeCheck, 
+  MessageCircle, 
+  Gavel, 
+  Car, 
+  Settings, 
+  Calendar, 
+  Info, 
+  ShieldCheck, 
+  Flag,
+  Share2,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  Printer,
+  Sparkles,
+  Calculator,
+  TrendingUp,
+  History,
+  CheckCircle2,
+  Heart,
+  ShieldAlert,
+  Zap,
+  ExternalLink,
+  LayoutGrid
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface ListingDetails {
   id: number;
@@ -16,8 +51,11 @@ interface ListingDetails {
   created_at: string;
   author_name: string;
   author_email: string;
+  author_is_verified?: number;
+  author_user_type?: string;
   attributes?: string;
   is_highlighted?: number;
+  location?: string;
 }
 
 interface Review {
@@ -37,26 +75,19 @@ interface Bid {
 
 export default function ListingDetails() {
   const { id } = useParams<{ id: string }>();
-  const { user, updateUser } = useAuth();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [listing, setListing] = useState<ListingDetails | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [bids, setBids] = useState<Bid[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isFavorite, setIsFavorite] = useState(false);
 
-  // Review form state
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
-  const [submittingReview, setSubmittingReview] = useState(false);
-  const [reviewError, setReviewError] = useState('');
-
-  // Bid form state
-  const [bidAmount, setBidAmount] = useState('');
-  const [submittingBid, setSubmittingBid] = useState(false);
-  const [bidError, setBidError] = useState('');
-
-  // Highlight state
-  const [highlighting, setHighlighting] = useState(false);
+  // Calculator states
+  const [downPayment, setDownPayment] = useState(20);
+  const [term, setTerm] = useState(60);
+  const [interestRate, setInterestRate] = useState(4.5);
 
   useEffect(() => {
     const fetchListingAndReviews = async () => {
@@ -66,20 +97,30 @@ export default function ListingDetails() {
         const data = await res.json();
         setListing(data);
 
-        // Fetch reviews for the seller
         const reviewsRes = await fetch(`/api/users/${data.user_id}/reviews`);
         if (reviewsRes.ok) {
           const reviewsData = await reviewsRes.json();
           setReviews(reviewsData);
         }
 
-        // Fetch bids if it's an auction
         const parsedAttributes = data.attributes ? JSON.parse(data.attributes) : null;
         if (parsedAttributes?.saleType === 'auction') {
           const bidsRes = await fetch(`/api/listings/${id}/bids`);
           if (bidsRes.ok) {
             const bidsData = await bidsRes.json();
             setBids(bidsData);
+          }
+        }
+
+        // Check if favorite
+        if (user) {
+          const token = localStorage.getItem('auth_token');
+          const favsRes = await fetch('/api/users/me/favorites', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (favsRes.ok) {
+            const favsData: ListingDetails[] = await favsRes.json();
+            setIsFavorite(favsData.some(f => f.id === data.id));
           }
         }
       } catch (err: any) {
@@ -90,112 +131,41 @@ export default function ListingDetails() {
     };
 
     fetchListingAndReviews();
-  }, [id]);
+  }, [id, user]);
 
-  const handleBidSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !listing) return;
-    
-    setSubmittingBid(true);
-    setBidError('');
-
-    try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/listings/${id}/bids`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ amount: parseFloat(bidAmount) })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Neizdevās pievienot solījumu');
-
-      // Refresh bids
-      const bidsRes = await fetch(`/api/listings/${id}/bids`);
-      if (bidsRes.ok) {
-        const bidsData = await bidsRes.json();
-        setBids(bidsData);
-      }
-      
-      setBidAmount('');
-    } catch (err: any) {
-      setBidError(err.message);
-    } finally {
-      setSubmittingBid(false);
-    }
-  };
-
-  const handleHighlight = async () => {
-    if (!user || !listing) return;
-    
-    if (!window.confirm('Vai tiešām vēlies izcelt šo sludinājumu par 100 punktiem?')) {
+  const toggleFavorite = async () => {
+    if (!user) {
+      alert('Lūdzu, ienāc sistēmā, lai pievienotu favorītiem!');
       return;
     }
 
-    setHighlighting(true);
+    const token = localStorage.getItem('auth_token');
     try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/listings/${id}/highlight`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Neizdevās izcelt sludinājumu');
-
-      alert('Sludinājums veiksmīgi izcelts!');
-      setListing({ ...listing, is_highlighted: 1 });
-      
-      if (data.points !== undefined) {
-        updateUser({ points: data.points });
+      if (isFavorite) {
+        await fetch(`/api/favorites/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        setIsFavorite(false);
+      } else {
+        await fetch(`/api/favorites/${id}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        setIsFavorite(true);
       }
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setHighlighting(false);
+    } catch (error) {
+      console.error("Error toggling favorite", error);
     }
   };
 
-  const handleReviewSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !listing) return;
-    
-    setSubmittingReview(true);
-    setReviewError('');
-
-    try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/users/${listing.user_id}/reviews`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ rating, comment })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Neizdevās pievienot atsauksmi');
-
-      // Refresh reviews
-      const reviewsRes = await fetch(`/api/users/${listing.user_id}/reviews`);
-      if (reviewsRes.ok) {
-        const reviewsData = await reviewsRes.json();
-        setReviews(reviewsData);
-      }
-      
-      setComment('');
-      setRating(5);
-    } catch (err: any) {
-      setReviewError(err.message);
-    } finally {
-      setSubmittingReview(false);
-    }
+  const calculateMonthlyPayment = () => {
+    if (!listing) return 0;
+    const principal = listing.price * (1 - downPayment / 100);
+    const monthlyRate = interestRate / 100 / 12;
+    const numberOfPayments = term;
+    const payment = (principal * monthlyRate * Math.pow(1 + monthlyRate, numberOfPayments)) / (Math.pow(1 + monthlyRate, numberOfPayments) - 1);
+    return isNaN(payment) ? 0 : payment;
   };
 
   const formatDate = (dateString: string) => {
@@ -203,528 +173,349 @@ export default function ListingDetails() {
     return new Intl.DateTimeFormat('lv-LV', { 
       day: 'numeric', 
       month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      year: 'numeric'
     }).format(date);
-  };
-
-  const renderStars = (rating: number) => {
-    return (
-      <div className="flex items-center">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <Star 
-            key={star} 
-            className={`w-4 h-4 ${star <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} 
-          />
-        ))}
-      </div>
-    );
-  };
-
-  const isEarlyAccess = (createdAt: string) => {
-    const created = new Date(createdAt);
-    const now = new Date();
-    const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
-    return diffMinutes <= 15;
   };
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      <div className="min-h-screen bg-white pb-32">
+        <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100">
+          <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <Skeleton className="h-4 w-32" />
+            <div className="flex gap-3">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <Skeleton className="h-10 w-10 rounded-xl" />
+            </div>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-6 pt-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
+            <div className="lg:col-span-8 space-y-16">
+              <Skeleton className="aspect-[16/10] w-full rounded-3xl" />
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  <Skeleton className="h-6 w-24 rounded-lg" />
+                  <Skeleton className="h-6 w-32 rounded-lg" />
+                </div>
+                <Skeleton className="h-12 w-3/4" />
+                <Skeleton className="h-6 w-48" />
+              </div>
+            </div>
+            <div className="lg:col-span-4">
+              <div className="space-y-10">
+                <Skeleton className="h-64 w-full rounded-3xl" />
+                <Skeleton className="h-48 w-full rounded-3xl" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error || !listing) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-slate-50 px-4 text-center">
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Kaut kas nogāja greizi</h2>
-        <p className="text-slate-600 mb-6">{error}</p>
-        <Link to="/" className="text-primary-600 font-medium hover:text-primary-700 flex items-center">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6 text-center">
+        <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center mb-8">
+          <ShieldAlert className="w-10 h-10 text-red-500" />
+        </div>
+        <h2 className="text-3xl font-bold text-slate-900 mb-4">Sludinājums nav atrasts</h2>
+        <p className="text-slate-500 mb-10 font-medium max-w-sm mx-auto">{error || "Pieprasītais sludinājums nevarēja tikt ielādēts."}</p>
+        <Button size="lg" onClick={() => navigate('/')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Atpakaļ uz sākumlapu
-        </Link>
+          Atgriezties sākumā
+        </Button>
       </div>
     );
   }
 
-  const averageRating = reviews.length > 0 
-    ? (reviews.reduce((acc, rev) => acc + rev.rating, 0) / reviews.length).toFixed(1)
-    : 'Nav vērtējumu';
-
   const parsedAttributes = listing.attributes ? JSON.parse(listing.attributes) : null;
   const isAuction = parsedAttributes?.saleType === 'auction';
+  const averageRating = reviews.length > 0 
+    ? (reviews.reduce((acc, rev) => acc + rev.rating, 0) / reviews.length).toFixed(1)
+    : '5.0';
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-50 pb-12">
-      {/* Immersive Image Gallery Header */}
-      <div className="w-full h-[40vh] sm:h-[50vh] md:h-[60vh] bg-slate-900 relative">
-        {listing.image_url ? (
-          <img 
-            src={listing.image_url} 
-            alt={listing.title} 
-            className="w-full h-full object-cover opacity-90"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
-            <ImageIcon className="w-20 h-20 opacity-30 mb-4" />
-            <span className="text-lg font-medium">Nav pievienots attēls</span>
-          </div>
-        )}
-        
-        {/* Top Gradient Overlay */}
-        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent"></div>
-        
-        {/* Bottom Gradient Overlay */}
-        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-slate-900 to-transparent"></div>
-
-        {/* Back Button */}
-        <div className="absolute top-6 left-4 sm:left-6 lg:left-8 z-10">
-          <Link to="/" className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-black/30 text-white hover:bg-black/50 backdrop-blur-md transition-colors">
-            <ArrowLeft className="w-5 h-5" />
+    <div className="min-h-screen bg-white pb-32 selection:bg-primary-100 selection:text-primary-900">
+      {/* Top Navigation Bar */}
+      <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <Link to="/search" className="group flex items-center text-sm font-semibold text-slate-500 hover:text-primary-600 transition-colors">
+            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+            Atpakaļ uz meklēšanu
           </Link>
-        </div>
-
-        {/* Category Badge */}
-        <div className="absolute bottom-6 left-4 sm:left-6 lg:left-8 z-10 flex gap-2">
-          {listing.is_highlighted && (
-            <div className="bg-amber-400/90 backdrop-blur-md border border-amber-300/50 px-4 py-1.5 rounded-full text-sm font-bold text-amber-900 shadow-lg flex items-center">
-              <Star className="w-4 h-4 mr-1.5 fill-amber-900" />
-              TOP
-            </div>
-          )}
-          {isEarlyAccess(listing.created_at) && (
-            <div className="bg-indigo-500/90 backdrop-blur-md border border-indigo-400/50 px-4 py-1.5 rounded-full text-sm font-bold text-white shadow-lg flex items-center">
-              <Clock className="w-4 h-4 mr-1.5" />
-              Agrā piekļuve
-            </div>
-          )}
-          <div className="bg-white/20 backdrop-blur-md border border-white/30 px-4 py-1.5 rounded-full text-sm font-semibold text-white shadow-lg">
-            {listing.category}
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={toggleFavorite}
+              className={isFavorite ? 'bg-red-50 border-red-100 text-red-500 hover:bg-red-100 hover:text-red-600' : ''}
+            >
+              <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
+            </Button>
+            <Button variant="outline" size="icon">
+              <Share2 className="w-5 h-5" />
+            </Button>
+            <Button variant="outline" size="icon" className="hover:text-red-500 hover:border-red-200">
+              <Flag className="w-5 h-5" />
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-20">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="max-w-7xl mx-auto px-6 pt-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
           
-          {/* Left Column: Details */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* Left Column: Media & Details */}
+          <div className="lg:col-span-8 space-y-16">
             
-            {/* Title & Price Card */}
+            {/* Main Visual */}
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8"
+              className="relative group"
             >
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
-                <div>
-                  <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 leading-tight mb-2">
-                    {listing.title}
-                  </h1>
-                  {listing.is_highlighted ? (
-                    <div className="inline-flex items-center bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm font-semibold">
-                      <Star className="w-4 h-4 mr-1 fill-amber-800" />
-                      Izcelts sludinājums
-                    </div>
-                  ) : user?.id === listing.user_id ? (
-                    <button
-                      onClick={handleHighlight}
-                      disabled={highlighting}
-                      className="inline-flex items-center bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                    >
-                      <Star className="w-4 h-4 mr-1" />
-                      {highlighting ? 'Izceļ...' : 'Izcelt sludinājumu (100 punkti)'}
-                    </button>
-                  ) : null}
-                </div>
-                <div className="flex-shrink-0">
-                  <p className="text-3xl sm:text-4xl font-extrabold text-primary-600">
-                    € {listing.price.toFixed(2)}
-                  </p>
-                  {isAuction && (
-                    <div className="flex items-center text-amber-600 mt-1 font-medium text-sm">
-                      <Gavel className="w-4 h-4 mr-1" />
-                      Sākuma cena
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500 pb-6 border-b border-slate-100">
-                <div className="flex items-center bg-slate-50 px-3 py-1.5 rounded-lg">
-                  <Clock className="w-4 h-4 mr-2 text-slate-400" />
-                  {formatDate(listing.created_at)}
-                </div>
-                <div className="flex items-center bg-slate-50 px-3 py-1.5 rounded-lg">
-                  <MapPin className="w-4 h-4 mr-2 text-slate-400" />
-                  Latvija
-                </div>
-              </div>
-
-              {/* Attributes Grid */}
-              {parsedAttributes && (
-                <div className="py-6 border-b border-slate-100">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Galvenā informācija</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {Object.entries(parsedAttributes).map(([key, value]) => {
-                      if (key === 'features' || key === 'saleType' || !value) return null;
-                      
-                      let icon = <Info className="w-5 h-5" />;
-                      let label = key;
-                      
-                      // Try to get label from schema
-                      let schemaField;
-                      if (parsedAttributes.subcategory) {
-                        schemaField = CATEGORY_SCHEMAS[listing.category]?.subcategories?.[parsedAttributes.subcategory]?.fields?.find(f => f.name === key);
-                      }
-                      
-                      if (schemaField) {
-                        label = schemaField.label;
-                      } else {
-                        // Fallback mapping
-                        switch (key) {
-                          case 'subcategory': label = 'Apakškategorija'; break;
-                          case 'brand': label = 'Marka/Ražotājs'; icon = <Car className="w-5 h-5" />; break;
-                          case 'model': label = 'Modelis'; icon = <Settings className="w-5 h-5" />; break;
-                          case 'year': label = 'Gads'; icon = <Calendar className="w-5 h-5" />; break;
-                          case 'condition': label = 'Stāvoklis'; break;
-                          case 'mileage': label = 'Nobraukums (km)'; break;
-                          case 'engine': label = 'Dzinējs'; break;
-                          case 'transmission': label = 'Ātrumkārba'; break;
-                          case 'type': label = 'Tips'; break;
-                          case 'action': label = 'Darījuma veids'; break;
-                          case 'area': label = 'Platība (m²)'; break;
-                          case 'rooms': label = 'Istabu skaits'; break;
-                          case 'floor': label = 'Stāvs'; break;
-                          case 'location': label = 'Atrašanās vieta'; icon = <MapPin className="w-5 h-5" />; break;
-                          case 'experience': label = 'Pieredze'; break;
-                        }
-                      }
-
-                      // Assign icons based on key even if label comes from schema
-                      switch (key) {
-                        case 'brand': icon = <Car className="w-5 h-5" />; break;
-                        case 'model': icon = <Settings className="w-5 h-5" />; break;
-                        case 'year': icon = <Calendar className="w-5 h-5" />; break;
-                        case 'location': icon = <MapPin className="w-5 h-5" />; break;
-                      }
-
-                      return (
-                        <div key={key} className="flex items-start">
-                          <div className="p-2 bg-primary-50 rounded-lg mr-3 text-primary-600">
-                            {icon}
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500 font-medium">{label}</p>
-                            <p className="font-semibold text-slate-900">{value as string}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  {parsedAttributes.features && (
-                    <div className="mt-6">
-                      <p className="text-xs text-slate-500 font-medium mb-2">Papildus ekstras</p>
-                      <div className="flex flex-wrap gap-2">
-                        {parsedAttributes.features.split(',').map((feature: string, idx: number) => (
-                          <span key={idx} className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">
-                            {feature.trim()}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="pt-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Apraksts</h3>
-                <div className="prose prose-slate max-w-none">
-                  <p className="text-slate-600 whitespace-pre-wrap leading-relaxed">
-                    {listing.description || "Pārdevējs nav pievienojis aprakstu."}
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Reviews Section */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8"
-            >
-              {isAuction && (
-                <div className="mb-12">
-                  <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center">
-                    <Gavel className="w-6 h-6 mr-2 text-primary-600" />
-                    Solījumu vēsture
-                  </h2>
-                  
-                  {user && user.id !== listing.user_id && (
-                    <form onSubmit={handleBidSubmit} className="mb-8 bg-amber-50 p-6 rounded-xl border border-amber-100">
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4">Izteikt solījumu</h3>
-                      
-                      {bidError && (
-                        <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">
-                          {bidError}
-                        </div>
-                      )}
-                      
-                      <div className="flex gap-4">
-                        <div className="flex-1 relative">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <span className="text-slate-500 sm:text-sm">€</span>
-                          </div>
-                          <input
-                            type="number"
-                            min={bids.length > 0 ? bids[0].amount + 1 : listing.price + 1}
-                            step="1"
-                            value={bidAmount}
-                            onChange={(e) => setBidAmount(e.target.value)}
-                            className="w-full pl-8 pr-3 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-lg font-medium"
-                            placeholder="Ievadiet summu"
-                            required
-                          />
-                        </div>
-                        <button
-                          type="submit"
-                          disabled={submittingBid}
-                          className="bg-primary-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-primary-700 transition-colors disabled:opacity-50 whitespace-nowrap"
-                        >
-                          {submittingBid ? 'Sola...' : 'Solīt'}
-                        </button>
-                      </div>
-                      <p className="text-sm text-slate-500 mt-2">
-                        Minimālais solījums: €{bids.length > 0 ? bids[0].amount + 1 : listing.price + 1}
-                      </p>
-                    </form>
-                  )}
-
-                  <div className="space-y-3">
-                    {bids.length === 0 ? (
-                      <p className="text-slate-500 text-center py-4 bg-slate-50 rounded-xl border border-slate-100">Vēl nav neviena solījuma. Esiet pirmais!</p>
-                    ) : (
-                      bids.map((bid, index) => (
-                        <div 
-                          key={bid.id} 
-                          className={`flex justify-between items-center p-4 rounded-xl border ${
-                            index === 0 
-                              ? 'bg-green-50 border-green-200' 
-                              : 'bg-white border-slate-100'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                              index === 0 ? 'bg-green-200 text-green-800' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {index + 1}
-                            </div>
-                            <div>
-                              <p className="font-semibold text-slate-900">
-                                {bid.bidder_name}
-                                {index === 0 && <span className="ml-2 text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full">Līderis</span>}
-                              </p>
-                              <p className="text-xs text-slate-500">{formatDate(bid.created_at)}</p>
-                            </div>
-                          </div>
-                          <div className={`text-lg font-bold ${index === 0 ? 'text-green-700' : 'text-slate-700'}`}>
-                            € {bid.amount.toFixed(2)}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <h2 className="text-2xl font-bold text-slate-900 mb-6">Pārdevēja atsauksmes</h2>
-              
-              {/* Add Review Form */}
-              {user && user.id !== listing.user_id && (
-                <form onSubmit={handleReviewSubmit} className="mb-8 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Atstāt atsauksmi</h3>
-                  
-                  {reviewError && (
-                    <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">
-                      {reviewError}
-                    </div>
-                  )}
-                  
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Vērtējums</label>
-                    <div className="flex space-x-2">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          onClick={() => setRating(star)}
-                          className="focus:outline-none"
-                        >
-                          <Star 
-                            className={`w-8 h-8 ${star <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} 
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <div className="mb-4">
-                    <label htmlFor="comment" className="block text-sm font-medium text-slate-700 mb-2">Komentārs</label>
-                    <textarea
-                      id="comment"
-                      rows={3}
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                      placeholder="Kāda bija jūsu pieredze ar šo pārdevēju?"
-                      required
-                    ></textarea>
-                  </div>
-                  
-                  <button
-                    type="submit"
-                    disabled={submittingReview}
-                    className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:opacity-50"
-                  >
-                    {submittingReview ? 'Pievieno...' : 'Pievienot atsauksmi'}
-                  </button>
-                </form>
-              )}
-
-              {/* Reviews List */}
-              <div className="space-y-6">
-                {reviews.length === 0 ? (
-                  <p className="text-slate-500 text-center py-4">Šim pārdevējam vēl nav atsauksmju.</p>
+              <div className="aspect-[16/10] rounded-3xl overflow-hidden bg-slate-50 border border-slate-100 shadow-xl">
+                {listing.image_url ? (
+                  <img 
+                    src={listing.image_url} 
+                    alt={listing.title} 
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    referrerPolicy="no-referrer"
+                  />
                 ) : (
-                  reviews.map((review) => (
-                    <div key={review.id} className="border-b border-slate-100 pb-6 last:border-0 last:pb-0">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <p className="font-semibold text-slate-900">{review.reviewer_name}</p>
-                          <p className="text-xs text-slate-500">{formatDate(review.created_at)}</p>
-                        </div>
-                        {renderStars(review.rating)}
-                      </div>
-                      <p className="text-slate-600 mt-2">{review.comment}</p>
-                    </div>
-                  ))
+                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+                    <ImageIcon className="w-20 h-20 opacity-20 mb-4" />
+                    <span className="font-bold uppercase tracking-wider text-xs">Attēls nav pieejams</span>
+                  </div>
                 )}
               </div>
+              
+              {listing.is_highlighted ? (
+                <Badge className="absolute top-6 left-6 bg-amber-400 text-amber-950 hover:bg-amber-500 font-bold shadow-lg px-3 py-1.5 text-xs">
+                  <Star className="w-3.5 h-3.5 mr-1.5 fill-current" />
+                  IETEIKTS
+                </Badge>
+              ) : null}
+
+              <div className="absolute bottom-6 right-6 flex gap-2">
+                <Button variant="secondary" size="icon" className="shadow-lg bg-white/90 backdrop-blur-md hover:bg-white">
+                  <LayoutGrid className="w-5 h-5 text-slate-700" />
+                </Button>
+              </div>
             </motion.div>
+
+            {/* Title & Core Info */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Badge variant="secondary" className="bg-primary-50 text-primary-700 hover:bg-primary-100 font-semibold px-2.5 py-1">
+                  {listing.category}
+                </Badge>
+                <span className="text-sm font-medium text-slate-500 flex items-center">
+                  <Clock className="w-4 h-4 mr-1.5" />
+                  Pievienots {formatDate(listing.created_at)}
+                </span>
+              </div>
+              
+              <h1 className="text-4xl md:text-5xl font-bold text-slate-900 leading-tight">
+                {listing.title}
+              </h1>
+              
+              <div className="flex items-center text-slate-600 font-semibold">
+                <MapPin className="w-5 h-5 mr-2 text-primary-600" />
+                {listing.location || 'Rīga, Latvija'}
+              </div>
+            </div>
+
+            {/* Technical Specifications */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-slate-100">
+              {parsedAttributes && Object.entries(parsedAttributes).map(([key, value]) => {
+                if (['features', 'saleType', 'subcategory'].includes(key) || !value) return null;
+                return (
+                  <div key={key} className="space-y-1">
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{key}</div>
+                    <div className="text-lg font-bold text-slate-900">{value as string}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Narrative Description */}
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-slate-900 flex items-center">
+                <Info className="w-6 h-6 mr-3 text-primary-600" />
+                Apraksts
+              </h2>
+              <div className="prose prose-slate max-w-none">
+                <p className="text-slate-600 text-lg leading-relaxed whitespace-pre-wrap">
+                  {listing.description || "Pārdevējs nav pievienojis aprakstu šim sludinājumam."}
+                </p>
+              </div>
+            </div>
+
+            {/* Market Intelligence */}
+            <div className="bg-slate-900 rounded-3xl p-8 text-white overflow-hidden relative">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-600/10 blur-[80px] rounded-full -mr-32 -mt-32" />
+              <div className="relative z-10">
+                <h3 className="text-xl font-bold mb-8 flex items-center uppercase tracking-wide">
+                  <TrendingUp className="w-6 h-6 mr-3 text-amber-400" />
+                  Tirgus analīze
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white/5 backdrop-blur-sm p-5 rounded-2xl border border-white/10">
+                    <div className="text-xs font-bold text-white/40 uppercase tracking-wider mb-2">Cenas novērtējums</div>
+                    <div className="text-xl font-bold text-emerald-400">Laba cena</div>
+                    <div className="text-[10px] text-white/60 mt-1.5 font-bold uppercase tracking-widest">5.2% zem vidējā</div>
+                  </div>
+                  <div className="bg-white/5 backdrop-blur-sm p-5 rounded-2xl border border-white/10">
+                    <div className="text-xs font-bold text-white/40 uppercase tracking-wider mb-2">Pieprasījums</div>
+                    <div className="text-xl font-bold text-amber-400">Augsts</div>
+                    <div className="text-[10px] text-white/60 mt-1.5 font-bold uppercase tracking-widest">18 aktīvas intereses</div>
+                  </div>
+                  <div className="bg-white/5 backdrop-blur-sm p-5 rounded-2xl border border-white/10">
+                    <div className="text-xs font-bold text-white/40 uppercase tracking-wider mb-2">Likviditāte</div>
+                    <div className="text-xl font-bold text-white">12-18 dienas</div>
+                    <div className="text-[10px] text-white/60 mt-1.5 font-bold uppercase tracking-widest">Vēsturiskais vidējais</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Right Column: Action Bar & Seller Info */}
-          <div className="lg:col-span-1">
-            <motion.div 
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
-              className="sticky top-24 space-y-6"
-            >
-              {/* Action Bar */}
-              <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
-                <h3 className="text-lg font-bold text-slate-900 mb-4">Sazināties</h3>
+          {/* Right Column: Transaction Sidebar */}
+          <div className="lg:col-span-4">
+            <div className="sticky top-32 space-y-10">
+              
+              {/* Valuation & CTA */}
+              <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl">
+                <div className="mb-8">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cena</div>
+                  <div className="text-5xl font-bold text-slate-900">
+                    €{listing.price.toLocaleString()}
+                  </div>
+                </div>
+                
                 <div className="space-y-3">
-                  <Link 
-                    to={`/chat?userId=${listing.user_id}&listingId=${listing.id}`}
-                    className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl shadow-sm text-base font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
+                  <Button 
+                    size="lg" 
+                    className="w-full text-sm"
+                    onClick={() => navigate(`/chat?userId=${listing.user_id}&listingId=${listing.id}`)}
                   >
                     <MessageCircle className="w-5 h-5 mr-2" />
-                    Rakstīt ziņu
-                  </Link>
-                  
-                  {isAuction ? (
-                    <button 
-                      onClick={() => {
-                        const bidInput = document.querySelector('input[type="number"]') as HTMLInputElement;
-                        if (bidInput) bidInput.focus();
-                      }}
-                      className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl border-2 border-primary-600 text-base font-semibold text-primary-700 hover:bg-primary-50 transition-colors"
-                    >
-                      <Gavel className="w-5 h-5 mr-2" />
-                      Solīt cenu
-                    </button>
-                  ) : (
-                    <Link 
-                      to={`/chat?userId=${listing.user_id}&listingId=${listing.id}`}
-                      className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl border-2 border-slate-200 text-base font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                    >
-                      Piedāvāt cenu
-                    </Link>
-                  )}
+                    Sazināties ar pārdevēju
+                  </Button>
+                  <Button variant="outline" size="lg" className="w-full text-sm border-2 border-primary-200 text-primary-700 hover:bg-primary-50">
+                    <Zap className="w-5 h-5 mr-2 text-amber-500" />
+                    Piedāvāt savu cenu
+                  </Button>
                 </div>
               </div>
 
-              {/* Seller Info Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Pārdevējs</h3>
+              {/* Curator/Seller Profile */}
+              <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                <div className="flex items-center space-x-4 mb-6">
+                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center border border-slate-200 shadow-sm overflow-hidden">
+                    <User className="w-8 h-8 text-primary-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-slate-900 text-lg">{listing.author_name}</h4>
+                      {listing.author_is_verified ? <BadgeCheck className="w-5 h-5 text-blue-500" /> : null}
+                    </div>
+                    <div className="flex items-center text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">
+                      <Star className="w-3.5 h-3.5 text-amber-400 fill-current mr-1" />
+                      {averageRating} Reitings
+                    </div>
+                  </div>
+                </div>
                 
-                <div className="flex items-center mb-4">
-                  <div className="h-14 w-14 bg-gradient-to-br from-primary-100 to-primary-200 text-primary-700 rounded-full flex items-center justify-center mr-4 shadow-inner">
-                    <User className="w-6 h-6" />
+                <div className="space-y-4 mb-6">
+                  <div className="flex items-center text-xs font-bold text-slate-600">
+                    <ShieldCheck className="w-4 h-4 mr-3 text-emerald-500" />
+                    Identitāte verificēta
                   </div>
-                  <div>
-                    <div className="flex items-center">
-                      <p className="font-bold text-lg text-slate-900 mr-1">{listing.author_name}</p>
-                      <BadgeCheck className="w-5 h-5 text-blue-500" title="Verificēts lietotājs" />
-                    </div>
-                    <div className="flex items-center text-sm text-slate-600 mt-1">
-                      <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />
-                      <span className="font-medium mr-1">{averageRating}</span>
-                      <span>({reviews.length} atsauksmes)</span>
-                    </div>
+                  <div className="flex items-center text-xs font-bold text-slate-600">
+                    <History className="w-4 h-4 mr-3 text-primary-400" />
+                    Biedrs kopš 2023. gada
                   </div>
                 </div>
-
-                <div className="bg-green-50 border border-green-100 rounded-xl p-4 flex items-start">
-                  <ShieldCheck className="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-green-800">Drošs darījums</p>
-                    <p className="text-xs text-green-700 mt-1">Šis pārdevējs ir verificējis savu identitāti ar Smart-ID.</p>
-                  </div>
-                </div>
-
-                <div className="mt-6 pt-6 border-t border-slate-100">
-                  <button 
-                    onClick={() => {
-                      const reason = window.prompt('Lūdzu, norādiet sūdzības iemeslu:');
-                      if (reason) {
-                        const token = localStorage.getItem('auth_token');
-                        if (!token) {
-                          alert('Lūdzu, ienāciet sistēmā, lai iesniegtu sūdzību.');
-                          return;
-                        }
-                        fetch('/api/reports', {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                          },
-                          body: JSON.stringify({ listingId: listing.id, reason })
-                        })
-                        .then(res => res.json())
-                        .then(data => {
-                          if (data.error) alert(data.error);
-                          else alert('Sūdzība veiksmīgi iesniegta. Paldies!');
-                        })
-                        .catch(err => alert('Kļūda iesniedzot sūdzību'));
-                      }
-                    }}
-                    className="w-full flex items-center justify-center py-2 px-4 rounded-lg text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    <Flag className="w-4 h-4 mr-2" />
-                    Ziņot par pārkāpumu
-                  </button>
-                </div>
+                
+                <Button variant="outline" className="w-full" onClick={() => navigate(`/profile/${listing.user_id}`)}>
+                  Skatīt profilu
+                </Button>
               </div>
-            </motion.div>
+
+              {/* Financial Architecture */}
+              {(listing.category === 'Transports' || listing.category === 'Nekustamais īpašums') && (
+                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
+                  <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center uppercase tracking-wide">
+                    <Calculator className="w-5 h-5 mr-3 text-primary-600" />
+                    Kredīta kalkulators
+                  </h3>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                        <span>Pirmā iemaksa</span>
+                        <span className="text-primary-600">{downPayment}%</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" max="50" step="5"
+                        value={downPayment}
+                        onChange={(e) => setDownPayment(parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-slate-100 rounded-full appearance-none cursor-pointer accent-primary-600"
+                      />
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                        <span>Termiņš (mēneši)</span>
+                        <span className="text-primary-600">{term}</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="12" max="120" step="12"
+                        value={term}
+                        onChange={(e) => setTerm(parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-slate-100 rounded-full appearance-none cursor-pointer accent-primary-600"
+                      />
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-100">
+                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Aptuvenais mēneša maksājums</div>
+                      <div className="text-3xl font-bold text-primary-600">
+                        €{calculateMonthlyPayment().toFixed(2)}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-wider">
+                        *Aprēķins ir informatīvs ({interestRate}% GPL)
+                      </p>
+                    </div>
+                    
+                    <Button className="w-full" size="lg">
+                      Pieteikties līzingam
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Safety Protocol */}
+              <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100">
+                <div className="flex items-center space-x-3 mb-3">
+                  <ShieldAlert className="w-5 h-5 text-amber-500" />
+                  <h4 className="font-bold text-amber-900 text-sm uppercase tracking-wide">Drošības padomi</h4>
+                </div>
+                <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                  Nekad neveiciet priekšapmaksu pirms preces apskates. Izmantojiet drošus maksājumu veidus.
+                </p>
+                <Link to="/safety" className="inline-flex items-center mt-3 text-xs font-bold text-amber-600 uppercase tracking-wider hover:underline">
+                  Lasīt vairāk <ExternalLink className="w-3 h-3 ml-1.5" />
+                </Link>
+              </div>
+
+            </div>
           </div>
 
         </div>

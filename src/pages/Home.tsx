@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, Clock, MapPin, Image as ImageIcon, X, Heart, Star } from 'lucide-react';
+import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { SectionHeader } from '@/components/ui/section-header';
 
 const categories = [
-  { name: 'Transports', icon: Car, color: 'bg-blue-100 text-blue-600 border-blue-200' },
-  { name: 'Nekustamais īpašums', icon: HomeIcon, color: 'bg-green-100 text-green-600 border-green-200' },
-  { name: 'Elektronika', icon: Smartphone, color: 'bg-purple-100 text-purple-600 border-purple-200' },
-  { name: 'Darbs un pakalpojumi', icon: Briefcase, color: 'bg-orange-100 text-orange-600 border-orange-200' },
-  { name: 'Mājai un dārzam', icon: Sofa, color: 'bg-rose-100 text-rose-600 border-rose-200' },
-  { name: 'Cits', icon: MoreHorizontal, color: 'bg-slate-100 text-slate-600 border-slate-200' },
+  { id: 'auto', name: 'Transports', icon: Car, color: 'bg-indigo-500', subcategories: ['Vieglie auto', 'Motocikli'] },
+  { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'bg-emerald-500', subcategories: ['Dzīvokļi', 'Mājas'] },
+  { id: 'elektronika', name: 'Elektronika', icon: Smartphone, color: 'bg-purple-500', subcategories: ['Telefoni', 'Datori'] },
+  { id: 'darbs', name: 'Darbs', icon: Briefcase, color: 'bg-amber-500', subcategories: ['Vakances', 'Pakalpojumi'] },
+  { id: 'majai', name: 'Mājai', icon: Sofa, color: 'bg-rose-500', subcategories: ['Mēbeles', 'Dārzam'] },
+  { id: 'cits', name: 'Cits', icon: MoreHorizontal, color: 'bg-slate-500', subcategories: ['Sports', 'Hobiji'] },
 ];
 
 interface Listing {
@@ -22,46 +27,29 @@ interface Listing {
   image_url: string;
   created_at: string;
   author_name: string;
+  location: string;
   is_highlighted?: number;
-}
-
-interface AdData {
-  id: number;
-  title: string;
-  image_url: string;
-  link_url: string;
-  size: string;
-  category?: string;
+  is_verified_seller?: boolean;
+  attributes?: Record<string, any>;
 }
 
 export default function Home() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [listings, setListings] = useState<Listing[]>([]);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
-  const [ads, setAds] = useState<AdData[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Filtrēšanas stāvokļi
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/listings').then(res => res.json()),
-      fetch('/api/ads').then(res => res.json())
-    ])
-      .then(([listingsData, adsData]) => {
-        setListings(listingsData);
-        setAds(adsData);
+    fetch('/api/listings')
+      .then(res => res.json())
+      .then(data => {
+        setListings(data);
         setLoading(false);
-        
-        // Record views for fetched ads
-        adsData.forEach((ad: AdData) => {
-          fetch(`/api/ads/${ad.id}/view`, { method: 'POST' }).catch(() => {});
-        });
       })
       .catch(err => {
-        console.error("Failed to fetch data", err);
+        console.error("Failed to fetch listings", err);
         setLoading(false);
       });
   }, []);
@@ -70,9 +58,7 @@ export default function Home() {
     if (user) {
       const token = localStorage.getItem('auth_token');
       fetch('/api/users/me/favorites', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(res => res.json())
       .then((data: Listing[]) => {
@@ -84,12 +70,8 @@ export default function Home() {
     }
   }, [user]);
 
-  const handleAdClick = (adId: number) => {
-    fetch(`/api/ads/${adId}/click`, { method: 'POST' }).catch(() => {});
-  };
-
   const toggleFavorite = async (e: React.MouseEvent, listingId: number) => {
-    e.preventDefault(); // Prevent navigating to listing details
+    e.preventDefault();
     if (!user) {
       alert('Lūdzu, ienāc sistēmā, lai pievienotu favorītiem!');
       return;
@@ -125,310 +107,312 @@ export default function Home() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('lv-LV', { 
-      day: 'numeric', 
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+    }
   };
 
-  // Filtrēšanas loģika
-  const filteredListings = listings.filter(listing => {
-    const matchesSearch = listing.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (listing.description && listing.description.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesCategory = selectedCategory ? listing.category === selectedCategory : true;
-    return matchesSearch && matchesCategory;
-  });
+  const renderListingCard = (listing: Listing) => {
+    const isFavorite = favorites.has(listing.id);
 
-  const isEarlyAccess = (createdAt: string) => {
-    const created = new Date(createdAt);
-    const now = new Date();
-    const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
-    return diffMinutes <= 15;
+    return (
+      <motion.div
+        key={listing.id}
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        className="group bg-card rounded-xl border border-border/50 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col"
+      >
+        <Link to={`/listing/${listing.id}`} className="block flex-grow">
+          <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+            {listing.image_url ? (
+              <img 
+                src={listing.image_url} 
+                alt={listing.title}
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                <ImageIcon className="w-10 h-10 opacity-20" />
+              </div>
+            )}
+            
+            {/* Badges */}
+            <div className="absolute top-3 left-3 flex flex-col gap-2">
+              {listing.is_highlighted ? (
+                <Badge variant="default" className="bg-amber-500 hover:bg-amber-600 text-white shadow-md border-none">
+                  <Star className="w-3 h-3 mr-1 fill-current" />
+                  IETEIKTS
+                </Badge>
+              ) : null}
+            </div>
+
+            <button 
+              onClick={(e) => toggleFavorite(e, listing.id)}
+              className="absolute top-3 right-3 p-2 bg-background/80 backdrop-blur-sm rounded-full shadow-sm hover:bg-background transition-all group/fav"
+            >
+              <Heart className={`w-4 h-4 transition-colors ${isFavorite ? 'fill-destructive text-destructive' : 'text-muted-foreground group-hover/fav:text-destructive'}`} />
+            </button>
+          </div>
+          
+          <div className="p-4 flex flex-col h-full">
+            <div className="text-[10px] font-bold text-primary uppercase tracking-wider mb-1.5">
+              {listing.category}
+            </div>
+            <h3 className="text-foreground font-semibold text-base line-clamp-2 mb-3 leading-snug">
+              {listing.title}
+            </h3>
+            <div className="mt-auto flex items-end justify-between">
+              <span className="text-foreground font-bold text-lg">
+                €{listing.price.toLocaleString()}
+              </span>
+              <div className="flex items-center text-muted-foreground text-xs font-medium">
+                <MapPin className="w-3 h-3 mr-1" />
+                <span className="truncate max-w-[100px]">{listing.location || 'Latvija'}</span>
+              </div>
+            </div>
+          </div>
+        </Link>
+      </motion.div>
+    );
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Hero Section - Kompakts ar vietu pārklājumam */}
-      <div className="bg-primary-700 pt-12 pb-28 sm:pt-16 sm:pb-36 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10"
-        >
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-extrabold text-white mb-4 sm:mb-6 tracking-tight">
-            Atrodi visu nepieciešamo
-          </h1>
-          <p className="text-base sm:text-xl text-primary-100 mb-8 max-w-2xl mx-auto font-medium">
-            Pērc, pārdod un mainies ar precēm ātri un droši.
-          </p>
-          
-          {/* Search Bar */}
-          <motion.form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (searchQuery.trim() || selectedCategory) {
-                const params = new URLSearchParams();
-                if (searchQuery.trim()) params.append('q', searchQuery.trim());
-                if (selectedCategory) params.append('category', selectedCategory);
-                window.location.href = `/search?${params.toString()}`;
-              }
-            }}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="max-w-3xl mx-auto bg-white rounded-xl shadow-xl p-2 flex flex-col sm:flex-row items-center gap-2"
-          >
-            <div className="flex-grow flex items-center pl-4 w-full">
-              <Search className="w-5 h-5 text-slate-400 flex-shrink-0" />
-              <input 
-                type="text" 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ko tu meklē? (piem., BMW, dzīvoklis Rīgā...)" 
-                className="w-full py-3 px-4 text-slate-700 focus:outline-none text-base sm:text-lg placeholder:text-slate-400"
-              />
-              {searchQuery && (
-                <button 
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-            <button type="submit" className="w-full sm:w-auto bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-8 rounded-lg transition-colors shadow-sm">
-              Meklēt
-            </button>
-          </motion.form>
-        </motion.div>
-      </div>
-
-      {/* Categories Section - Uzpeldējošs (Overlapping) */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 sm:-mt-20 relative z-20 mb-12">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="grid grid-cols-3 md:grid-cols-6 gap-3 sm:gap-6"
-        >
-          {categories.map((cat) => {
-            const isSelected = selectedCategory === cat.name;
-            return (
-              <motion.div 
-                key={cat.name} 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setSelectedCategory(isSelected ? null : cat.name)}
-                className={`bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 group
-                  ${isSelected 
-                    ? 'ring-2 ring-primary-500 border-transparent transform -translate-y-1 sm:-translate-y-2' 
-                    : 'border border-slate-100 hover:border-primary-300 hover:shadow-xl hover:-translate-y-1'
-                  }`}
-              >
-                <div className={`w-10 h-10 sm:w-14 sm:h-14 rounded-full flex items-center justify-center mb-2 sm:mb-4 border transition-transform duration-300
-                  ${isSelected ? 'bg-primary-100 text-primary-600 border-primary-200 scale-110' : cat.color}
-                  ${!isSelected && 'group-hover:scale-110'}
-                `}>
-                  <cat.icon className="w-5 h-5 sm:w-6 sm:h-6" />
-                </div>
-                <span className={`text-xs sm:text-sm font-semibold text-center transition-colors
-                  ${isSelected ? 'text-primary-700' : 'text-slate-700 group-hover:text-primary-600'}
-                `}>
-                  {cat.name}
-                </span>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-      </div>
-      
-      {/* Top Banner Ad */}
-      {ads.filter(ad => (!ad.category || ad.category === selectedCategory) && (ad.size === '970x250' || ad.size === '728x90')).slice(0, 1).map(ad => (
-        <div key={ad.id} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12 flex justify-center">
-          <a 
-            href={ad.link_url} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            onClick={() => handleAdClick(ad.id)}
-            className="block overflow-hidden rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow"
-          >
-            <img 
-              src={ad.image_url} 
-              alt={ad.title} 
-              className={`w-full object-cover ${ad.size === '970x250' ? 'max-w-[970px] max-h-[250px]' : 'max-w-[728px] max-h-[90px]'}`} 
-              referrerPolicy="no-referrer"
-            />
-          </a>
-        </div>
-      ))}
-
-      {/* Listings Section */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
-            {selectedCategory ? `Sludinājumi: ${selectedCategory}` : searchQuery ? 'Meklēšanas rezultāti' : 'Jaunākie sludinājumi'}
-          </h2>
-          
-          {(selectedCategory || searchQuery) && (
-            <button 
-              onClick={() => {
-                setSelectedCategory(null);
-                setSearchQuery('');
-              }}
-              className="text-sm font-medium text-red-600 hover:text-red-700 flex items-center bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              <X className="w-4 h-4 mr-1" />
-              Notīrīt filtrus
-            </button>
-          )}
+    <div className="pb-20 bg-background selection:bg-primary/20 selection:text-primary">
+      {/* Hero Section */}
+      <section className="relative h-[600px] md:h-[700px] flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0">
+          <img 
+            src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=2000" 
+            alt="Hero Background"
+            className="w-full h-full object-cover scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/50 to-background" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/20 to-slate-950/80" />
         </div>
         
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-          </div>
-        ) : filteredListings.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 border-dashed p-12 text-center">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-slate-400" />
+        <div className="relative z-10 max-w-5xl w-full px-6 text-center mt-10">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+          >
+            <div className="inline-flex items-center px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-[11px] font-semibold uppercase tracking-wider mb-8 shadow-2xl">
+              <Sparkles className="w-3.5 h-3.5 mr-2 text-amber-400" />
+              The Future of Baltic Commerce
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Nekas netika atrasts</h3>
-            <p className="text-slate-500 font-medium max-w-md mx-auto">
-              Mēģini mainīt meklēšanas vārdus vai noņemt kategorijas filtru, lai redzētu vairāk rezultātu.
+            
+            <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 tracking-tight leading-tight">
+              Curating the <br />
+              <span className="text-primary-400">Baltic Marketplace</span>.
+            </h1>
+            
+            <p className="text-lg md:text-xl text-white/80 mb-10 font-medium max-w-2xl mx-auto leading-relaxed">
+              Atrodiet labākos piedāvājumus Baltijā. <br className="hidden md:block" />
+              Premium sludinājumi, pārbaudīti pārdevēji, droši darījumi.
             </p>
-            {!selectedCategory && !searchQuery && (
-              <Link to="/add" className="mt-6 inline-block bg-primary-600 text-white font-medium hover:bg-primary-700 px-6 py-2.5 rounded-lg transition-colors shadow-sm">
-                Pievieno pirmo sludinājumu!
+            
+            <div className="relative max-w-2xl mx-auto">
+              <form 
+                onSubmit={handleSearch}
+                className="relative flex items-center bg-background rounded-2xl shadow-2xl overflow-hidden p-1.5 border border-border/50"
+              >
+                <div className="flex-grow flex items-center px-4">
+                  <Search className="w-5 h-5 text-muted-foreground mr-3 shrink-0" />
+                  <Input 
+                    type="text"
+                    placeholder="Meklēt sludinājumus..."
+                    className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base h-12 bg-transparent"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" size="lg" className="rounded-xl px-8 h-12 text-base font-semibold shrink-0">
+                  Meklēt
+                </Button>
+              </form>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Trust Strip */}
+      <div className="relative -mt-12 z-20 max-w-6xl mx-auto px-6">
+        <div className="bg-card rounded-2xl shadow-xl shadow-black/5 border border-border/50 p-6 md:p-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-border/50">
+            <div className="flex items-center space-x-4 md:px-4 pt-4 md:pt-0 first:pt-0">
+              <div className="w-12 h-12 bg-primary/10 text-primary rounded-xl flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-semibold text-foreground">Pārbaudīti pārdevēji</div>
+                <div className="text-sm text-muted-foreground mt-0.5">Droši darījumi ar verificētiem lietotājiem.</div>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4 md:px-4 pt-4 md:pt-0">
+              <div className="w-12 h-12 bg-amber-500/10 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-semibold text-foreground">Droši maksājumi</div>
+                <div className="text-sm text-muted-foreground mt-0.5">Jūsu dati un nauda ir drošībā.</div>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4 md:px-4 pt-4 md:pt-0">
+              <div className="w-12 h-12 bg-indigo-500/10 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                <Headphones className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-semibold text-foreground">Atbalsts 24/7</div>
+                <div className="text-sm text-muted-foreground mt-0.5">Mēs esam šeit, lai palīdzētu jebkurā laikā.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 py-24 space-y-24">
+        {/* Categories Rail */}
+        <section>
+          <SectionHeader 
+            title="Pārlūkot kategorijas" 
+            description="Atrodiet tieši to, ko meklējat mūsu populārākajās kategorijās."
+            action={
+              <Button variant="ghost" onClick={() => navigate('/search')} className="group">
+                Skatīt visas <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            }
+          />
+          
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {categories.map((cat) => (
+              <Link 
+                key={cat.id}
+                to={`/search?category=${cat.name}`}
+                className="group bg-card rounded-xl p-6 border border-border/50 hover:border-primary/30 hover:shadow-md transition-all text-center flex flex-col items-center justify-center"
+              >
+                <div className={`w-14 h-14 ${cat.color} bg-opacity-10 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
+                  <cat.icon className={`w-7 h-7 ${cat.color.replace('bg-', 'text-')}`} />
+                </div>
+                <h3 className="text-sm font-semibold text-foreground">{cat.name}</h3>
               </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Premium Listings */}
+        <section>
+          <SectionHeader 
+            title="Īpaši atlasīti" 
+            description="Mūsu ekspertu izvēlētie labākie piedāvājumi šodien."
+            className="mb-8"
+          />
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {loading ? (
+              Array(4).fill(0).map((_, i) => (
+                <div key={i} className="flex flex-col gap-3">
+                  <Skeleton className="aspect-[4/3] rounded-xl" />
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-1/3 mt-auto" />
+                </div>
+              ))
+            ) : (
+              listings.filter(l => l.is_highlighted).slice(0, 4).map(renderListingCard)
             )}
           </div>
-        ) : (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ staggerChildren: 0.1 }}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
-          >
-            {filteredListings.reduce((acc: React.ReactNode[], listing, index) => {
-              acc.push(
-                <motion.div
-                  key={`listing-${listing.id}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  whileHover={{ y: -5 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <Link 
-                    to={`/listing/${listing.id}`}
-                    className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${
-                      listing.is_highlighted ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-primary-300'
-                    }`}
-                  >
-                    <div className="aspect-[4/3] bg-slate-100 relative overflow-hidden">
-                      {listing.image_url ? (
-                        <img 
-                          src={listing.image_url} 
-                          alt={listing.title} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-400">
-                          <ImageIcon className="w-12 h-12 opacity-20" />
-                        </div>
-                      )}
-                      <div className="absolute top-3 left-3 flex flex-col gap-2">
-                        <div className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 shadow-sm">
-                          {listing.category}
-                        </div>
-                        {listing.is_highlighted ? (
-                          <div className="bg-amber-400 text-amber-900 px-2.5 py-1 rounded-md text-xs font-bold shadow-sm flex items-center">
-                            <Star className="w-3 h-3 mr-1 fill-amber-900" />
-                            TOP
-                          </div>
-                        ) : null}
-                        {isEarlyAccess(listing.created_at) && (
-                          <div className="bg-indigo-500 text-white px-2.5 py-1 rounded-md text-xs font-bold shadow-sm flex items-center">
-                            <Clock className="w-3 h-3 mr-1" />
-                            Agrā piekļuve
-                          </div>
-                        )}
-                      </div>
-                      <button 
-                        onClick={(e) => toggleFavorite(e, listing.id)}
-                        className="absolute top-3 right-3 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:bg-white transition-colors"
-                      >
-                        <Heart 
-                          className={`w-4 h-4 ${favorites.has(listing.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} 
-                        />
-                      </button>
-                    </div>
-                    
-                    <div className="p-5 flex flex-col flex-grow">
-                      <h3 className="text-lg font-bold text-slate-900 mb-1 line-clamp-2 group-hover:text-primary-600 transition-colors">
-                        {listing.title}
-                      </h3>
-                      <p className="text-xl font-extrabold text-primary-600 mb-4">
-                        € {listing.price.toFixed(2)}
-                      </p>
-                      
-                      <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                        <div className="flex items-center">
-                          <Clock className="w-3.5 h-3.5 mr-1" />
-                          {formatDate(listing.created_at)}
-                        </div>
-                        <div className="font-medium truncate max-w-[100px]">
-                          {listing.author_name}
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                </motion.div>
-              );
+        </section>
 
-              // Insert an ad every 4 listings (if available)
-              const adIndex = Math.floor(index / 4);
-              const inlineAds = ads.filter(a => (!a.category || a.category === selectedCategory) && (a.size === '300x250' || a.size === '300x600'));
-              if ((index + 1) % 4 === 0 && inlineAds[adIndex]) {
-                const ad = inlineAds[adIndex];
-                acc.push(
-                  <motion.div
-                    key={`ad-${ad.id}`}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center p-4"
-                  >
-                    <a 
-                      href={ad.link_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      onClick={() => handleAdClick(ad.id)}
-                      className="block w-full h-full flex flex-col items-center justify-center text-center group"
-                    >
-                      <span className="text-[10px] uppercase tracking-wider text-slate-400 mb-2 block">Reklāma</span>
-                      <img 
-                        src={ad.image_url} 
-                        alt={ad.title} 
-                        className="max-w-full max-h-[250px] object-contain rounded-lg group-hover:opacity-90 transition-opacity" 
-                        referrerPolicy="no-referrer"
-                      />
-                    </a>
-                  </motion.div>
-                );
-              }
-
-              return acc;
-            }, [])}
-          </motion.div>
-        )}
+        {/* Latest Listings */}
+        <section>
+          <SectionHeader 
+            title="Jaunumi" 
+            description="Nupat pievienotie sludinājumi no visas Baltijas."
+            className="mb-8"
+          />
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {loading ? (
+              Array(8).fill(0).map((_, i) => (
+                <div key={i} className="flex flex-col gap-3">
+                  <Skeleton className="aspect-[4/3] rounded-xl" />
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-1/3 mt-auto" />
+                </div>
+              ))
+            ) : (
+              listings.filter(l => !l.is_highlighted).slice(0, 8).map(renderListingCard)
+            )}
+          </div>
+          
+          <div className="mt-12 text-center">
+            <Button size="lg" onClick={() => navigate('/search')} className="rounded-full px-8">
+              Skatīt visus sludinājumus
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
+        </section>
       </div>
+
+      {/* Footer */}
+      <footer className="bg-muted/30 pt-20 pb-10 border-t border-border/50">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+            <div className="col-span-1 md:col-span-1">
+              <Link to="/" className="flex items-center space-x-3 mb-6">
+                <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-md">
+                  <span className="text-primary-foreground font-bold text-xl">B</span>
+                </div>
+                <span className="text-xl font-bold tracking-tight text-foreground uppercase">BALTIC<span className="text-primary">MODERN</span></span>
+              </Link>
+              <p className="text-muted-foreground text-sm leading-relaxed max-w-xs">
+                The premier digital destination for high-end commerce in the Baltic region. Built for trust, designed for elegance.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground mb-6 uppercase tracking-wider text-xs">Marketplace</h4>
+              <ul className="space-y-4 text-sm text-muted-foreground">
+                <li><Link to="/search?category=Transports" className="hover:text-primary transition-colors">Transports</Link></li>
+                <li><Link to="/search?category=Nekustamais īpašums" className="hover:text-primary transition-colors">Real Estate</Link></li>
+                <li><Link to="/search?category=Elektronika" className="hover:text-primary transition-colors">Electronics</Link></li>
+                <li><Link to="/search?category=Darbs un pakalpojumi" className="hover:text-primary transition-colors">Services</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground mb-6 uppercase tracking-wider text-xs">Company</h4>
+              <ul className="space-y-4 text-sm text-muted-foreground">
+                <li><Link to="/about" className="hover:text-primary transition-colors">Our Story</Link></li>
+                <li><Link to="/rules" className="hover:text-primary transition-colors">Guidelines</Link></li>
+                <li><Link to="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link></li>
+                <li><Link to="/contact" className="hover:text-primary transition-colors">Contact Us</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground mb-6 uppercase tracking-wider text-xs">Support</h4>
+              <ul className="space-y-4 text-sm text-muted-foreground">
+                <li><Link to="/help" className="hover:text-primary transition-colors">Help Center</Link></li>
+                <li><Link to="/safety" className="hover:text-primary transition-colors">Safety Tips</Link></li>
+                <li><Link to="/faq" className="hover:text-primary transition-colors">FAQ</Link></li>
+              </ul>
+            </div>
+          </div>
+          <div className="pt-8 border-t border-border/50 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p className="text-muted-foreground text-xs font-medium">
+              © 2026 BALTIC MODERN. ESTABLISHED IN RIGA.
+            </p>
+            <div className="flex gap-6">
+              <span className="text-muted-foreground text-xs font-medium cursor-pointer hover:text-primary transition-colors">Instagram</span>
+              <span className="text-muted-foreground text-xs font-medium cursor-pointer hover:text-primary transition-colors">LinkedIn</span>
+              <span className="text-muted-foreground text-xs font-medium cursor-pointer hover:text-primary transition-colors">Twitter</span>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -10,6 +10,10 @@ interface User {
   user_type: 'c2c' | 'b2b';
   points: number;
   early_access_until: string | null;
+  company_name?: string;
+  company_reg_number?: string;
+  company_vat?: string;
+  company_address?: string;
 }
 
 interface AuthContextType {

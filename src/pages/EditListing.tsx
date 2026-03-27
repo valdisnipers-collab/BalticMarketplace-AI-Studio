@@ -4,6 +4,8 @@ import { useAuth } from '../components/AuthContext';
 import { Pencil, Image as ImageIcon, AlertCircle, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function EditListing() {
   const { user, loading } = useAuth();
@@ -160,7 +162,7 @@ export default function EditListing() {
           price: parseFloat(price),
           category,
           image_url: imageUrl,
-          attributes: JSON.stringify({ ...attributes, subcategory })
+          attributes: { ...attributes, subcategory }
         })
       });
 
@@ -223,13 +225,13 @@ export default function EditListing() {
                   <label htmlFor="title" className="block text-sm font-medium text-slate-700 mb-1">
                     Sludinājuma virsraksts *
                   </label>
-                  <input
+                  <Input
                     id="title"
                     type="text"
                     required
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="appearance-none block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className="w-full"
                   />
                 </div>
 
@@ -239,24 +241,29 @@ export default function EditListing() {
                     <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">
                       Kategorija *
                     </label>
-                    <select
-                      id="category"
-                      required
-                      value={category}
-                      onChange={(e) => handleCategoryChange(e.target.value)}
-                      className="block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white"
-                    >
-                      {CATEGORY_NAMES.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select
+                        id="category"
+                        required
+                        value={category}
+                        onChange={(e) => handleCategoryChange(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
+                      >
+                        {CATEGORY_NAMES.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                      </div>
+                    </div>
                   </div>
                   
                   <div>
                     <label htmlFor="price" className="block text-sm font-medium text-slate-700 mb-1">
                       Cena (€) *
                     </label>
-                    <input
+                    <Input
                       id="price"
                       type="number"
                       step="0.01"
@@ -264,7 +271,7 @@ export default function EditListing() {
                       required
                       value={price}
                       onChange={(e) => setPrice(e.target.value)}
-                      className="appearance-none block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                      className="w-full"
                     />
                   </div>
                 </div>
@@ -275,17 +282,22 @@ export default function EditListing() {
                     <label htmlFor="subcategory" className="block text-sm font-medium text-slate-700 mb-1">
                       Apakškategorija *
                     </label>
-                    <select
-                      id="subcategory"
-                      required
-                      value={subcategory}
-                      onChange={(e) => handleSubcategoryChange(e.target.value)}
-                      className="block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white"
-                    >
-                      {subcategories.map(subcat => (
-                        <option key={subcat} value={subcat}>{subcat}</option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select
+                        id="subcategory"
+                        required
+                        value={subcategory}
+                        onChange={(e) => handleSubcategoryChange(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
+                      >
+                        {subcategories.map(subcat => (
+                          <option key={subcat} value={subcat}>{subcat}</option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -298,23 +310,28 @@ export default function EditListing() {
                           {field.label}
                         </label>
                         {field.type === 'select' ? (
-                          <select
-                            value={attributes[field.name] || ''}
-                            onChange={(e) => setAttributes({...attributes, [field.name]: e.target.value})}
-                            className="block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white"
-                          >
-                            <option value="">Izvēlieties...</option>
-                            {field.options?.map(opt => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
+                          <div className="relative">
+                            <select
+                              value={attributes[field.name] || ''}
+                              onChange={(e) => setAttributes({...attributes, [field.name]: e.target.value})}
+                              className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
+                            >
+                              <option value="">Izvēlieties...</option>
+                              {field.options?.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </div>
+                          </div>
                         ) : (
-                          <input
+                          <Input
                             type={field.type === 'number' ? 'number' : 'text'}
                             placeholder={field.placeholder}
                             value={attributes[field.name] || ''}
                             onChange={(e) => setAttributes({...attributes, [field.name]: e.target.value})}
-                            className="appearance-none block w-full px-4 py-3 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                            className="w-full"
                           />
                         )}
                       </div>
@@ -375,12 +392,12 @@ export default function EditListing() {
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <ImageIcon className="h-5 w-5 text-slate-400" />
                       </div>
-                      <input
+                      <Input
                         id="imageUrl"
                         type="url"
                         value={imageUrl}
                         onChange={(e) => setImageUrl(e.target.value)}
-                        className="appearance-none block w-full pl-10 px-4 py-3 border border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        className="w-full pl-10"
                         placeholder="https://piemers.lv/bilde.jpg"
                       />
                     </div>
@@ -403,13 +420,14 @@ export default function EditListing() {
               </div>
 
               <div className="pt-4 border-t border-slate-200">
-                <button
+                <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="w-full"
+                  size="lg"
                 >
                   {isSubmitting ? 'Saglabā...' : 'Saglabāt izmaiņas'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
