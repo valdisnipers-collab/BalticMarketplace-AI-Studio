@@ -71,12 +71,17 @@ db.exec(`
     sender_id INTEGER NOT NULL,
     receiver_id INTEGER NOT NULL,
     listing_id INTEGER,
+    offer_id INTEGER,
     content TEXT NOT NULL,
+    image_url TEXT,
     is_read BOOLEAN DEFAULT 0,
+    is_phishing_warning BOOLEAN DEFAULT 0,
+    system_warning TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE CASCADE,
     FOREIGN KEY (receiver_id) REFERENCES users (id) ON DELETE CASCADE,
-    FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE SET NULL
+    FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE SET NULL,
+    FOREIGN KEY (offer_id) REFERENCES offers (id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS transactions (
@@ -102,11 +107,13 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     listing_id INTEGER NOT NULL,
     buyer_id INTEGER NOT NULL,
+    sender_id INTEGER NOT NULL,
     amount REAL NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'accepted', 'rejected'
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE CASCADE,
-    FOREIGN KEY (buyer_id) REFERENCES users (id) ON DELETE CASCADE
+    FOREIGN KEY (buyer_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS reports (
@@ -119,6 +126,31 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE,
     FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL, -- 'auction_won', 'auction_ended', 'new_bid', 'new_offer', 'system'
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    link TEXT,
+    is_read BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS saved_searches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    query TEXT,
+    category TEXT,
+    subcategory TEXT,
+    min_price REAL,
+    max_price REAL,
+    attributes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
   );
 
@@ -275,6 +307,12 @@ try {
 }
 
 try {
+  db.exec('ALTER TABLE listings ADD COLUMN location TEXT');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
   db.exec('ALTER TABLE users ADD COLUMN company_name TEXT');
 } catch (e) {
   // Column might already exist
@@ -288,6 +326,24 @@ try {
 
 try {
   db.exec('ALTER TABLE users ADD COLUMN company_vat TEXT');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE messages ADD COLUMN image_url TEXT');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE offers ADD COLUMN sender_id INTEGER REFERENCES users(id) ON DELETE CASCADE');
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec('ALTER TABLE messages ADD COLUMN offer_id INTEGER REFERENCES offers(id) ON DELETE SET NULL');
 } catch (e) {
   // Column might already exist
 }

@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { LogIn, AlertCircle, Phone, KeyRound, Mail, Lock, Fingerprint, ArrowLeft } from 'lucide-react';
+import { LogIn, AlertCircle, Phone, KeyRound, Mail, Lock, Fingerprint, ArrowLeft, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from '@/components/ui/badge';
 
 type AuthMethod = 'select' | 'email' | 'phone' | 'smart-id';
@@ -359,14 +366,16 @@ export default function Login() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Valsts</label>
-                  <select
-                    value={country} onChange={(e) => setCountry(e.target.value)}
-                    className="block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  >
-                    <option value="LV">Latvija</option>
-                    <option value="EE">Igaunija</option>
-                    <option value="LT">Lietuva</option>
-                  </select>
+                  <Select value={country} onValueChange={setCountry}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Izvēlieties valsti" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="LV">Latvija</SelectItem>
+                      <SelectItem value="EE">Igaunija</SelectItem>
+                      <SelectItem value="LT">Lietuva</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Personas kods</label>

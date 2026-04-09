@@ -1,9 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { Users, Package, Trash2, ShieldAlert, Flag, CheckCircle, XCircle, Settings, Megaphone, Plus, Edit, BarChart3 } from 'lucide-react';
+import { Users, Package, Trash2, ShieldAlert, Flag, CheckCircle, XCircle, Settings, Megaphone, Plus, Edit, BarChart3, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface UserData {
   id: number;
@@ -22,6 +42,7 @@ interface ListingData {
   created_at: string;
   author_name: string;
   author_email: string;
+  location?: string;
 }
 
 interface ReportData {
@@ -65,10 +86,27 @@ export default function AdminDashboard() {
   const [reports, setReports] = useState<ReportData[]>([]);
   const [ads, setAds] = useState<AdData[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [stats, setStats] = useState<{totalUsers: number, totalListings: number, pendingReports: number, totalRevenue: number} | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userSort, setUserSort] = useState('newest');
+
+  const [listingSearch, setListingSearch] = useState('');
+  const [listingCategoryFilter, setListingCategoryFilter] = useState('all');
+  const [listingSort, setListingSort] = useState('newest');
+
+  const [adSearch, setAdSearch] = useState('');
+  const [adStatusFilter, setAdStatusFilter] = useState('all');
+  const [adSort, setAdSort] = useState('newest');
+
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportStatusFilter, setReportStatusFilter] = useState('all');
+  const [reportSort, setReportSort] = useState('newest');
+
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [adStats, setAdStats] = useState<{date: string, views: number, clicks: number}[]>([]);
@@ -103,6 +141,14 @@ export default function AdminDashboard() {
     try {
       const token = localStorage.getItem('auth_token');
       
+      const statsRes = await fetch('/api/admin/stats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setStats(statsData);
+      }
+
       const usersRes = await fetch('/api/admin/users', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -144,8 +190,26 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteUser = async (id: number) => {
-    if (!window.confirm('Vai tiešām vēlies dzēst šo lietotāju?')) return;
+  const handleUpdateUserRole = async (id: number, newRole: string) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/admin/users/${id}/role`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ role: newRole })
+      });
+      if (!res.ok) throw new Error('Neizdevās atjaunināt lietotāja lomu');
+      setUsers(users.map(u => u.id === id ? { ...u, role: newRole } : u));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteUser = async (id: number): Promise<boolean> => {
+    if (!window.confirm('Vai tiešām vēlies dzēst šo lietotāju?')) return false;
     try {
       const token = localStorage.getItem('auth_token');
       const res = await fetch(`/api/admin/users/${id}`, {
@@ -154,13 +218,15 @@ export default function AdminDashboard() {
       });
       if (!res.ok) throw new Error('Neizdevās dzēst lietotāju');
       setUsers(users.filter(u => u.id !== id));
+      return true;
     } catch (err: any) {
       alert(err.message);
+      return false;
     }
   };
 
-  const handleDeleteListing = async (id: number) => {
-    if (!window.confirm('Vai tiešām vēlies dzēst šo sludinājumu?')) return;
+  const handleDeleteListing = async (id: number): Promise<boolean> => {
+    if (!window.confirm('Vai tiešām vēlies dzēst šo sludinājumu?')) return false;
     try {
       const token = localStorage.getItem('auth_token');
       const res = await fetch(`/api/admin/listings/${id}`, {
@@ -169,8 +235,10 @@ export default function AdminDashboard() {
       });
       if (!res.ok) throw new Error('Neizdevās dzēst sludinājumu');
       setListings(listings.filter(l => l.id !== id));
+      return true;
     } catch (err: any) {
       alert(err.message);
+      return false;
     }
   };
 
@@ -360,6 +428,55 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Kopā lietotāji</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-1">{stats.totalUsers}</p>
+                </div>
+                <div className="h-12 w-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
+                  <Users className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Kopā sludinājumi</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-1">{stats.totalListings}</p>
+                </div>
+                <div className="h-12 w-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center">
+                  <Package className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Neapstrādātas sūdzības</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-1">{stats.pendingReports}</p>
+                </div>
+                <div className="h-12 w-12 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center">
+                  <Flag className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Kopējie ienākumi</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-1">€{stats.totalRevenue.toFixed(2)}</p>
+                </div>
+                <div className="h-12 w-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center">
+                  <BarChart3 className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="bg-red-50 text-red-700 p-4 rounded-lg">
             {error}
@@ -368,61 +485,66 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <div className="flex border-b border-slate-200 overflow-x-auto">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => setActiveTab('users')}
-            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 transition-colors whitespace-nowrap ${
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 rounded-none transition-colors whitespace-nowrap h-auto ${
               activeTab === 'users' 
-                ? 'border-primary-600 text-primary-600' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                ? 'border-primary-600 text-primary-600 bg-transparent hover:bg-transparent' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 bg-transparent hover:bg-transparent'
             }`}
           >
             <Users className="w-4 h-4 mr-2" />
             Lietotāji ({users.length})
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => setActiveTab('listings')}
-            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 transition-colors whitespace-nowrap ${
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 rounded-none transition-colors whitespace-nowrap h-auto ${
               activeTab === 'listings' 
-                ? 'border-primary-600 text-primary-600' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                ? 'border-primary-600 text-primary-600 bg-transparent hover:bg-transparent' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 bg-transparent hover:bg-transparent'
             }`}
           >
             <Package className="w-4 h-4 mr-2" />
             Sludinājumi ({listings.length})
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => setActiveTab('reports')}
-            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 transition-colors whitespace-nowrap ${
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 rounded-none transition-colors whitespace-nowrap h-auto ${
               activeTab === 'reports' 
-                ? 'border-primary-600 text-primary-600' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                ? 'border-primary-600 text-primary-600 bg-transparent hover:bg-transparent' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 bg-transparent hover:bg-transparent'
             }`}
           >
             <Flag className="w-4 h-4 mr-2" />
             Sūdzības ({reports.length})
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => setActiveTab('settings')}
-            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 transition-colors whitespace-nowrap ${
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 rounded-none transition-colors whitespace-nowrap h-auto ${
               activeTab === 'settings' 
-                ? 'border-primary-600 text-primary-600' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                ? 'border-primary-600 text-primary-600 bg-transparent hover:bg-transparent' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 bg-transparent hover:bg-transparent'
             }`}
           >
             <Settings className="w-4 h-4 mr-2" />
             Iestatījumi
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => setActiveTab('ads')}
-            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 transition-colors whitespace-nowrap ${
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 rounded-none transition-colors whitespace-nowrap h-auto ${
               activeTab === 'ads' 
-                ? 'border-primary-600 text-primary-600' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                ? 'border-primary-600 text-primary-600 bg-transparent hover:bg-transparent' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 bg-transparent hover:bg-transparent'
             }`}
           >
             <Megaphone className="w-4 h-4 mr-2" />
             Reklāmas ({ads.length})
-          </button>
+          </Button>
         </div>
 
         {/* Users Tab */}
@@ -430,46 +552,118 @@ export default function AdminDashboard() {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
+            className="space-y-4"
           >
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Vārds</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">E-pasts</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Loma</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Maks</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Darbības</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {users.map((u) => (
-                    <tr key={u.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{u.id}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{u.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{u.email}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">€{u.balance.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {u.role !== 'admin' && (
-                          <button 
-                            onClick={() => handleDeleteUser(u.id)}
-                            className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <Input
+                placeholder="Meklēt lietotājus pēc vārda vai e-pasta..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                className="max-w-md"
+              />
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select value={userRoleFilter} onValueChange={setUserRoleFilter}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Loma">
+                      {userRoleFilter === 'all' ? 'Visas lomas' : 
+                       userRoleFilter === 'user' ? 'Lietotājs' : 
+                       userRoleFilter === 'admin' ? 'Administrators' : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Visas lomas</SelectItem>
+                    <SelectItem value="user">Lietotājs</SelectItem>
+                    <SelectItem value="admin">Administrators</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={userSort} onValueChange={setUserSort}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Kārtot">
+                      {userSort === 'newest' ? 'Jaunākie vispirms' : 
+                       userSort === 'oldest' ? 'Vecākie vispirms' : 
+                       userSort === 'balance_desc' ? 'Lielākais atlikums' : 
+                       userSort === 'balance_asc' ? 'Mazākais atlikums' : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Jaunākie vispirms</SelectItem>
+                    <SelectItem value="oldest">Vecākie vispirms</SelectItem>
+                    <SelectItem value="balance_desc">Lielākais atlikums</SelectItem>
+                    <SelectItem value="balance_asc">Mazākais atlikums</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Vārds</TableHead>
+                      <TableHead>E-pasts</TableHead>
+                      <TableHead>Loma</TableHead>
+                      <TableHead>Maks</TableHead>
+                      <TableHead className="text-right">Darbības</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users
+                      .filter(u => 
+                        (u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+                        u.email.toLowerCase().includes(userSearch.toLowerCase())) &&
+                        (userRoleFilter === 'all' || u.role === userRoleFilter)
+                      )
+                      .sort((a, b) => {
+                        if (userSort === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                        if (userSort === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                        if (userSort === 'balance_desc') return b.balance - a.balance;
+                        if (userSort === 'balance_asc') return a.balance - b.balance;
+                        return 0;
+                      })
+                      .map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell className="font-medium">{u.id}</TableCell>
+                        <TableCell>{u.name}</TableCell>
+                        <TableCell>{u.email}</TableCell>
+                        <TableCell>
+                          <Select
+                            value={u.role}
+                            onValueChange={(value) => handleUpdateUserRole(u.id, value)}
+                            disabled={u.id === user?.id} // Prevent changing own role
                           >
-                            <Trash2 className="w-4 h-4 mr-1" /> Dzēst
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                            <SelectTrigger className="w-[120px] h-8 text-xs">
+                              <SelectValue placeholder="Izvēlies lomu">
+                                {u.role === 'user' ? 'Lietotājs' : 
+                                 u.role === 'admin' ? 'Admins' : 
+                                 u.role === 'b2b' ? 'B2B' : u.role}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="user">Lietotājs</SelectItem>
+                              <SelectItem value="b2b">B2B</SelectItem>
+                              <SelectItem value="admin">Admins</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>€{u.balance.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          {u.role !== 'admin' && (
+                            <Button 
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteUser(u.id)}
+                              className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
+                            >
+                              <Trash2 className="w-4 h-4 mr-1" /> Dzēst
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </motion.div>
         )}
@@ -479,38 +673,97 @@ export default function AdminDashboard() {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
+            className="space-y-4"
           >
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Nosaukums</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Cena</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Autors</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Darbības</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {listings.map((l) => (
-                    <tr key={l.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{l.id}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{l.title}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">€{l.price.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{l.author_name} ({l.author_email})</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button 
-                          onClick={() => handleDeleteListing(l.id)}
-                          className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" /> Dzēst
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <Input
+                placeholder="Meklēt sludinājumus pēc nosaukuma..."
+                value={listingSearch}
+                onChange={(e) => setListingSearch(e.target.value)}
+                className="max-w-md"
+              />
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select value={listingCategoryFilter} onValueChange={setListingCategoryFilter}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Kategorija">
+                      {listingCategoryFilter === 'all' ? 'Visas kategorijas' : listingCategoryFilter}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Visas kategorijas</SelectItem>
+                    {Array.from(new Set(listings.map(l => l.category))).map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={listingSort} onValueChange={setListingSort}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Kārtot">
+                      {listingSort === 'newest' ? 'Jaunākie vispirms' : 
+                       listingSort === 'oldest' ? 'Vecākie vispirms' : 
+                       listingSort === 'price_desc' ? 'Dārgākie vispirms' : 
+                       listingSort === 'price_asc' ? 'Lētākie vispirms' : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Jaunākie vispirms</SelectItem>
+                    <SelectItem value="oldest">Vecākie vispirms</SelectItem>
+                    <SelectItem value="price_desc">Dārgākie vispirms</SelectItem>
+                    <SelectItem value="price_asc">Lētākie vispirms</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Nosaukums</TableHead>
+                      <TableHead>Cena</TableHead>
+                      <TableHead>Kategorija</TableHead>
+                      <TableHead>Atrašanās vieta</TableHead>
+                      <TableHead>Autors</TableHead>
+                      <TableHead className="text-right">Darbības</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {listings
+                      .filter(l => 
+                        l.title.toLowerCase().includes(listingSearch.toLowerCase()) &&
+                        (listingCategoryFilter === 'all' || l.category === listingCategoryFilter)
+                      )
+                      .sort((a, b) => {
+                        if (listingSort === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                        if (listingSort === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                        if (listingSort === 'price_desc') return b.price - a.price;
+                        if (listingSort === 'price_asc') return a.price - b.price;
+                        return 0;
+                      })
+                      .map((l) => (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-medium">{l.id}</TableCell>
+                        <TableCell>{l.title}</TableCell>
+                        <TableCell>€{l.price.toFixed(2)}</TableCell>
+                        <TableCell>{l.category}</TableCell>
+                        <TableCell>{l.location || 'Nav norādīta'}</TableCell>
+                        <TableCell>{l.author_name} ({l.author_email})</TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteListing(l.id)}
+                            className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" /> Dzēst
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </motion.div>
         )}
@@ -520,62 +773,153 @@ export default function AdminDashboard() {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
+            className="space-y-4"
           >
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Sūdzības iesniedzējs</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Mērķis</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Iemesls</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Statuss</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Darbības</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {reports.map((r) => (
-                    <tr key={r.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{r.id}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{r.reporter_name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <Input
+                placeholder="Meklēt sūdzības pēc iemesla vai iesniedzēja..."
+                value={reportSearch}
+                onChange={(e) => setReportSearch(e.target.value)}
+                className="max-w-md"
+              />
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select value={reportStatusFilter} onValueChange={setReportStatusFilter}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Statuss">
+                      {reportStatusFilter === 'all' ? 'Visi statusi' : 
+                       reportStatusFilter === 'pending' ? 'Gaida' : 
+                       reportStatusFilter === 'resolved' ? 'Atrisināts' : 
+                       reportStatusFilter === 'dismissed' ? 'Noraidīts' : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Visi statusi</SelectItem>
+                    <SelectItem value="pending">Gaida</SelectItem>
+                    <SelectItem value="resolved">Atrisināts</SelectItem>
+                    <SelectItem value="dismissed">Noraidīts</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={reportSort} onValueChange={setReportSort}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Kārtot">
+                      {reportSort === 'newest' ? 'Jaunākie vispirms' : 
+                       reportSort === 'oldest' ? 'Vecākie vispirms' : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Jaunākie vispirms</SelectItem>
+                    <SelectItem value="oldest">Vecākie vispirms</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Sūdzības iesniedzējs</TableHead>
+                      <TableHead>Mērķis</TableHead>
+                      <TableHead>Iemesls</TableHead>
+                      <TableHead>Statuss</TableHead>
+                      <TableHead className="text-right">Darbības</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reports
+                      .filter(r => 
+                        (r.reason.toLowerCase().includes(reportSearch.toLowerCase()) || 
+                        r.reporter_name.toLowerCase().includes(reportSearch.toLowerCase())) &&
+                        (reportStatusFilter === 'all' || r.status === reportStatusFilter)
+                      )
+                      .sort((a, b) => {
+                        if (reportSort === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                        if (reportSort === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                        return 0;
+                      })
+                      .map((r) => (
+                      <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.id}</TableCell>
+                      <TableCell>{r.reporter_name}</TableCell>
+                      <TableCell>
                         {r.listing_id ? `Sludinājums: ${r.reported_listing_title}` : `Lietotājs: ${r.reported_user_name}`}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-500 max-w-xs truncate" title={r.reason}>{r.reason}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          r.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
-                          r.status === 'resolved' ? 'bg-green-100 text-green-800' : 
-                          'bg-slate-100 text-slate-800'
-                        }`}>
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate" title={r.reason}>{r.reason}</TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          r.status === 'pending' ? 'outline' : 
+                          r.status === 'resolved' ? 'default' : 
+                          'secondary'
+                        } className={
+                          r.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : 
+                          r.status === 'resolved' ? 'bg-green-100 text-green-800 hover:bg-green-100' : 
+                          ''
+                        }>
                           {r.status === 'pending' ? 'Gaida' : r.status === 'resolved' ? 'Atrisināts' : 'Noraidīts'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
                         {r.status === 'pending' && (
                           <div className="flex items-center justify-end space-x-2">
-                            <button 
+                            {r.listing_id && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={async () => {
+                                  const success = await handleDeleteListing(r.listing_id!);
+                                  if (success) {
+                                    handleUpdateReportStatus(r.id, 'resolved');
+                                  }
+                                }}
+                                className="text-red-600 hover:text-red-900 hover:bg-red-50"
+                                title="Dzēst sludinājumu"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </Button>
+                            )}
+                            {r.user_id && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={async () => {
+                                  const success = await handleDeleteUser(r.user_id!);
+                                  if (success) {
+                                    handleUpdateReportStatus(r.id, 'resolved');
+                                  }
+                                }}
+                                className="text-red-600 hover:text-red-900 hover:bg-red-50"
+                                title="Dzēst lietotāju"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </Button>
+                            )}
+                            <Button 
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleUpdateReportStatus(r.id, 'resolved')}
-                              className="text-green-600 hover:text-green-900"
+                              className="text-green-600 hover:text-green-900 hover:bg-green-50"
                               title="Atzīmēt kā atrisinātu"
                             >
                               <CheckCircle className="w-5 h-5" />
-                            </button>
-                            <button 
+                            </Button>
+                            <Button 
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleUpdateReportStatus(r.id, 'dismissed')}
-                              className="text-slate-400 hover:text-slate-600"
+                              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                               title="Noraidīt"
                             >
                               <XCircle className="w-5 h-5" />
-                            </button>
+                            </Button>
                           </div>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
+            </div>
             </div>
           </motion.div>
         )}
@@ -601,11 +945,10 @@ export default function AdminDashboard() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Agrās piekļuves cena (punktos)
                 </label>
-                <input
+                <Input
                   type="number"
                   value={settings.early_access_price || ''}
                   onChange={(e) => setSettings({ ...settings, early_access_price: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   required
                   min="0"
                 />
@@ -616,11 +959,10 @@ export default function AdminDashboard() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Reklāmas cena (punktos)
                 </label>
-                <input
+                <Input
                   type="number"
                   value={settings.ad_price_points || ''}
                   onChange={(e) => setSettings({ ...settings, ad_price_points: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   required
                   min="0"
                 />
@@ -631,11 +973,10 @@ export default function AdminDashboard() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Agrās piekļuves ilgums (stundās)
                 </label>
-                <input
+                <Input
                   type="number"
                   value={settings.early_access_duration_hours || ''}
                   onChange={(e) => setSettings({ ...settings, early_access_duration_hours: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   required
                   min="1"
                 />
@@ -646,12 +987,11 @@ export default function AdminDashboard() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   100 punktu cena (EUR)
                 </label>
-                <input
+                <Input
                   type="number"
                   step="0.01"
                   value={settings.points_price_eur_per_100 || ''}
                   onChange={(e) => setSettings({ ...settings, points_price_eur_per_100: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   required
                   min="0"
                 />
@@ -659,12 +999,12 @@ export default function AdminDashboard() {
               </div>
 
               <div className="pt-4 border-t border-slate-200">
-                <button
+                <Button
                   type="submit"
                   className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors"
                 >
                   Saglabāt iestatījumus
-                </button>
+                </Button>
               </div>
             </form>
           </motion.div>
@@ -675,35 +1015,78 @@ export default function AdminDashboard() {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
+            className="space-y-4"
           >
-            <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-              <h2 className="text-lg font-bold text-slate-900">Reklāmu pārvaldība</h2>
-              <button
-                onClick={() => openAdModal()}
-                className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Pievienot reklāmu
-              </button>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <Input
+                placeholder="Meklēt reklāmas pēc nosaukuma vai lietotāja..."
+                value={adSearch}
+                onChange={(e) => setAdSearch(e.target.value)}
+                className="max-w-md"
+              />
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select value={adStatusFilter} onValueChange={setAdStatusFilter}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Statuss" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Visi statusi</SelectItem>
+                    <SelectItem value="approved">Apstiprināts</SelectItem>
+                    <SelectItem value="pending">Gaida</SelectItem>
+                    <SelectItem value="rejected">Noraidīts</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={adSort} onValueChange={setAdSort}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Kārtot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Jaunākie vispirms</SelectItem>
+                    <SelectItem value="oldest">Vecākie vispirms</SelectItem>
+                    <SelectItem value="views_desc">Vairāk skatījumu</SelectItem>
+                    <SelectItem value="clicks_desc">Vairāk klikšķu</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() => openAdModal()}
+                  className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Pievienot reklāmu
+                </Button>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Reklāma</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Lietotājs / Kat.</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Izmērs</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Periods</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Statistika</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Statuss</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Darbības</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {ads.map((ad) => (
-                    <tr key={ad.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Reklāma</TableHead>
+                      <TableHead>Lietotājs / Kat.</TableHead>
+                      <TableHead>Izmērs</TableHead>
+                      <TableHead>Periods</TableHead>
+                      <TableHead>Statistika</TableHead>
+                      <TableHead>Statuss</TableHead>
+                      <TableHead className="text-right">Darbības</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {ads
+                      .filter(a => 
+                        (a.title.toLowerCase().includes(adSearch.toLowerCase()) || 
+                        (a.user_name && a.user_name.toLowerCase().includes(adSearch.toLowerCase()))) &&
+                        (adStatusFilter === 'all' || a.status === adStatusFilter)
+                      )
+                      .sort((a, b) => {
+                        if (adSort === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                        if (adSort === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                        if (adSort === 'views_desc') return b.views - a.views;
+                        if (adSort === 'clicks_desc') return b.clicks - a.clicks;
+                        return 0;
+                      })
+                      .map((ad) => (
+                      <TableRow key={ad.id}>
+                      <TableCell>
                         <div className="flex items-center">
                           <img src={ad.image_url} alt={ad.title} className="h-10 w-10 object-cover rounded border border-slate-200 mr-3" />
                           <div>
@@ -713,35 +1096,37 @@ export default function AdminDashboard() {
                             </a>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      </TableCell>
+                      <TableCell>
                         <div className="font-medium text-slate-900">{ad.user_name || 'Admins'}</div>
-                        <div className="text-xs">{ad.category || 'Visas kategorijas'}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-800">
-                          {ad.size}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                        <div>No: {new Date(ad.start_date).toLocaleDateString('lv-LV')}</div>
-                        <div>Līdz: {new Date(ad.end_date).toLocaleDateString('lv-LV')}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                        <div>Skatījumi: {ad.views}</div>
-                        <div>Klikšķi: {ad.clicks}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-xs text-slate-500">{ad.category || 'Visas kategorijas'}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{ad.size}</Badge>
+                      </TableCell>
+                      <TableCell className="text-slate-500">
+                        <div className="text-sm">No: {new Date(ad.start_date).toLocaleDateString('lv-LV')}</div>
+                        <div className="text-sm">Līdz: {new Date(ad.end_date).toLocaleDateString('lv-LV')}</div>
+                      </TableCell>
+                      <TableCell className="text-slate-500">
+                        <div className="text-sm">Skatījumi: {ad.views}</div>
+                        <div className="text-sm">Klikšķi: {ad.clicks}</div>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex flex-col gap-1">
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full w-fit ${
-                            ad.status === 'approved' ? 'bg-green-100 text-green-800' :
-                            ad.status === 'pending' ? 'bg-amber-100 text-amber-800' :
-                            'bg-red-100 text-red-800'
+                          <Badge variant={
+                            ad.status === 'approved' ? 'default' :
+                            ad.status === 'pending' ? 'outline' :
+                            'destructive'
+                          } className={`w-fit ${
+                            ad.status === 'approved' ? 'bg-green-100 text-green-800 hover:bg-green-100' :
+                            ad.status === 'pending' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                            ''
                           }`}>
                             {ad.status === 'approved' ? 'Apstiprināta' :
                              ad.status === 'pending' ? 'Gaida' : 'Noraidīta'}
-                          </span>
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full w-fit ${
+                          </Badge>
+                          <Badge variant="secondary" className={`w-fit ${
                             ad.is_active === 1 
                               ? new Date(ad.end_date) < new Date() 
                                 ? 'bg-slate-100 text-slate-800' // Expired
@@ -751,61 +1136,72 @@ export default function AdminDashboard() {
                             {ad.is_active === 1 
                               ? new Date(ad.end_date) < new Date() ? 'Beigusies' : 'Aktīva'
                               : 'Neaktīva'}
-                          </span>
+                          </Badge>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      </TableCell>
+                      <TableCell className="text-right">
                         {ad.status === 'pending' && (
                           <>
-                            <button 
+                            <Button 
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleQuickAdStatus(ad, 'approved')}
-                              className="text-green-600 hover:text-green-900 mr-3"
+                              className="text-green-600 hover:text-green-900 hover:bg-green-50 mr-1"
                               title="Apstiprināt"
                             >
                               <CheckCircle className="w-5 h-5" />
-                            </button>
-                            <button 
+                            </Button>
+                            <Button 
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleQuickAdStatus(ad, 'rejected')}
-                              className="text-red-600 hover:text-red-900 mr-3"
+                              className="text-red-600 hover:text-red-900 hover:bg-red-50 mr-1"
                               title="Noraidīt"
                             >
                               <XCircle className="w-5 h-5" />
-                            </button>
+                            </Button>
                           </>
                         )}
-                        <button 
+                        <Button 
+                          variant="ghost"
+                          size="icon"
                           onClick={() => openStatsModal(ad)}
-                          className="text-indigo-600 hover:text-indigo-900 mr-3"
+                          className="text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 mr-1"
                           title="Skatīt statistiku"
                         >
                           <BarChart3 className="w-5 h-5" />
-                        </button>
-                        <button 
+                        </Button>
+                        <Button 
+                          variant="ghost"
+                          size="icon"
                           onClick={() => openAdModal(ad)}
-                          className="text-primary-600 hover:text-primary-900 mr-3"
+                          className="text-primary-600 hover:text-primary-900 hover:bg-primary-50 mr-1"
                           title="Rediģēt"
                         >
                           <Edit className="w-5 h-5" />
-                        </button>
-                        <button 
+                        </Button>
+                        <Button 
+                          variant="ghost"
+                          size="icon"
                           onClick={() => handleDeleteAd(ad.id)}
-                          className="text-red-600 hover:text-red-900"
+                          className="text-red-600 hover:text-red-900 hover:bg-red-50"
                           title="Dzēst"
                         >
                           <Trash2 className="w-5 h-5" />
-                        </button>
-                      </td>
-                    </tr>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   ))}
                   {ads.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-slate-500 py-8">
                         Nav pievienotu reklāmu
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
+            </div>
             </div>
           </motion.div>
         )}
@@ -824,146 +1220,145 @@ export default function AdminDashboard() {
               <h3 className="text-xl font-bold text-slate-900">
                 {editingAd ? 'Rediģēt reklāmu' : 'Pievienot jaunu reklāmu'}
               </h3>
-              <button 
+              <Button 
+                variant="ghost"
+                size="icon"
                 onClick={() => setIsAdModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600"
               >
                 <XCircle className="w-6 h-6" />
-              </button>
+              </Button>
             </div>
             
             <form onSubmit={handleSaveAd} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nosaukums</label>
-                <input
+                <Input
                   type="text"
                   required
                   value={adForm.title}
                   onChange={e => setAdForm({...adForm, title: e.target.value})}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="Pavasara izpārdošana"
                 />
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Attēla URL (JPG, PNG, GIF)</label>
-                <input
+                <Input
                   type="url"
                   required
                   value={adForm.image_url}
                   onChange={e => setAdForm({...adForm, image_url: e.target.value})}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="https://example.com/banner.gif"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Saites URL (kurp vedīs klikšķis)</label>
-                <input
+                <Input
                   type="url"
                   required
                   value={adForm.link_url}
                   onChange={e => setAdForm({...adForm, link_url: e.target.value})}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="https://example.com/promo"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Izmērs / Novietojums</label>
-                <select
-                  value={adForm.size}
-                  onChange={e => setAdForm({...adForm, size: e.target.value})}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option value="728x90">Leaderboard (728x90) - Augšā/Apakšā</option>
-                  <option value="300x250">Medium Rectangle (300x250) - Sānos/Sarakstā</option>
-                  <option value="970x250">Billboard (970x250) - Liels baneris augšā</option>
-                  <option value="300x600">Half Page (300x600) - Sānu panelī</option>
-                </select>
+                <Select value={adForm.size} onValueChange={value => setAdForm({...adForm, size: value})}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Izvēlieties izmēru" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="728x90">Leaderboard (728x90) - Augšā/Apakšā</SelectItem>
+                    <SelectItem value="300x250">Medium Rectangle (300x250) - Sānos/Sarakstā</SelectItem>
+                    <SelectItem value="970x250">Billboard (970x250) - Liels baneris augšā</SelectItem>
+                    <SelectItem value="300x600">Half Page (300x600) - Sānu panelī</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Sākuma datums</label>
-                  <input
+                  <Input
                     type="datetime-local"
                     required
                     value={adForm.start_date}
                     onChange={e => setAdForm({...adForm, start_date: e.target.value})}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Beigu datums</label>
-                  <input
+                  <Input
                     type="datetime-local"
                     required
                     value={adForm.end_date}
                     onChange={e => setAdForm({...adForm, end_date: e.target.value})}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Kategorija (Mērķauditorija)</label>
-                <select
-                  value={adForm.category}
-                  onChange={e => setAdForm({...adForm, category: e.target.value})}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option value="">Visas kategorijas (Rādīt visur)</option>
-                  <option value="Transports">Transports</option>
-                  <option value="Nekustamais īpašums">Nekustamais īpašums</option>
-                  <option value="Elektronika">Elektronika</option>
-                  <option value="Mājai un dārzam">Mājai un dārzam</option>
-                  <option value="Apģērbi un apavi">Apģērbi un apavi</option>
-                  <option value="Pakalpojumi">Pakalpojumi</option>
-                  <option value="Cits">Cits</option>
-                </select>
+                <Select value={adForm.category || 'all'} onValueChange={value => setAdForm({...adForm, category: value === 'all' ? '' : value})}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Izvēlieties kategoriju" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Visas kategorijas (Rādīt visur)</SelectItem>
+                    <SelectItem value="Transports">Transports</SelectItem>
+                    <SelectItem value="Nekustamais īpašums">Nekustamais īpašums</SelectItem>
+                    <SelectItem value="Elektronika">Elektronika</SelectItem>
+                    <SelectItem value="Mājai un dārzam">Mājai un dārzam</SelectItem>
+                    <SelectItem value="Apģērbi un apavi">Apģērbi un apavi</SelectItem>
+                    <SelectItem value="Pakalpojumi">Pakalpojumi</SelectItem>
+                    <SelectItem value="Cits">Cits</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Statuss</label>
-                <select
-                  value={adForm.status}
-                  onChange={e => setAdForm({...adForm, status: e.target.value})}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option value="approved">Apstiprināta</option>
-                  <option value="pending">Gaida apstiprinājumu</option>
-                  <option value="rejected">Noraidīta</option>
-                </select>
+                <Select value={adForm.status} onValueChange={value => setAdForm({...adForm, status: value})}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Izvēlieties statusu" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="approved">Apstiprināta</SelectItem>
+                    <SelectItem value="pending">Gaida apstiprinājumu</SelectItem>
+                    <SelectItem value="rejected">Noraidīta</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="flex items-center mt-4">
-                <input
-                  type="checkbox"
+              <div className="flex items-center mt-4 space-x-2">
+                <Checkbox
                   id="is_active"
                   checked={adForm.is_active}
-                  onChange={e => setAdForm({...adForm, is_active: e.target.checked})}
-                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-slate-300 rounded"
+                  onCheckedChange={(checked) => setAdForm({...adForm, is_active: checked as boolean})}
                 />
-                <label htmlFor="is_active" className="ml-2 block text-sm text-slate-900">
+                <label htmlFor="is_active" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-slate-900">
                   Reklāma ir aktīva
                 </label>
               </div>
 
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-200 mt-6">
-                <button
+                <Button
+                  variant="outline"
                   type="button"
                   onClick={() => setIsAdModalOpen(false)}
                   className="px-4 py-2 text-slate-700 font-medium hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   Atcelt
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   className="px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors"
                 >
                   {editingAd ? 'Saglabāt izmaiņas' : 'Pievienot'}
-                </button>
+                </Button>
               </div>
             </form>
           </motion.div>
@@ -982,12 +1377,14 @@ export default function AdminDashboard() {
               <h3 className="text-xl font-bold text-slate-900">
                 Statistika: {editingAd.title}
               </h3>
-              <button 
+              <Button 
+                variant="ghost"
+                size="icon"
                 onClick={() => setIsStatsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600"
               >
                 <XCircle className="w-6 h-6" />
-              </button>
+              </Button>
             </div>
             
             <div className="p-6">

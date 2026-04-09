@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { Pencil, Image as ImageIcon, AlertCircle, ArrowLeft } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Pencil, Image as ImageIcon, AlertCircle, ArrowLeft, ChevronDown } from 'lucide-react';
+import { parseImages } from '../lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { motion, AnimatePresence } from 'motion/react';
+import { PlusCircle } from 'lucide-react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function EditListing() {
   const { user, loading } = useAuth();
@@ -15,9 +25,10 @@ export default function EditListing() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [location, setLocation] = useState('');
   const [category, setCategory] = useState(CATEGORY_NAMES[0]);
   const [subcategory, setSubcategory] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [attributes, setAttributes] = useState<Record<string, string>>({});
   
@@ -26,16 +37,18 @@ export default function EditListing() {
   const [error, setError] = useState('');
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setIsUploading(true);
     const formData = new FormData();
-    formData.append('image', file);
+    files.forEach(file => {
+      formData.append('images', file);
+    });
 
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/upload', {
+      const res = await fetch('/api/upload/multiple', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -44,16 +57,20 @@ export default function EditListing() {
       });
 
       if (!res.ok) {
-        throw new Error('Neizdevās augšupielādēt attēlu');
+        throw new Error('Neizdevās augšupielādēt attēlus');
       }
 
       const data = await res.json();
-      setImageUrl(data.url);
+      setImageUrls(prev => [...prev, ...data.urls]);
     } catch (err: any) {
       alert(err.message);
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const removeImage = (indexToRemove: number) => {
+    setImageUrls(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   // Aizsargāts ceļš - ja nav ielogojies, sūta uz login lapu
@@ -76,8 +93,9 @@ export default function EditListing() {
         setTitle(data.title);
         setDescription(data.description || '');
         setPrice(data.price.toString());
+        setLocation(data.location || '');
         setCategory(data.category);
-        setImageUrl(data.image_url || '');
+        setImageUrls(parseImages(data.image_url));
         if (data.attributes) {
           try {
             const parsed = JSON.parse(data.attributes);
@@ -160,8 +178,9 @@ export default function EditListing() {
           title,
           description,
           price: parseFloat(price),
+          location,
           category,
-          image_url: imageUrl,
+          image_url: JSON.stringify(imageUrls),
           attributes: { ...attributes, subcategory }
         })
       });
@@ -241,22 +260,16 @@ export default function EditListing() {
                     <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">
                       Kategorija *
                     </label>
-                    <div className="relative">
-                      <select
-                        id="category"
-                        required
-                        value={category}
-                        onChange={(e) => handleCategoryChange(e.target.value)}
-                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                      >
+                    <Select value={category} onValueChange={handleCategoryChange}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Izvēlieties kategoriju" />
+                      </SelectTrigger>
+                      <SelectContent>
                         {CATEGORY_NAMES.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                         ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                      </div>
-                    </div>
+                      </SelectContent>
+                    </Select>
                   </div>
                   
                   <div>
@@ -276,28 +289,36 @@ export default function EditListing() {
                   </div>
                 </div>
 
+                <div>
+                  <label htmlFor="location" className="block text-sm font-medium text-slate-700 mb-1">
+                    Atrašanās vieta
+                  </label>
+                  <Input
+                    id="location"
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full"
+                    placeholder="Pilsēta vai novads..."
+                  />
+                </div>
+
                 {/* Apakškategorija */}
                 {subcategories.length > 0 && (
                   <div>
                     <label htmlFor="subcategory" className="block text-sm font-medium text-slate-700 mb-1">
                       Apakškategorija *
                     </label>
-                    <div className="relative">
-                      <select
-                        id="subcategory"
-                        required
-                        value={subcategory}
-                        onChange={(e) => handleSubcategoryChange(e.target.value)}
-                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                      >
+                    <Select value={subcategory} onValueChange={handleSubcategoryChange}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Izvēlieties apakškategoriju" />
+                      </SelectTrigger>
+                      <SelectContent>
                         {subcategories.map(subcat => (
-                          <option key={subcat} value={subcat}>{subcat}</option>
+                          <SelectItem key={subcat} value={subcat}>{subcat}</SelectItem>
                         ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                      </div>
-                    </div>
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
 
@@ -310,21 +331,22 @@ export default function EditListing() {
                           {field.label}
                         </label>
                         {field.type === 'select' ? (
-                          <div className="relative">
-                            <select
-                              value={attributes[field.name] || ''}
-                              onChange={(e) => setAttributes({...attributes, [field.name]: e.target.value})}
-                              className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                            >
-                              <option value="">Izvēlieties...</option>
+                          <Select 
+                            value={attributes[field.name] || 'all'} 
+                            onValueChange={(value) => setAttributes({...attributes, [field.name]: value === 'all' ? '' : value})}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Izvēlieties...">
+                                {attributes[field.name] || 'Izvēlieties...'}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Izvēlieties...</SelectItem>
                               {field.options?.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
+                                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                               ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                            </div>
-                          </div>
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <Input
                             type={field.type === 'number' ? 'number' : 'text'}
@@ -353,9 +375,9 @@ export default function EditListing() {
                   />
                 </div>
 
-                {/* Attēla URL */}
+                {/* Attēli */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Attēls</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Attēli</label>
                   <div className="space-y-4">
                     {/* File Upload */}
                     <div className="flex items-center justify-center w-full">
@@ -375,44 +397,52 @@ export default function EditListing() {
                           type="file" 
                           className="hidden" 
                           accept="image/*"
+                          multiple
                           onChange={handleImageUpload}
                           disabled={isUploading}
                         />
                       </label>
                     </div>
 
-                    <div className="flex items-center">
-                      <div className="flex-grow border-t border-slate-200"></div>
-                      <span className="flex-shrink-0 mx-4 text-slate-400 text-sm">vai ievadiet URL</span>
-                      <div className="flex-grow border-t border-slate-200"></div>
-                    </div>
-
-                    {/* URL Input */}
-                    <div className="relative rounded-md shadow-sm">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <ImageIcon className="h-5 w-5 text-slate-400" />
-                      </div>
-                      <Input
-                        id="imageUrl"
-                        type="url"
-                        value={imageUrl}
-                        onChange={(e) => setImageUrl(e.target.value)}
-                        className="w-full pl-10"
-                        placeholder="https://piemers.lv/bilde.jpg"
-                      />
-                    </div>
-
-                    {/* Preview */}
-                    {imageUrl && (
-                      <div className="mt-4 relative rounded-lg overflow-hidden h-48 bg-slate-100 border border-slate-200">
-                        <img 
-                          src={imageUrl} 
-                          alt="Priekšskatījums" 
-                          className="w-full h-full object-contain"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Kļūda+ielādējot+attēlu';
-                          }}
-                        />
+                    {/* Preview Grid */}
+                    {imageUrls.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
+                        <AnimatePresence>
+                          {imageUrls.map((url, index) => (
+                            <motion.div 
+                              key={`${url}-${index}`}
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              className="relative rounded-2xl overflow-hidden aspect-square bg-slate-100 border border-slate-200 shadow-sm group"
+                            >
+                              <img 
+                                src={url} 
+                                alt={`Preview ${index + 1}`} 
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400?text=Invalid+Image';
+                                }}
+                              />
+                              {index === 0 && (
+                                <div className="absolute top-2 left-2">
+                                  <Badge className="bg-primary-600 hover:bg-primary-700 text-white border-none shadow-md text-[9px] uppercase tracking-wider px-2 py-0.5">
+                                    Galvenais
+                                  </Badge>
+                                </div>
+                              )}
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <button 
+                                  type="button"
+                                  onClick={() => removeImage(index)}
+                                  className="p-2 bg-white/90 backdrop-blur-md rounded-full shadow-xl hover:bg-red-50 text-red-500 transition-all transform hover:scale-110"
+                                >
+                                  <PlusCircle className="w-5 h-5 rotate-45" />
+                                </button>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </div>
                     )}
                   </div>

@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function AddListing() {
   const { user, loading } = useAuth();
@@ -21,24 +28,29 @@ export default function AddListing() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [location, setLocation] = useState('');
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   
   // Dynamic attributes state
   const [attributes, setAttributes] = useState<Record<string, string>>({});
   const [saleType, setSaleType] = useState('fixed');
+  const [auctionEndDate, setAuctionEndDate] = useState('');
+  const [reservePrice, setReservePrice] = useState('');
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setIsUploading(true);
     const formData = new FormData();
-    formData.append('image', file);
+    files.forEach(file => {
+      formData.append('images', file);
+    });
 
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/upload', {
+      const res = await fetch('/api/upload/multiple', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -47,16 +59,20 @@ export default function AddListing() {
       });
 
       if (!res.ok) {
-        throw new Error('Neizdevās augšupielādēt attēlu');
+        throw new Error('Neizdevās augšupielādēt attēlus');
       }
 
       const data = await res.json();
-      setImageUrl(data.url);
+      setImageUrls(prev => [...prev, ...data.urls]);
     } catch (err: any) {
       alert(err.message);
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const removeImage = (indexToRemove: number) => {
+    setImageUrls(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -160,11 +176,14 @@ export default function AddListing() {
           title,
           description,
           price: parseFloat(price),
+          location,
           category,
-          image_url: imageUrl,
+          image_url: JSON.stringify(imageUrls),
           attributes: {
             ...attributes,
-            saleType
+            saleType,
+            ...(saleType === 'auction' && auctionEndDate ? { auctionEndDate } : {}),
+            ...(saleType === 'auction' && reservePrice ? { reservePrice: parseFloat(reservePrice) } : {})
           }
         })
       });
@@ -347,20 +366,19 @@ export default function AddListing() {
                           <div key={field.name} className="space-y-2">
                             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">{field.label}</label>
                             {field.type === 'select' ? (
-                              <div className="relative">
-                                <select
-                                  value={attributes[field.name] || ''}
-                                  onChange={(e) => handleAttributeChange(field.name, e.target.value)}
-                                  className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none w-full px-6 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-primary-600 text-slate-900 font-bold transition-all h-auto"
-                                >
+                              <Select 
+                                value={attributes[field.name] || ''} 
+                                onValueChange={(value) => handleAttributeChange(field.name, value)}
+                              >
+                                <SelectTrigger className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-primary-600 text-slate-900 font-bold transition-all h-auto">
+                                  <SelectValue placeholder="Izvēlieties..." />
+                                </SelectTrigger>
+                                <SelectContent>
                                   {field.options?.map(opt => (
-                                    <option key={opt} value={opt}>{opt}</option>
+                                    <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                                   ))}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
-                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                                </div>
-                              </div>
+                                </SelectContent>
+                              </Select>
                             ) : (
                               <Input
                                 type={field.type}
@@ -425,57 +443,53 @@ export default function AddListing() {
                               type="file" 
                               className="hidden" 
                               accept="image/*"
+                              multiple
                               onChange={handleImageUpload}
                               disabled={isUploading}
                             />
                           </label>
                         </div>
 
-                        <div className="flex items-center">
-                          <div className="flex-grow border-t border-slate-100"></div>
-                          <span className="flex-shrink-0 mx-6 text-slate-300 text-[10px] font-bold uppercase tracking-wider">OR</span>
-                          <div className="flex-grow border-t border-slate-100"></div>
-                        </div>
-
-                        {/* URL Input */}
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
-                            <ImageIcon className="h-5 w-5 text-slate-300" />
+                        {/* Preview Grid */}
+                        {imageUrls.length > 0 && (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
+                            <AnimatePresence>
+                              {imageUrls.map((url, index) => (
+                                <motion.div 
+                                  key={`${url}-${index}`}
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.8 }}
+                                  className="relative rounded-2xl overflow-hidden aspect-square bg-slate-100 border border-slate-200 shadow-sm group"
+                                >
+                                  <img 
+                                    src={url} 
+                                    alt={`Preview ${index + 1}`} 
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400?text=Invalid+Image';
+                                    }}
+                                  />
+                                  {index === 0 && (
+                                    <div className="absolute top-2 left-2">
+                                      <Badge className="bg-primary-600 hover:bg-primary-700 text-white border-none shadow-md text-[9px] uppercase tracking-wider px-2 py-0.5">
+                                        Galvenais
+                                      </Badge>
+                                    </div>
+                                  )}
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <button 
+                                      type="button"
+                                      onClick={() => removeImage(index)}
+                                      className="p-2 bg-white/90 backdrop-blur-md rounded-full shadow-xl hover:bg-red-50 text-red-500 transition-all transform hover:scale-110"
+                                    >
+                                      <PlusCircle className="w-5 h-5 rotate-45" />
+                                    </button>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </AnimatePresence>
                           </div>
-                          <Input
-                            type="url"
-                            value={imageUrl}
-                            onChange={(e) => setImageUrl(e.target.value)}
-                            className="w-full pl-14 px-6 py-4 bg-slate-50 border-none rounded-2xl focus-visible:ring-2 focus-visible:ring-primary-600 text-slate-900 font-bold placeholder:text-slate-300 transition-all h-auto"
-                            placeholder="Direct image URL (e.g., https://...)"
-                          />
-                        </div>
-
-                        {/* Preview */}
-                        {imageUrl && (
-                          <motion.div 
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="relative rounded-3xl overflow-hidden h-64 bg-slate-50 border border-slate-100 shadow-inner"
-                          >
-                            <img 
-                              src={imageUrl} 
-                              alt="Preview" 
-                              className="w-full h-full object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://via.placeholder.com/800x600?text=Invalid+Image+URL';
-                              }}
-                            />
-                            <div className="absolute top-4 right-4">
-                              <button 
-                                type="button"
-                                onClick={() => setImageUrl('')}
-                                className="p-2 bg-white/90 backdrop-blur-md rounded-full shadow-xl hover:bg-white text-red-500 transition-all"
-                              >
-                                <PlusCircle className="w-5 h-5 rotate-45" />
-                              </button>
-                            </div>
-                          </motion.div>
                         )}
                       </div>
                     </div>
@@ -519,9 +533,41 @@ export default function AddListing() {
                     </div>
 
                     <div className="space-y-4">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        {saleType === 'auction' ? 'Starting Bid (€) *' : 'Listing Price (€) *'}
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          {saleType === 'auction' ? 'Starting Bid (€) *' : 'Listing Price (€) *'}
+                        </label>
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const token = localStorage.getItem('auth_token');
+                              const res = await fetch('/api/recommend-price', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({ category, title, attributes })
+                              });
+                              const data = await res.json();
+                              if (res.ok && data.price) {
+                                setPrice(data.price.toString());
+                              } else {
+                                alert(data.error || 'Neizdevās noteikt ieteicamo cenu');
+                              }
+                            } catch (err) {
+                              alert('Kļūda sazinoties ar serveri');
+                            }
+                          }}
+                          disabled={!title || !category}
+                          className="group bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-[10px] font-bold uppercase tracking-widest rounded-full shadow-sm transition-all"
+                          size="sm"
+                        >
+                          <Sparkles className="w-3 h-3 mr-2 text-emerald-500 group-hover:rotate-12 transition-transform" />
+                          AI IETEIKT CENU
+                        </Button>
+                      </div>
                       <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-8 flex items-center pointer-events-none">
                           <span className="text-2xl font-bold text-slate-300">€</span>
@@ -537,6 +583,32 @@ export default function AddListing() {
                           placeholder="0.00"
                         />
                       </div>
+                    </div>
+
+                    {saleType === 'auction' && (
+                      <div className="space-y-4">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Auction End Date & Time *
+                        </label>
+                        <Input
+                          type="datetime-local"
+                          required
+                          value={auctionEndDate}
+                          onChange={(e) => setAuctionEndDate(e.target.value)}
+                          className="w-full px-8 py-6 bg-slate-50 border-none rounded-3xl focus-visible:ring-2 focus-visible:ring-primary-600 text-xl font-bold text-primary-950 transition-all h-auto"
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Location</label>
+                      <Input
+                        type="text"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl focus-visible:ring-2 focus-visible:ring-primary-600 text-slate-900 font-medium placeholder:text-slate-300 transition-all"
+                        placeholder="City, Region..."
+                      />
                     </div>
 
                     <div className="bg-amber-50 rounded-3xl p-6 flex items-start space-x-4">

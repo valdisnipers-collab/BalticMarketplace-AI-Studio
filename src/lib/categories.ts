@@ -34,6 +34,15 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Lietots', 'Jauns', 'Bojāts', 'Rezerves daļām'] },
         ]
       },
+      'Motocikli un kvadricikli': {
+        name: 'Motocikli un kvadricikli',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Motocikls', 'Kvadricikls', 'Motorolleris', 'Mopēds'] },
+          { name: 'brand', label: 'Marka', type: 'text', placeholder: 'Piem., Yamaha, Honda' },
+          { name: 'year', label: 'Izlaiduma gads', type: 'number', placeholder: 'Piem., 2018' },
+          { name: 'engine', label: 'Dzinēja tilpums (cm³)', type: 'number', placeholder: 'Piem., 600' },
+        ]
+      },
       'Kravas auto un tehnika': {
         name: 'Kravas auto un tehnika',
         fields: [
@@ -44,22 +53,26 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Lietots', 'Jauns', 'Bojāts'] },
         ]
       },
-      'Motocikli un kvadricikli': {
-        name: 'Motocikli un kvadricikli',
-        fields: [
-          { name: 'type', label: 'Tips', type: 'select', options: ['Motocikls', 'Kvadricikls', 'Motorolleris', 'Mopēds'] },
-          { name: 'brand', label: 'Marka', type: 'text', placeholder: 'Piem., Yamaha, Honda' },
-          { name: 'year', label: 'Izlaiduma gads', type: 'number', placeholder: 'Piem., 2018' },
-          { name: 'engine', label: 'Dzinēja tilpums (cm³)', type: 'number', placeholder: 'Piem., 600' },
-        ]
-      },
       'Velosipēdi un skrejriteņi': {
         name: 'Velosipēdi un skrejriteņi',
         fields: [
           { name: 'type', label: 'Tips', type: 'select', options: ['Kalnu (MTB)', 'Pilsētas', 'Šosejas', 'Elektriskais velosipēds', 'Elektriskais skrejritenis', 'Bērnu'] },
           { name: 'brand', label: 'Marka', type: 'text', placeholder: 'Piem., Trek, Merida, Xiaomi' },
-          { name: 'frameSize', label: 'Rāmja izmērs', type: 'text', placeholder: 'Piem., L, 19"' },
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Lietots', 'Jauns'] },
+        ]
+      },
+      'Ūdens transports': {
+        name: 'Ūdens transports',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Motorlaiva', 'Kuteris', 'Ūdens motocikls', 'Jahta', 'Piepūšamā laiva', 'Cits'] },
+          { name: 'year', label: 'Izlaiduma gads', type: 'number' },
+          { name: 'length', label: 'Garums (m)', type: 'number' },
+        ]
+      },
+      'Rezerves daļas un piederumi': {
+        name: 'Rezerves daļas un piederumi',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Auto rezerves daļas', 'Moto rezerves daļas', 'Riepas un diski', 'Audio un piederumi', 'Eļļas un šķidrumi', 'Cits'] },
         ]
       }
     }
@@ -85,21 +98,17 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         fields: [
           { name: 'action', label: 'Darījuma veids', type: 'select', options: ['Pārdod', 'Izīrē', 'Pērk', 'Īrē'] },
           { name: 'city', label: 'Pilsēta/Novads', type: 'text', placeholder: 'Piem., Rīga, Jūrmala, Mārupes nov.' },
-          { name: 'district', label: 'Rajons/Pagasts', type: 'text', placeholder: 'Piem., Centrs, Purvciems' },
           { name: 'area', label: 'Mājas platība (m²)', type: 'number', placeholder: 'Piem., 150' },
           { name: 'landArea', label: 'Zemes platība (m²)', type: 'number', placeholder: 'Piem., 1200' },
-          { name: 'floors', label: 'Stāvu skaits', type: 'number', placeholder: 'Piem., 2' },
           { name: 'rooms', label: 'Istabu skaits', type: 'number', placeholder: 'Piem., 4' },
         ]
       },
-      'Zeme': {
-        name: 'Zeme',
+      'Zeme un mežs': {
+        name: 'Zeme un mežs',
         fields: [
-          { name: 'action', label: 'Darījuma veids', type: 'select', options: ['Pārdod', 'Izīrē', 'Pērk'] },
-          { name: 'city', label: 'Pilsēta/Novads', type: 'text', placeholder: 'Piem., Rīga, Jūrmala, Mārupes nov.' },
-          { name: 'district', label: 'Rajons/Pagasts', type: 'text', placeholder: 'Piem., Centrs, Purvciems' },
-          { name: 'area', label: 'Platība (m²)', type: 'number', placeholder: 'Piem., 1500' },
+          { name: 'action', label: 'Darījuma veids', type: 'select', options: ['Pārdod', 'Pērk'] },
           { name: 'purpose', label: 'Pielietojums', type: 'select', options: ['Apbūvei', 'Lauksaimniecībai', 'Mežs', 'Komerciālai apbūvei', 'Cits'] },
+          { name: 'area', label: 'Platība (m²)', type: 'number', placeholder: 'Piem., 1500' },
         ]
       },
       'Komerctelpas': {
@@ -107,8 +116,14 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         fields: [
           { name: 'action', label: 'Darījuma veids', type: 'select', options: ['Pārdod', 'Izīrē', 'Pērk', 'Īrē'] },
           { name: 'type', label: 'Telpu tips', type: 'select', options: ['Birojs', 'Tirdzniecības', 'Noliktava', 'Ražošana', 'Cits'] },
-          { name: 'city', label: 'Pilsēta/Novads', type: 'text', placeholder: 'Piem., Rīga' },
           { name: 'area', label: 'Platība (m²)', type: 'number', placeholder: 'Piem., 200' },
+        ]
+      },
+      'Garāžas un stāvvietas': {
+        name: 'Garāžas un stāvvietas',
+        fields: [
+          { name: 'action', label: 'Darījuma veids', type: 'select', options: ['Pārdod', 'Izīrē', 'Pērk', 'Īrē'] },
+          { name: 'location', label: 'Atrašanās vieta', type: 'text' },
         ]
       }
     }
@@ -123,7 +138,6 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
           { name: 'model', label: 'Modelis', type: 'text', placeholder: 'Piem., iPhone 13 Pro' },
           { name: 'storage', label: 'Atmiņa (GB)', type: 'select', options: ['64', '128', '256', '512', '1024'] },
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots (Kā jauns)', 'Lietots', 'Bojāts'] },
-          { name: 'warranty', label: 'Garantija', type: 'select', options: ['Ir', 'Nav'] },
         ]
       },
       'Datori un planšetdatori': {
@@ -133,7 +147,6 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
           { name: 'brand', label: 'Ražotājs', type: 'text', placeholder: 'Piem., Apple, Lenovo, Asus' },
           { name: 'processor', label: 'Procesors (CPU)', type: 'text', placeholder: 'Piem., Intel Core i5, Apple M1' },
           { name: 'ram', label: 'Operatīvā atmiņa (RAM)', type: 'select', options: ['4 GB', '8 GB', '16 GB', '32 GB', '64 GB+'] },
-          { name: 'storage', label: 'Atmiņa (SSD/HDD)', type: 'text', placeholder: 'Piem., 512 GB SSD' },
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots (Kā jauns)', 'Lietots', 'Bojāts'] },
         ]
       },
@@ -152,20 +165,27 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
           { name: 'brand', label: 'Ražotājs', type: 'text', placeholder: 'Piem., Sony, Canon, DJI' },
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots', 'Bojāts'] },
         ]
+      },
+      'Spēļu konsoles un spēles': {
+        name: 'Spēļu konsoles un spēles',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Konsole', 'Spēle', 'Piederumi'] },
+          { name: 'platform', label: 'Platforma', type: 'select', options: ['PlayStation', 'Xbox', 'Nintendo', 'PC', 'Cits'] },
+          { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots'] },
+        ]
       }
     }
   },
   'Darbs un pakalpojumi': {
     name: 'Darbs un pakalpojumi',
     subcategories: {
-      'Piedāvā darbu (Vakances)': {
-        name: 'Piedāvā darbu (Vakances)',
+      'Vakances (Piedāvā darbu)': {
+        name: 'Vakances (Piedāvā darbu)',
         fields: [
           { name: 'industry', label: 'Nozare', type: 'select', options: ['IT un telekomunikācijas', 'Būvniecība', 'Tirdzniecība', 'Transports un loģistika', 'Ēdināšana', 'Ražošana', 'Klientu apkalpošana', 'Cits'] },
           { name: 'position', label: 'Amats', type: 'text', placeholder: 'Piem., Programmētājs, Pārdevējs' },
           { name: 'salary', label: 'Alga (Bruto)', type: 'text', placeholder: 'Piem., 1500 - 2000 EUR' },
           { name: 'workload', label: 'Slodze', type: 'select', options: ['Pilna slodze', 'Pusslodze', 'Gabaldarbs', 'Maiņu darbs'] },
-          { name: 'location', label: 'Darba vieta', type: 'text', placeholder: 'Piem., Rīga, Attālināti' },
         ]
       },
       'Meklē darbu': {
@@ -174,16 +194,19 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
           { name: 'industry', label: 'Vēlamā nozare', type: 'select', options: ['IT un telekomunikācijas', 'Būvniecība', 'Tirdzniecība', 'Transports un loģistika', 'Ēdināšana', 'Ražošana', 'Klientu apkalpošana', 'Cits'] },
           { name: 'position', label: 'Vēlamais amats', type: 'text', placeholder: 'Piem., Projektu vadītājs' },
           { name: 'experience', label: 'Pieredze', type: 'select', options: ['Bez pieredzes', 'Līdz 1 gadam', '1-3 gadi', '3-5 gadi', 'Vairāk kā 5 gadi'] },
-          { name: 'education', label: 'Izglītība', type: 'select', options: ['Pamatizglītība', 'Vidējā', 'Vidējā profesionālā', 'Augstākā', 'Cits'] },
         ]
       },
       'Pakalpojumi': {
         name: 'Pakalpojumi',
         fields: [
           { name: 'industry', label: 'Nozare', type: 'select', options: ['Būvniecība un remonts', 'Auto remonts', 'Skaistumkopšana', 'Tīrīšana un uzkopšana', 'IT un dizains', 'Juridiskie pakalpojumi', 'Cits'] },
-          { name: 'serviceType', label: 'Pakalpojuma veids', type: 'text', placeholder: 'Piem., Santehniķis, Grāmatvedis' },
           { name: 'priceType', label: 'Cenas veids', type: 'select', options: ['Stundas likme', 'Par gabaldarbu', 'Pēc vienošanās'] },
-          { name: 'location', label: 'Pakalpojuma sniegšanas vieta', type: 'text', placeholder: 'Piem., Rīga un Pierīga' },
+        ]
+      },
+      'Kursi un izglītība': {
+        name: 'Kursi un izglītība',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Valodu kursi', 'IT apmācības', 'Autoskola', 'Augstākā izglītība', 'Cits'] },
         ]
       }
     }
@@ -206,11 +229,161 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots'] },
         ]
       },
-      'Dārzam': {
-        name: 'Dārzam',
+      'Dārzam un pagalmam': {
+        name: 'Dārzam un pagalmam',
         fields: [
           { name: 'type', label: 'Tips', type: 'select', options: ['Dārza tehnika', 'Augi un stādi', 'Dārza mēbeles', 'Siltumnīcas', 'Cits'] },
           { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots'] },
+        ]
+      },
+      'Santehnika un apkure': {
+        name: 'Santehnika un apkure',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Vannas istabai', 'Virtuvei', 'Apkures katli', 'Radiatori', 'Cits'] },
+        ]
+      }
+    }
+  },
+  'Mode un stils': {
+    name: 'Mode un stils',
+    subcategories: {
+      'Sieviešu apģērbi': {
+        name: 'Sieviešu apģērbi',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Kleitas', 'Virsdrēbes', 'Bikses', 'Krekli un blūzes', 'Cits'] },
+          { name: 'size', label: 'Izmērs', type: 'select', options: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Cits'] },
+          { name: 'brand', label: 'Zīmols', type: 'text' },
+          { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Kā jauns', 'Lietots'] },
+        ]
+      },
+      'Vīriešu apģērbi': {
+        name: 'Vīriešu apģērbi',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Virsdrēbes', 'Bikses', 'Krekli', 'Uzlvalki', 'Cits'] },
+          { name: 'size', label: 'Izmērs', type: 'select', options: ['S', 'M', 'L', 'XL', 'XXL', 'Cits'] },
+          { name: 'brand', label: 'Zīmols', type: 'text' },
+          { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Kā jauns', 'Lietots'] },
+        ]
+      },
+      'Apavi': {
+        name: 'Apavi',
+        fields: [
+          { name: 'gender', label: 'Dzimums', type: 'select', options: ['Sieviešu', 'Vīriešu', 'Unisex'] },
+          { name: 'size', label: 'Izmērs', type: 'number' },
+          { name: 'brand', label: 'Zīmols', type: 'text' },
+          { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Kā jauns', 'Lietots'] },
+        ]
+      },
+      'Aksesuāri un rotaslietas': {
+        name: 'Aksesuāri un rotaslietas',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Somas', 'Pulksteņi', 'Rotaslietas', 'Saulesbrilles', 'Cits'] },
+        ]
+      },
+      'Skaistumkopšana un veselība': {
+        name: 'Skaistumkopšana un veselība',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Kosmētika', 'Smaržas', 'Veselības preces', 'Cits'] },
+        ]
+      }
+    }
+  },
+  'Bērniem': {
+    name: 'Bērniem',
+    subcategories: {
+      'Apģērbi un apavi': {
+        name: 'Apģērbi un apavi',
+        fields: [
+          { name: 'gender', label: 'Dzimums', type: 'select', options: ['Meitenēm', 'Zēniem', 'Unisex'] },
+          { name: 'age', label: 'Vecums/Izmērs', type: 'text' },
+          { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots'] },
+        ]
+      },
+      'Rotaļlietas un spēles': {
+        name: 'Rotaļlietas un spēles',
+        fields: [
+          { name: 'ageGroup', label: 'Vecuma grupa', type: 'select', options: ['0-3 mēn', '3-12 mēn', '1-3 gadi', '3-6 gadi', '6+ gadi'] },
+          { name: 'type', label: 'Tips', type: 'select', options: ['Mīkstās rotaļlietas', 'Konstruktori', 'Galda spēles', 'Lelles', 'Mašīnas', 'Cits'] },
+        ]
+      },
+      'Ratiņi un mēbeles': {
+        name: 'Ratiņi un mēbeles',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Bērnu ratiņi', 'Autokrēsliņi', 'Gultiņas', 'Barošanas krēsliņi', 'Cits'] },
+        ]
+      },
+      'Zīdaiņu preces': {
+        name: 'Zīdaiņu preces',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Higiēna', 'Barošana', 'Cits'] },
+        ]
+      }
+    }
+  },
+  'Sports un hobiji': {
+    name: 'Sports un hobiji',
+    subcategories: {
+      'Sporta inventārs': {
+        name: 'Sporta inventārs',
+        fields: [
+          { name: 'type', label: 'Sporta veids', type: 'text', placeholder: 'Piem., Fitness, Futbols, Teniss' },
+          { name: 'condition', label: 'Stāvoklis', type: 'select', options: ['Jauns', 'Lietots'] },
+        ]
+      },
+      'Medības un makšķerēšana': {
+        name: 'Medības un makšķerēšana',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Makšķerēšana', 'Medības', 'Apģērbs un apavi', 'Cits'] },
+        ]
+      },
+      'Mūzikas instrumenti': {
+        name: 'Mūzikas instrumenti',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Ģitāras', 'Taustiņinstrumenti', 'Sitamie instrumenti', 'Audio tehnika', 'Cits'] },
+        ]
+      },
+      'Grāmatas un žurnāli': {
+        name: 'Grāmatas un žurnāli',
+        fields: [
+          { name: 'genre', label: 'Žanrs', type: 'text' },
+          { name: 'language', label: 'Valoda', type: 'select', options: ['Latviešu', 'Angļu', 'Krievu', 'Cita'] },
+        ]
+      },
+      'Kolekcionēšana': {
+        name: 'Kolekcionēšana',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Monētas un banknotes', 'Pastmarkas', 'Antikvariāts', 'Modeļi', 'Cits'] },
+        ]
+      }
+    }
+  },
+  'Dzīvnieki': {
+    name: 'Dzīvnieki',
+    subcategories: {
+      'Suņi un kucēni': {
+        name: 'Suņi un kucēni',
+        fields: [
+          { name: 'breed', label: 'Šķirne', type: 'text' },
+          { name: 'age', label: 'Vecums', type: 'text' },
+        ]
+      },
+      'Kaķi un kaķēni': {
+        name: 'Kaķi un kaķēni',
+        fields: [
+          { name: 'breed', label: 'Šķirne', type: 'text' },
+          { name: 'age', label: 'Vecums', type: 'text' },
+        ]
+      },
+      'Lauksaimniecības dzīvnieki': {
+        name: 'Lauksaimniecības dzīvnieki',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Liellopi', 'Cūkas', 'Aitas un kazas', 'Mājputni', 'Zirgi', 'Cits'] },
+        ]
+      },
+      'Barība un piederumi': {
+        name: 'Barība un piederumi',
+        fields: [
+          { name: 'type', label: 'Tips', type: 'select', options: ['Barība', 'Aksesuāri', 'Higiēna', 'Cits'] },
         ]
       }
     }

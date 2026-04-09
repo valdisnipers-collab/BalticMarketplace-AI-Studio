@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, ArrowLeft, Handshake, Search, MoreVertical, Loader2 } from 'lucide-react';
+import { Send, ArrowLeft, Handshake, Search, MoreVertical, Loader2, Image as ImageIcon, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../components/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { io, Socket } from 'socket.io-client';
 
 interface Conversation {
   id: number;
@@ -21,13 +22,21 @@ interface Message {
   id: number;
   text: string;
   content: string;
+  image_url?: string;
   sender: 'me' | 'other';
+  sender_id?: number;
+  receiver_id?: number;
   created_at: string;
   time?: string;
+  offer_id?: number;
+  offer_amount?: number;
+  offer_status?: 'pending' | 'accepted' | 'rejected';
+  is_phishing_warning?: boolean;
+  system_warning?: string;
 }
 
 export default function Chat() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(location.search);
@@ -45,7 +54,42 @@ export default function Chat() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [sendingOffer, setSendingOffer] = useState(false);
+  const [updatingOffer, setUpdatingOffer] = useState<number | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      socketRef.current = io();
+      socketRef.current.emit('join', user.id);
+
+      socketRef.current.on('new_message', (newMessage: Message) => {
+        // Check if the message belongs to the active conversation
+        if (activeConversation && 
+            (newMessage.sender === 'other' && newMessage.sender_id === activeConversation.other_user_id) ||
+            (newMessage.sender === 'me' && newMessage.receiver_id === activeConversation.other_user_id)) {
+          
+          setMessages(prev => [...prev, {
+            ...newMessage,
+            text: newMessage.content,
+            time: new Date(newMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }]);
+        }
+        
+        // Always refresh conversations to update last message and unread count
+        fetchConversations(true);
+      });
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+      };
+    }
+  }, [user, activeConversation]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -181,12 +225,55 @@ export default function Chat() {
     }
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeSelectedImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim() || !activeConversation || !token) return;
+    if ((!message.trim() && !selectedImage) || !activeConversation || !token) return;
 
     setSendingMessage(true);
     try {
+      let imageUrl = null;
+
+      if (selectedImage) {
+        const formData = new FormData();
+        formData.append('image', selectedImage);
+        
+        const uploadRes = await fetch('/api/upload/chat-image', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData
+        });
+
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          imageUrl = uploadData.imageUrl;
+        } else {
+          console.error('Failed to upload image');
+          alert('Neizdevās augšupielādēt attēlu');
+          setSendingMessage(false);
+          return;
+        }
+      }
+
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: {
@@ -196,7 +283,8 @@ export default function Chat() {
         body: JSON.stringify({
           receiverId: activeConversation.other_user_id,
           listingId: activeConversation.listing_id || null,
-          content: message
+          content: message,
+          image_url: imageUrl
         })
       });
 
@@ -208,6 +296,7 @@ export default function Chat() {
           time: new Date(newMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }]);
         setMessage('');
+        removeSelectedImage();
         fetchConversations(); // Refresh last message in sidebar
       }
     } catch (error) {
@@ -223,13 +312,21 @@ export default function Chat() {
 
     setSendingOffer(true);
     try {
+      // If we are the seller, we need to provide the buyerId (which is the other_user_id)
+      // We'll check this by comparing the listing's user_id with our own ID (from token/auth)
+      // But for simplicity, we can just send the other_user_id as buyerId if we are the seller.
+      // The backend will handle the logic.
+      
       const response = await fetch(`/api/listings/${activeConversation.listing_id}/offers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ amount: Number(offerAmount) })
+        body: JSON.stringify({ 
+          amount: Number(offerAmount),
+          buyerId: activeConversation.other_user_id // This will be used if the sender is the seller
+        })
       });
 
       if (response.ok) {
@@ -246,6 +343,37 @@ export default function Chat() {
       alert('Kļūda nosūtot piedāvājumu');
     } finally {
       setSendingOffer(false);
+    }
+  };
+
+  const handleUpdateOfferStatus = async (offerId: number, status: 'accepted' | 'rejected') => {
+    if (!token) return;
+
+    setUpdatingOffer(offerId);
+    try {
+      const response = await fetch(`/api/offers/${offerId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ status })
+      });
+
+      if (response.ok) {
+        // Refresh messages to show updated status
+        if (activeConversation) {
+          fetchMessages(activeConversation.other_user_id, activeConversation.listing_id);
+        }
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Kļūda atjauninot piedāvājuma statusu');
+      }
+    } catch (error) {
+      console.error('Error updating offer status:', error);
+      alert('Kļūda atjauninot piedāvājuma statusu');
+    } finally {
+      setUpdatingOffer(null);
     }
   };
 
@@ -355,7 +483,90 @@ export default function Chat() {
                         ? 'bg-primary-600 text-white rounded-br-sm' 
                         : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm'
                     }`}>
-                      <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                      {msg.image_url && (
+                        <img 
+                          src={msg.image_url} 
+                          alt="Pievienotais attēls" 
+                          className="max-w-full rounded-lg mb-2 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(msg.image_url, '_blank')}
+                        />
+                      )}
+                      
+                      {msg.offer_id ? (
+                        <div className={`p-4 rounded-xl mb-2 border ${
+                          msg.sender === 'me' 
+                            ? 'bg-white/10 border-white/20' 
+                            : 'bg-slate-50 border-slate-200'
+                        }`}>
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className={`p-2 rounded-full ${
+                              msg.sender === 'me' ? 'bg-white/20' : 'bg-primary-100'
+                            }`}>
+                              <Handshake className={`w-5 h-5 ${
+                                msg.sender === 'me' ? 'text-white' : 'text-primary-600'
+                              }`} />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold uppercase tracking-wider opacity-70">Cenas piedāvājums</div>
+                              <div className="text-xl font-bold">€{msg.offer_amount?.toLocaleString()}</div>
+                            </div>
+                          </div>
+
+                          {msg.offer_status === 'pending' ? (
+                            msg.sender === 'other' ? (
+                              <div className="flex gap-2">
+                                <Button 
+                                  size="sm" 
+                                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white border-none"
+                                  onClick={() => handleUpdateOfferStatus(msg.offer_id!, 'accepted')}
+                                  disabled={updatingOffer === msg.offer_id}
+                                >
+                                  {updatingOffer === msg.offer_id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Pieņemt'}
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  className="flex-1 bg-white text-slate-700 hover:bg-slate-50"
+                                  onClick={() => handleUpdateOfferStatus(msg.offer_id!, 'rejected')}
+                                  disabled={updatingOffer === msg.offer_id}
+                                >
+                                  Noraidīt
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost"
+                                  className="flex-1 text-primary-600 hover:bg-primary-50"
+                                  onClick={() => setShowOfferModal(true)}
+                                >
+                                  Pretpiedāvājums
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="text-xs font-bold py-1.5 px-3 rounded-full bg-white/20 text-center uppercase tracking-widest">
+                                Gaida atbildi
+                              </div>
+                            )
+                          ) : (
+                            <div className={`text-xs font-bold py-1.5 px-3 rounded-full text-center uppercase tracking-widest ${
+                              msg.offer_status === 'accepted' 
+                                ? 'bg-emerald-500/20 text-emerald-100' 
+                                : 'bg-red-500/20 text-red-100'
+                            }`}>
+                              {msg.offer_status === 'accepted' ? 'Pieņemts' : 'Noraidīts'}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        msg.text && <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                      )}
+
+                      {msg.is_phishing_warning && msg.system_warning && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+                          <span className="font-bold text-red-800 uppercase tracking-wider text-[9px] block mb-1">Drošības brīdinājums</span>
+                          {msg.system_warning}
+                        </div>
+                      )}
+
                       <p className={`text-[10px] mt-1 text-right ${msg.sender === 'me' ? 'text-primary-200' : 'text-slate-400'}`}>
                         {msg.time}
                       </p>
@@ -367,7 +578,7 @@ export default function Chat() {
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-white border-t border-slate-200">
+            <div className="p-4 bg-white border-t border-slate-200 flex flex-col">
               {activeConversation.listing_id > 0 && (
                 <div className="mb-3 flex justify-center">
                   <Button 
@@ -382,7 +593,35 @@ export default function Chat() {
                 </div>
               )}
               
+              {imagePreview && (
+                <div className="mb-3 relative inline-block self-start">
+                  <img src={imagePreview} alt="Preview" className="h-24 rounded-lg object-cover border border-slate-200" />
+                  <button 
+                    onClick={removeSelectedImage}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  ref={fileInputRef}
+                  onChange={handleImageSelect}
+                />
+                <Button 
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-slate-400 hover:text-primary-600 flex-shrink-0 mb-1"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <ImageIcon className="w-5 h-5" />
+                </Button>
                 <div className="flex-1 bg-slate-100 rounded-xl border border-transparent focus-within:bg-white focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-200 transition-all">
                   <textarea 
                     value={message}
@@ -400,9 +639,9 @@ export default function Chat() {
                 </div>
                 <Button 
                   type="submit"
-                  disabled={!message.trim() || sendingMessage}
+                  disabled={(!message.trim() && !selectedImage) || sendingMessage}
                   size="icon"
-                  className="rounded-xl flex-shrink-0"
+                  className="rounded-xl flex-shrink-0 mb-1"
                 >
                   {sendingMessage ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                 </Button>

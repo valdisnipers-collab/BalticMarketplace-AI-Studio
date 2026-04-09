@@ -36,9 +36,14 @@ import {
   LayoutGrid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Helmet } from 'react-helmet-async';
+import useEmblaCarousel from 'embla-carousel-react';
+import { CATEGORY_SCHEMAS } from '../lib/categories';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Slider } from '@/components/ui/slider';
+import { parseImages } from '../lib/utils';
 
 interface ListingDetails {
   id: number;
@@ -56,6 +61,7 @@ interface ListingDetails {
   attributes?: string;
   is_highlighted?: number;
   location?: string;
+  status?: string;
 }
 
 interface Review {
@@ -88,6 +94,22 @@ export default function ListingDetails() {
   const [downPayment, setDownPayment] = useState(20);
   const [term, setTerm] = useState(60);
   const [interestRate, setInterestRate] = useState(4.5);
+  const [bidAmount, setBidAmount] = useState('');
+  const [isBidding, setIsBidding] = useState(false);
+  const [newReviewRating, setNewReviewRating] = useState(5);
+  const [newReviewComment, setNewReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    
+    emblaApi.on('select', () => {
+      setSelectedIndex(emblaApi.selectedScrollSnap());
+    });
+  }, [emblaApi]);
 
   useEffect(() => {
     const fetchListingAndReviews = async () => {
@@ -177,6 +199,89 @@ export default function ListingDetails() {
     }).format(date);
   };
 
+  const handleBid = async () => {
+    if (!user) {
+      alert('Lūdzu, ienāc sistēmā, lai solītu!');
+      return;
+    }
+    const amount = parseFloat(bidAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('Lūdzu ievadiet derīgu summu.');
+      return;
+    }
+    
+    const highestBid = bids.length > 0 ? Math.max(...bids.map(b => b.amount)) : (listing?.price || 0);
+    if (amount <= highestBid) {
+      alert(`Jūsu solījumam jābūt lielākam par pašreizējo augstāko solījumu (€${highestBid}).`);
+      return;
+    }
+
+    setIsBidding(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/listings/${id}/bids`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ amount })
+      });
+      
+      if (res.ok) {
+        const newBid = await res.json();
+        setBids(prev => [...prev, newBid].sort((a, b) => b.amount - a.amount));
+        setBidAmount('');
+        alert('Solījums veiksmīgi pievienots!');
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Neizdevās pievienot solījumu.');
+      }
+    } catch (error) {
+      console.error('Error placing bid:', error);
+      alert('Notika kļūda, mēģiniet vēlreiz.');
+    } finally {
+      setIsBidding(false);
+    }
+  };
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !listing) return;
+    
+    setIsSubmittingReview(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/users/${listing.user_id}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ rating: newReviewRating, comment: newReviewComment })
+      });
+      
+      if (res.ok) {
+        alert('Atsauksme pievienota veiksmīgi!');
+        setNewReviewComment('');
+        setNewReviewRating(5);
+        // Refresh reviews
+        const reviewsRes = await fetch(`/api/users/${listing.user_id}/reviews`);
+        if (reviewsRes.ok) {
+          setReviews(await reviewsRes.json());
+        }
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Neizdevās pievienot atsauksmi.');
+      }
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      alert('Notika kļūda, mēģiniet vēlreiz.');
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white pb-32">
@@ -233,12 +338,22 @@ export default function ListingDetails() {
 
   const parsedAttributes = listing.attributes ? JSON.parse(listing.attributes) : null;
   const isAuction = parsedAttributes?.saleType === 'auction';
+  const isAuctionEnded = isAuction && listing.status !== 'active';
+  const imageUrls = parseImages(listing.image_url);
   const averageRating = reviews.length > 0 
     ? (reviews.reduce((acc, rev) => acc + rev.rating, 0) / reviews.length).toFixed(1)
     : '5.0';
 
   return (
     <div className="min-h-screen bg-white pb-32 selection:bg-primary-100 selection:text-primary-900">
+      <Helmet>
+        <title>{listing.title} | Sludinājumi</title>
+        <meta name="description" content={listing.description ? listing.description.substring(0, 160) : `Pārdod ${listing.title} par €${listing.price}`} />
+        <meta property="og:title" content={listing.title} />
+        <meta property="og:description" content={listing.description ? listing.description.substring(0, 160) : `Pārdod ${listing.title} par €${listing.price}`} />
+        {imageUrls.length > 0 && <meta property="og:image" content={imageUrls[0]} />}
+      </Helmet>
+
       {/* Top Navigation Bar */}
       <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -277,14 +392,56 @@ export default function ListingDetails() {
               animate={{ opacity: 1, y: 0 }}
               className="relative group"
             >
-              <div className="aspect-[16/10] rounded-3xl overflow-hidden bg-slate-50 border border-slate-100 shadow-xl">
-                {listing.image_url ? (
-                  <img 
-                    src={listing.image_url} 
-                    alt={listing.title} 
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                    referrerPolicy="no-referrer"
-                  />
+              <div className="aspect-[16/10] rounded-3xl overflow-hidden bg-slate-50 border border-slate-100 shadow-xl relative">
+                {imageUrls.length > 0 ? (
+                  <>
+                    <div className="overflow-hidden h-full" ref={emblaRef}>
+                      <div className="flex h-full">
+                        {imageUrls.map((url, index) => (
+                          <div className="flex-[0_0_100%] min-w-0 h-full relative" key={index}>
+                            <img 
+                              src={url} 
+                              alt={`${listing.title} - Attēls ${index + 1}`} 
+                              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {imageUrls.length > 1 && (
+                      <>
+                        <Button 
+                          variant="secondary" 
+                          size="icon" 
+                          className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm hover:bg-white text-slate-800 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => emblaApi?.scrollPrev()}
+                        >
+                          <ChevronLeft className="w-5 h-5" />
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="icon" 
+                          className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm hover:bg-white text-slate-800 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => emblaApi?.scrollNext()}
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </Button>
+                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                          {imageUrls.map((_, index) => (
+                            <button
+                              key={index}
+                              className={`w-2 h-2 rounded-full transition-all ${
+                                index === selectedIndex ? 'bg-white w-4' : 'bg-white/50 hover:bg-white/80'
+                              }`}
+                              onClick={() => emblaApi?.scrollTo(index)}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
                     <ImageIcon className="w-20 h-20 opacity-20 mb-4" />
@@ -333,9 +490,23 @@ export default function ListingDetails() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-slate-100">
               {parsedAttributes && Object.entries(parsedAttributes).map(([key, value]) => {
                 if (['features', 'saleType', 'subcategory'].includes(key) || !value) return null;
+                
+                // Find the label for this attribute key
+                let label = key;
+                const categorySchema = CATEGORY_SCHEMAS[listing.category];
+                if (categorySchema) {
+                  const subcategorySchema = categorySchema.subcategories[parsedAttributes.subcategory || ''];
+                  if (subcategorySchema) {
+                    const field = subcategorySchema.fields.find(f => f.name === key);
+                    if (field) {
+                      label = field.label;
+                    }
+                  }
+                }
+
                 return (
                   <div key={key} className="space-y-1">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{key}</div>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</div>
                     <div className="text-lg font-bold text-slate-900">{value as string}</div>
                   </div>
                 );
@@ -382,6 +553,77 @@ export default function ListingDetails() {
                 </div>
               </div>
             </div>
+
+            {/* Reviews Section */}
+            <div className="space-y-6 pt-8 border-t border-slate-100">
+              <h2 className="text-2xl font-bold text-slate-900 flex items-center">
+                <Star className="w-6 h-6 mr-3 text-amber-400 fill-current" />
+                Pārdevēja atsauksmes
+              </h2>
+              
+              {user && user.id !== listing.user_id && (
+                <form onSubmit={handleReviewSubmit} className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-8">
+                  <h3 className="font-bold text-slate-900 mb-4">Pievienot atsauksmi</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Vērtējums</label>
+                      <div className="flex items-center space-x-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setNewReviewRating(star)}
+                            className="focus:outline-none"
+                          >
+                            <Star className={`w-6 h-6 ${star <= newReviewRating ? 'text-amber-400 fill-current' : 'text-slate-300'}`} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Komentārs</label>
+                      <textarea
+                        value={newReviewComment}
+                        onChange={(e) => setNewReviewComment(e.target.value)}
+                        className="w-full rounded-xl border-slate-200 focus:border-primary-500 focus:ring-primary-500"
+                        rows={3}
+                        placeholder="Kāda bija jūsu pieredze ar šo pārdevēju?"
+                        required
+                      />
+                    </div>
+                    <Button type="submit" disabled={isSubmittingReview}>
+                      {isSubmittingReview ? 'Pievieno...' : 'Pievienot atsauksmi'}
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {reviews.length === 0 ? (
+                <p className="text-slate-500 italic">Šim pārdevējam vēl nav atsauksmju.</p>
+              ) : (
+                <div className="space-y-4">
+                  {reviews.map((review) => (
+                    <div key={review.id} className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-8 h-8 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center font-bold text-sm">
+                            {review.reviewer_name?.charAt(0).toUpperCase() || 'U'}
+                          </div>
+                          <span className="font-bold text-slate-900">{review.reviewer_name || 'Lietotājs'}</span>
+                        </div>
+                        <span className="text-xs text-slate-400">{formatDate(review.created_at)}</span>
+                      </div>
+                      <div className="flex items-center mb-2">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'text-amber-400 fill-current' : 'text-slate-200'}`} />
+                        ))}
+                      </div>
+                      <p className="text-slate-600 text-sm leading-relaxed">{review.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right Column: Transaction Sidebar */}
@@ -390,27 +632,105 @@ export default function ListingDetails() {
               
               {/* Valuation & CTA */}
               <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl">
-                <div className="mb-8">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cena</div>
-                  <div className="text-5xl font-bold text-slate-900">
-                    €{listing.price.toLocaleString()}
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <Button 
-                    size="lg" 
-                    className="w-full text-sm"
-                    onClick={() => navigate(`/chat?userId=${listing.user_id}&listingId=${listing.id}`)}
-                  >
-                    <MessageCircle className="w-5 h-5 mr-2" />
-                    Sazināties ar pārdevēju
-                  </Button>
-                  <Button variant="outline" size="lg" className="w-full text-sm border-2 border-primary-200 text-primary-700 hover:bg-primary-50">
-                    <Zap className="w-5 h-5 mr-2 text-amber-500" />
-                    Piedāvāt savu cenu
-                  </Button>
-                </div>
+                {isAuction ? (
+                  <>
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pašreizējā cena</div>
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                          <Clock className="w-3 h-3 mr-1" /> Izsole
+                        </Badge>
+                      </div>
+                      <div className="text-5xl font-bold text-slate-900">
+                        €{bids.length > 0 ? Math.max(...bids.map(b => b.amount)).toLocaleString() : listing.price.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-slate-500 mt-2 font-medium">
+                        Sākuma cena: €{listing.price.toLocaleString()} • {bids.length} solījumi
+                      </div>
+                    </div>
+
+                    {isAuctionEnded ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center mb-6">
+                        <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Clock className="w-6 h-6 text-slate-500" />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-900 mb-1">Izsole ir noslēgusies</h3>
+                        <p className="text-sm text-slate-500">Šajā izsolē vairs nevar veikt solījumus.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">€</span>
+                          <input 
+                            type="number" 
+                            value={bidAmount}
+                            onChange={(e) => setBidAmount(e.target.value)}
+                            placeholder="Ievadiet savu solījumu"
+                            className="w-full pl-8 pr-4 py-3 rounded-xl border-2 border-slate-200 focus:border-primary-500 focus:ring-0 transition-colors font-bold text-lg"
+                          />
+                        </div>
+                        <Button 
+                          size="lg" 
+                          className="w-full text-sm bg-amber-500 hover:bg-amber-600 text-white"
+                          onClick={handleBid}
+                          disabled={isBidding}
+                        >
+                          {isBidding ? 'Apstrādā...' : 'Solīt tagad'}
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="lg" 
+                          className="w-full text-sm"
+                          onClick={() => navigate(`/chat?userId=${listing.user_id}&listingId=${listing.id}`)}
+                        >
+                          <MessageCircle className="w-5 h-5 mr-2" />
+                          Jautāt pārdevējam
+                        </Button>
+                      </div>
+                    )}
+
+                    {bids.length > 0 && (
+                      <div className="mt-6 pt-6 border-t border-slate-100">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Pēdējie solījumi</div>
+                        <div className="space-y-3">
+                          {bids.slice(0, 3).map((bid) => (
+                            <div key={bid.id} className="flex items-center justify-between text-sm">
+                              <div className="flex items-center text-slate-600">
+                                <User className="w-4 h-4 mr-2 text-slate-400" />
+                                {bid.bidder_name}
+                              </div>
+                              <div className="font-bold text-slate-900">€{bid.amount.toLocaleString()}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-8">
+                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cena</div>
+                      <div className="text-5xl font-bold text-slate-900">
+                        €{listing.price.toLocaleString()}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <Button 
+                        size="lg" 
+                        className="w-full text-sm"
+                        onClick={() => navigate(`/chat?userId=${listing.user_id}&listingId=${listing.id}`)}
+                      >
+                        <MessageCircle className="w-5 h-5 mr-2" />
+                        Sazināties ar pārdevēju
+                      </Button>
+                      <Button variant="outline" size="lg" className="w-full text-sm border-2 border-primary-200 text-primary-700 hover:bg-primary-50">
+                        <Zap className="w-5 h-5 mr-2 text-amber-500" />
+                        Piedāvāt savu cenu
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Curator/Seller Profile */}
@@ -440,6 +760,18 @@ export default function ListingDetails() {
                     <History className="w-4 h-4 mr-3 text-primary-400" />
                     Biedrs kopš 2023. gada
                   </div>
+                  <div className="pt-2">
+                    <Button 
+                      variant="outline" 
+                      className="w-full border-primary-200 text-primary-700 hover:bg-primary-50 font-bold"
+                      onClick={() => {
+                        alert('Tālruņa numurs: +371 20000000 (Demo)');
+                        // In a real app, this would fetch the phone number or reveal it if already fetched
+                      }}
+                    >
+                      Rādīt telefona numuru
+                    </Button>
+                  </div>
                 </div>
                 
                 <Button variant="outline" className="w-full" onClick={() => navigate(`/profile/${listing.user_id}`)}>
@@ -461,12 +793,11 @@ export default function ListingDetails() {
                         <span>Pirmā iemaksa</span>
                         <span className="text-primary-600">{downPayment}%</span>
                       </div>
-                      <input 
-                        type="range" 
-                        min="0" max="50" step="5"
-                        value={downPayment}
-                        onChange={(e) => setDownPayment(parseInt(e.target.value))}
-                        className="w-full h-1.5 bg-slate-100 rounded-full appearance-none cursor-pointer accent-primary-600"
+                      <Slider
+                        min={0} max={50} step={5}
+                        value={[downPayment]}
+                        onValueChange={(val) => setDownPayment(val[0])}
+                        className="w-full"
                       />
                     </div>
                     
@@ -475,12 +806,11 @@ export default function ListingDetails() {
                         <span>Termiņš (mēneši)</span>
                         <span className="text-primary-600">{term}</span>
                       </div>
-                      <input 
-                        type="range" 
-                        min="12" max="120" step="12"
-                        value={term}
-                        onChange={(e) => setTerm(parseInt(e.target.value))}
-                        className="w-full h-1.5 bg-slate-100 rounded-full appearance-none cursor-pointer accent-primary-600"
+                      <Slider
+                        min={12} max={120} step={12}
+                        value={[term]}
+                        onValueChange={(val) => setTerm(val[0])}
+                        className="w-full"
                       />
                     </div>
 

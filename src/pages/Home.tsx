@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight } from 'lucide-react';
+import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight, Shirt, Baby, Trophy, PawPrint } from 'lucide-react';
 import { motion } from 'motion/react';
+import { Helmet } from 'react-helmet-async';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -11,11 +12,15 @@ import { SectionHeader } from '@/components/ui/section-header';
 
 const categories = [
   { id: 'auto', name: 'Transports', icon: Car, color: 'bg-indigo-500', subcategories: ['Vieglie auto', 'Motocikli'] },
-  { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'bg-emerald-500', subcategories: ['Dzīvokļi', 'Mājas'] },
-  { id: 'elektronika', name: 'Elektronika', icon: Smartphone, color: 'bg-purple-500', subcategories: ['Telefoni', 'Datori'] },
-  { id: 'darbs', name: 'Darbs', icon: Briefcase, color: 'bg-amber-500', subcategories: ['Vakances', 'Pakalpojumi'] },
-  { id: 'majai', name: 'Mājai', icon: Sofa, color: 'bg-rose-500', subcategories: ['Mēbeles', 'Dārzam'] },
-  { id: 'cits', name: 'Cits', icon: MoreHorizontal, color: 'bg-slate-500', subcategories: ['Sports', 'Hobiji'] },
+  { id: 'nekustamais-ipasums', name: 'Nekustamais īpašums', icon: HomeIcon, color: 'bg-emerald-500', subcategories: ['Dzīvokļi', 'Mājas'] },
+  { id: 'elektronika', name: 'Elektronika', icon: Smartphone, color: 'bg-purple-500', subcategories: ['Mobilie telefoni', 'Datori'] },
+  { id: 'darbs', name: 'Darbs un pakalpojumi', icon: Briefcase, color: 'bg-amber-500', subcategories: ['Vakances', 'Pakalpojumi'] },
+  { id: 'majai', name: 'Mājai un dārzam', icon: Sofa, color: 'bg-rose-500', subcategories: ['Mēbeles', 'Dārzam'] },
+  { id: 'mode', name: 'Mode un stils', icon: Shirt, color: 'bg-pink-500', subcategories: ['Apģērbi', 'Apavi'] },
+  { id: 'berniem', name: 'Bērniem', icon: Baby, color: 'bg-cyan-500', subcategories: ['Rotaļlietas', 'Ratiņi'] },
+  { id: 'sports', name: 'Sports un hobiji', icon: Trophy, color: 'bg-orange-500', subcategories: ['Inventārs', 'Hobiji'] },
+  { id: 'dzivnieki', name: 'Dzīvnieki', icon: PawPrint, color: 'bg-lime-500', subcategories: ['Suņi', 'Kaķi'] },
+  { id: 'cits', name: 'Cits', icon: MoreHorizontal, color: 'bg-slate-500', subcategories: ['Dažādi'] },
 ];
 
 interface Listing {
@@ -40,6 +45,7 @@ export default function Home() {
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
 
   useEffect(() => {
     fetch('/api/listings')
@@ -109,8 +115,14 @@ export default function Home() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) params.set('q', searchQuery.trim());
+    if (locationQuery.trim()) params.set('location', locationQuery.trim());
+    
+    if (params.toString()) {
+      navigate(`/search?${params.toString()}`);
+    } else {
+      navigate('/search');
     }
   };
 
@@ -150,12 +162,14 @@ export default function Home() {
               ) : null}
             </div>
 
-            <button 
+            <Button 
               onClick={(e) => toggleFavorite(e, listing.id)}
-              className="absolute top-3 right-3 p-2 bg-background/80 backdrop-blur-sm rounded-full shadow-sm hover:bg-background transition-all group/fav"
+              variant="ghost"
+              size="icon"
+              className="absolute top-3 right-3 bg-background/80 backdrop-blur-sm rounded-full shadow-sm hover:bg-background transition-all group/fav"
             >
               <Heart className={`w-4 h-4 transition-colors ${isFavorite ? 'fill-destructive text-destructive' : 'text-muted-foreground group-hover/fav:text-destructive'}`} />
-            </button>
+            </Button>
           </div>
           
           <div className="p-4 flex flex-col h-full">
@@ -182,6 +196,10 @@ export default function Home() {
 
   return (
     <div className="pb-20 bg-background selection:bg-primary/20 selection:text-primary">
+      <Helmet>
+        <title>Sākums | Sludinājumi</title>
+        <meta name="description" content="Atrodiet labākos piedāvājumus Baltijā. Premium sludinājumi, pārbaudīti pārdevēji, droši darījumi." />
+      </Helmet>
       {/* Hero Section */}
       <section className="relative h-[600px] md:h-[700px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
@@ -215,22 +233,33 @@ export default function Home() {
               Premium sludinājumi, pārbaudīti pārdevēji, droši darījumi.
             </p>
             
-            <div className="relative max-w-2xl mx-auto">
+            <div className="relative max-w-3xl mx-auto">
               <form 
                 onSubmit={handleSearch}
-                className="relative flex items-center bg-background rounded-2xl shadow-2xl overflow-hidden p-1.5 border border-border/50"
+                className="relative flex flex-col md:flex-row items-center bg-background rounded-2xl shadow-2xl overflow-hidden p-1.5 border border-border/50 gap-2 md:gap-0"
               >
-                <div className="flex-grow flex items-center px-4">
+                <div className="flex-grow flex items-center px-4 w-full md:w-auto">
                   <Search className="w-5 h-5 text-muted-foreground mr-3 shrink-0" />
                   <Input 
                     type="text"
-                    placeholder="Meklēt sludinājumus..."
+                    placeholder="Ko jūs meklējat?"
                     className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base h-12 bg-transparent"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <Button type="submit" size="lg" className="rounded-xl px-8 h-12 text-base font-semibold shrink-0">
+                <div className="hidden md:block w-px h-8 bg-border/50 mx-2 shrink-0"></div>
+                <div className="flex-grow flex items-center px-4 w-full md:w-auto border-t md:border-t-0 border-border/50 pt-2 md:pt-0">
+                  <MapPin className="w-5 h-5 text-muted-foreground mr-3 shrink-0" />
+                  <Input 
+                    type="text"
+                    placeholder="Kur?"
+                    className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base h-12 bg-transparent"
+                    value={locationQuery}
+                    onChange={(e) => setLocationQuery(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" size="lg" className="rounded-xl px-8 h-12 text-base font-semibold shrink-0 w-full md:w-auto mt-2 md:mt-0">
                   Meklēt
                 </Button>
               </form>

@@ -8,8 +8,24 @@ import { GoogleGenAI } from "@google/genai";
 import twilio from "twilio";
 import multer from "multer";
 import fs from "fs";
+import Stripe from "stripe";
+import sharp from "sharp";
+import { Server as SocketIOServer } from "socket.io";
+import http from "http";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-dev-key-change-in-production";
+
+let stripeClient: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!stripeClient) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) {
+      throw new Error('STRIPE_SECRET_KEY environment variable is required');
+    }
+    stripeClient = new Stripe(key, { apiVersion: '2026-03-25.dahlia' as any });
+  }
+  return stripeClient;
+}
 
 // Configure Multer for file uploads
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -17,15 +33,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir)
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    cb(null, uniqueSuffix + path.extname(file.originalname))
-  }
-})
+const storage = multer.memoryStorage();
 
 const upload = multer({ 
   storage: storage,
@@ -48,6 +56,79 @@ const twilioClient = TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? twilio(TWILIO_ACC
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  const httpServer = http.createServer(app);
+  
+  const io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  // Socket.io logic
+  io.on("connection", (socket) => {
+    console.log("A user connected:", socket.id);
+    
+    socket.on("join", (userId) => {
+      socket.join(`user_${userId}`);
+      console.log(`User ${userId} joined room user_${userId}`);
+    });
+
+    socket.on("disconnect", () => {
+      console.log("User disconnected:", socket.id);
+    });
+  });
+
+  // Stripe Webhook (must be before express.json())
+  app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    
+    if (!endpointSecret) {
+      console.warn('STRIPE_WEBHOOK_SECRET is not set. Webhooks will not work.');
+      return res.status(400).send('Webhook secret not configured');
+    }
+
+    let event;
+
+    try {
+      const stripe = getStripe();
+      event = stripe.webhooks.constructEvent(req.body, sig as string, endpointSecret);
+    } catch (err: any) {
+      console.error(`Webhook Error: ${err.message}`);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the checkout.session.completed event
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const userId = session.client_reference_id;
+      const type = session.metadata?.type;
+      const amount = parseInt(session.metadata?.amount || '0', 10);
+
+      if (userId && amount > 0) {
+        try {
+          if (type === 'points') {
+            // Add points
+            db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(amount, userId);
+            
+            db.prepare(`
+              INSERT INTO points_history (user_id, points, reason)
+              VALUES (?, ?, 'Punktu pirkums')
+            `).run(userId, amount);
+          } else {
+            // Add funds (EUR)
+            db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, userId);
+          }
+          console.log(`Successfully processed payment for user ${userId}: ${amount} ${type}`);
+        } catch (dbError) {
+          console.error('Database error processing webhook:', dbError);
+        }
+      }
+    }
+
+    res.json({received: true});
+  });
 
   // Middleware to parse JSON bodies
   app.use(express.json());
@@ -56,7 +137,7 @@ async function startServer() {
   app.use('/uploads', express.static(uploadsDir));
 
   // File Upload Route
-  app.post('/api/upload', upload.single('image'), (req, res) => {
+  app.post('/api/upload', upload.single('image'), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -68,11 +149,83 @@ async function startServer() {
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const filename = `${uniqueSuffix}.webp`;
+      const filepath = path.join(uploadsDir, filename);
+
+      await sharp(req.file.buffer)
+        .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toFile(filepath);
+
       // Return the URL to access the uploaded file
-      const fileUrl = `/uploads/${req.file.filename}`;
+      const fileUrl = `/uploads/${filename}`;
       res.json({ url: fileUrl });
     } catch (error) {
       console.error("Upload error:", error);
+      res.status(401).json({ error: 'Invalid token or upload failed' });
+    }
+  });
+
+  // Multiple Files Upload Route
+  app.post('/api/upload/chat-image', upload.single('image'), async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const token = authHeader.split(' ')[1];
+      jwt.verify(token, JWT_SECRET);
+      
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const filename = `${uniqueSuffix}.webp`;
+      const filepath = path.join(uploadsDir, filename);
+
+      await sharp(req.file.buffer)
+        .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toFile(filepath);
+
+      const fileUrl = `/uploads/${filename}`;
+      res.json({ imageUrl: fileUrl });
+    } catch (error) {
+      console.error("Chat image upload error:", error);
+      res.status(500).json({ error: 'Upload failed' });
+    }
+  });
+
+  app.post('/api/upload/multiple', upload.array('images', 10), async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const token = authHeader.split(' ')[1];
+      jwt.verify(token, JWT_SECRET);
+      
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded' });
+      }
+
+      const fileUrls = [];
+      for (const file of req.files) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const filename = `${uniqueSuffix}.webp`;
+        const filepath = path.join(uploadsDir, filename);
+
+        await sharp(file.buffer)
+          .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toFile(filepath);
+
+        fileUrls.push(`/uploads/${filename}`);
+      }
+
+      res.json({ urls: fileUrls });
+    } catch (error) {
+      console.error("Multiple upload error:", error);
       res.status(401).json({ error: 'Invalid token or upload failed' });
     }
   });
@@ -412,6 +565,97 @@ async function startServer() {
     }
   });
 
+  app.get("/api/users/me/saved-searches", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const searches = db.prepare('SELECT * FROM saved_searches WHERE user_id = ? ORDER BY created_at DESC').all(decoded.userId);
+      res.json(searches);
+    } catch (error) {
+      console.error("Error fetching saved searches:", error);
+      res.status(401).json({ error: 'Invalid token or server error' });
+    }
+  });
+
+  app.post("/api/users/me/saved-searches", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const { query, category, subcategory, min_price, max_price, attributes } = req.body;
+      
+      const result = db.prepare(`
+        INSERT INTO saved_searches (user_id, query, category, subcategory, min_price, max_price, attributes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        decoded.userId, 
+        query || null, 
+        category || null, 
+        subcategory || null, 
+        min_price || null, 
+        max_price || null, 
+        attributes ? JSON.stringify(attributes) : null
+      );
+      
+      res.json({ id: result.lastInsertRowid, message: 'Search saved' });
+    } catch (error) {
+      console.error("Error saving search:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.delete("/api/users/me/saved-searches/:id", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      
+      db.prepare('DELETE FROM saved_searches WHERE id = ? AND user_id = ?').run(req.params.id, decoded.userId);
+      res.json({ message: 'Saved search deleted' });
+    } catch (error) {
+      console.error("Error deleting saved search:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get("/api/users/me/notifications", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const notifications = db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(decoded.userId);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(401).json({ error: 'Invalid token or server error' });
+    }
+  });
+
+  app.put("/api/users/me/notifications/:id/read", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      
+      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(req.params.id, decoded.userId);
+      res.json({ message: 'Notification marked as read' });
+    } catch (error) {
+      console.error("Error updating notification:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   app.get("/api/users/:id", (req, res) => {
     try {
       const user = db.prepare('SELECT id, name, created_at FROM users WHERE id = ?').get(req.params.id) as any;
@@ -491,7 +735,7 @@ async function startServer() {
 
   app.get("/api/listings/search", (req, res) => {
     try {
-      const { q: query, category, subcategory, minPrice, maxPrice, ...restQuery } = req.query;
+      const { q: query, category, subcategory, minPrice, maxPrice, sort, location, ...restQuery } = req.query;
       if (!query) {
         return res.json([]);
       }
@@ -532,6 +776,10 @@ async function startServer() {
         sql += ` AND listings.price <= ?`;
         params.push(Number(maxPrice));
       }
+      if (location) {
+        sql += ` AND listings.location LIKE ?`;
+        params.push(`%${location}%`);
+      }
 
       // Handle dynamic attribute filters
       for (const [key, value] of Object.entries(restQuery)) {
@@ -542,7 +790,13 @@ async function startServer() {
         }
       }
 
-      sql += ` ORDER BY listings.is_highlighted DESC, rank`;
+      if (sort === 'price_asc') {
+        sql += ` ORDER BY listings.is_highlighted DESC, listings.price ASC`;
+      } else if (sort === 'price_desc') {
+        sql += ` ORDER BY listings.is_highlighted DESC, listings.price DESC`;
+      } else {
+        sql += ` ORDER BY listings.is_highlighted DESC, rank`;
+      }
       
       const listings = db.prepare(sql).all(...params);
       res.json(listings);
@@ -554,7 +808,7 @@ async function startServer() {
 
   app.get("/api/listings", (req, res) => {
     try {
-      const { category, subcategory, minPrice, maxPrice, ...restQuery } = req.query;
+      const { category, subcategory, minPrice, maxPrice, sort, location, ...restQuery } = req.query;
       const { hasAccess, userId } = hasEarlyAccess(req);
 
       let query = `
@@ -590,6 +844,10 @@ async function startServer() {
         query += ` AND price <= ?`;
         params.push(Number(maxPrice));
       }
+      if (location) {
+        query += ` AND location LIKE ?`;
+        params.push(`%${location}%`);
+      }
 
       // Handle dynamic attribute filters
       for (const [key, value] of Object.entries(restQuery)) {
@@ -600,7 +858,13 @@ async function startServer() {
         }
       }
 
-      query += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
+      if (sort === 'price_asc') {
+        query += ` ORDER BY listings.is_highlighted DESC, listings.price ASC`;
+      } else if (sort === 'price_desc') {
+        query += ` ORDER BY listings.is_highlighted DESC, listings.price DESC`;
+      } else {
+        query += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
+      }
       
       const listings = db.prepare(query).all(...params);
       res.json(listings);
@@ -680,6 +944,92 @@ async function startServer() {
     }
   });
 
+  app.post("/api/recommend-price", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const { category, title, attributes } = req.body;
+      
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
+      }
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      let attributesText = '';
+      if (attributes) {
+        for (const [key, value] of Object.entries(attributes)) {
+          if (value) {
+            attributesText += `${key}: ${value}\n`;
+          }
+        }
+      }
+
+      const prompt = `Kā eksperts tirgus analītiķis, iesaki reālistisku pārdošanas cenu (eiro) šādam sludinājumam Latvijas tirgū.
+      Kategorija: ${category}
+      Virsraksts: ${title}
+      Parametri:
+      ${attributesText}
+      
+      Atgriez TIKAI skaitli (piemēram, 15000 vai 250). Nekādu papildu tekstu vai paskaidrojumu.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      const recommendedPrice = parseInt(response.text?.replace(/[^0-9]/g, '') || '0', 10);
+      
+      res.json({ price: recommendedPrice });
+    } catch (error) {
+      console.error("Error recommending price:", error);
+      res.status(500).json({ error: 'Server error recommending price' });
+    }
+  });
+
+  async function moderateListing(listingId: number | bigint, title: string, description: string, price: number) {
+    try {
+      if (!process.env.GEMINI_API_KEY) return;
+      
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const prompt = `Lūdzu, analizē šo sludinājumu un nosaki, vai tas satur aizliegtu saturu (lamuvārdus, krāpniecības pazīmes, nelegālas preces) vai pilnīgi neadekvātu cenu.
+      Virsraksts: ${title}
+      Apraksts: ${description}
+      Cena: ${price}
+      
+      Atbildi TIKAI ar JSON formātu:
+      {
+        "isFlagged": true/false,
+        "reason": "īss paskaidrojums, ja isFlagged ir true, citādi tukšs",
+        "riskScore": skaitlis no 0 līdz 100
+      }`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      const resultText = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || '{}';
+      const result = JSON.parse(resultText);
+
+      if (result.isFlagged || result.riskScore > 70) {
+        console.log(`[MODERATION] Listing ${listingId} flagged. Reason: ${result.reason}, Score: ${result.riskScore}`);
+        // Update listing status to flagged
+        db.prepare("UPDATE listings SET status = 'flagged' WHERE id = ?").run(listingId);
+        
+        // Add to reports table for admin review
+        db.prepare(`
+          INSERT INTO reports (reporter_id, listing_id, reason, status)
+          VALUES (1, ?, ?, 'pending')
+        `).run(listingId, `AI Moderation: ${result.reason} (Risk: ${result.riskScore})`);
+      }
+    } catch (error) {
+      console.error("Error in AI moderation:", error);
+    }
+  }
+
   app.post("/api/listings", (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
@@ -687,21 +1037,81 @@ async function startServer() {
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { title, description, price, category, image_url, attributes } = req.body;
+      const { title, description, price, category, image_url, attributes, location } = req.body;
       
       if (!title || !price || !category) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes) VALUES (?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null);
+      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null);
       
-      res.json({ id: info.lastInsertRowid, message: 'Listing created successfully' });
+      const listingId = info.lastInsertRowid;
+      
+      // Check saved searches and notify users asynchronously
+      setTimeout(() => {
+        checkSavedSearchesAndNotify(listingId, { title, price, category, attributes });
+      }, 0);
+
+      // Run AI moderation asynchronously
+      setTimeout(() => {
+        moderateListing(listingId, title, description, price);
+      }, 0);
+
+      res.json({ id: listingId, message: 'Listing created successfully' });
     } catch (error) {
       console.error("Error creating listing:", error);
       res.status(500).json({ error: 'Server error while creating listing' });
     }
   });
+
+  function checkSavedSearchesAndNotify(listingId: number | bigint, listingData: any) {
+    try {
+      const savedSearches = db.prepare('SELECT * FROM saved_searches').all() as any[];
+      
+      for (const search of savedSearches) {
+        let match = true;
+        
+        if (search.category && search.category !== listingData.category) {
+          match = false;
+        }
+        
+        if (match && search.min_price && listingData.price < search.min_price) {
+          match = false;
+        }
+        
+        if (match && search.max_price && listingData.price > search.max_price) {
+          match = false;
+        }
+        
+        if (match && search.query && !listingData.title.toLowerCase().includes(search.query.toLowerCase())) {
+          match = false;
+        }
+        
+        // We could add more complex attribute matching here
+        
+        if (match) {
+          // Send notification
+          db.prepare(`
+            INSERT INTO notifications (user_id, type, title, message, link)
+            VALUES (?, 'saved_search_match', 'Jauns sludinājums jūsu meklējumam', ?, ?)
+          `).run(
+            search.user_id,
+            `Atrasts jauns sludinājums "${listingData.title}" par €${listingData.price}.`,
+            `/listing/${listingId}`
+          );
+          
+          // Simulate email notification
+          const user = db.prepare('SELECT email FROM users WHERE id = ?').get(search.user_id) as any;
+          if (user && user.email) {
+            console.log(`[EMAIL SIMULATION] Sending email to ${user.email}: New listing matches your saved search! Title: ${listingData.title}, Price: €${listingData.price}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error checking saved searches:", error);
+    }
+  }
 
   app.post("/api/listings/:id/highlight", (req, res) => {
     const authHeader = req.headers.authorization;
@@ -800,7 +1210,9 @@ async function startServer() {
       // Get latest message for each conversation
       const conversations = db.prepare(`
         SELECT 
-          m.id, m.content as lastMessage, m.created_at as time, m.is_read,
+          m.id, 
+          CASE WHEN m.content = '' AND m.image_url IS NOT NULL THEN 'Attēls' ELSE m.content END as lastMessage, 
+          m.created_at as time, m.is_read,
           CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END as other_user_id,
           u.name as other_user_name,
           l.id as listing_id, l.title as item,
@@ -837,8 +1249,10 @@ async function startServer() {
 
       let query = `
         SELECT m.*, 
-          CASE WHEN m.sender_id = ? THEN 'me' ELSE 'other' END as sender
+          CASE WHEN m.sender_id = ? THEN 'me' ELSE 'other' END as sender,
+          o.amount as offer_amount, o.status as offer_status
         FROM messages m
+        LEFT JOIN offers o ON m.offer_id = o.id
         WHERE ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
       `;
       const params: any[] = [userId, userId, otherUserId, otherUserId, userId];
@@ -868,7 +1282,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/messages", (req, res) => {
+  app.post("/api/messages", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
@@ -876,20 +1290,65 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const senderId = decoded.userId;
-      const { receiverId, listingId, content } = req.body;
+      const { receiverId, listingId, content, image_url } = req.body;
 
-      if (!receiverId || !content) {
-        return res.status(400).json({ error: 'Receiver and content are required' });
+      if (!receiverId || (!content && !image_url)) {
+        return res.status(400).json({ error: 'Receiver and content or image are required' });
       }
 
-      const stmt = db.prepare('INSERT INTO messages (sender_id, receiver_id, listing_id, content) VALUES (?, ?, ?, ?)');
-      const info = stmt.run(senderId, receiverId, listingId || null, content);
+      let isPhishingWarning = 0;
+      let systemWarning = null;
+
+      // Phishing check
+      if (content && process.env.GEMINI_API_KEY) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const prompt = `Analyze this chat message for phishing or scams in a marketplace context.
+          Message: "${content}"
+          
+          Respond ONLY with JSON:
+          {
+            "action": "allow" | "block" | "warn",
+            "reason": "If warn or block, explain briefly in Latvian why."
+          }
+          
+          Block if it contains obvious fake courier links (e.g. DPD/Omniva fake links).
+          Warn if it asks to transfer money in advance ("pārskaiti avansu", "drošības nauda").
+          Allow otherwise.`;
+
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+          });
+
+          const resultText = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || '{}';
+          const result = JSON.parse(resultText);
+
+          if (result.action === 'block') {
+            return res.status(400).json({ error: 'Ziņa bloķēta drošības apsvērumu dēļ: ' + result.reason });
+          } else if (result.action === 'warn') {
+            isPhishingWarning = 1;
+            systemWarning = result.reason;
+          }
+        } catch (aiError) {
+          console.error("AI Phishing check error:", aiError);
+        }
+      }
+
+      const stmt = db.prepare('INSERT INTO messages (sender_id, receiver_id, listing_id, content, image_url, is_phishing_warning, system_warning) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      const info = stmt.run(senderId, receiverId, listingId || null, content || '', image_url || null, isPhishingWarning, systemWarning);
 
       const message = db.prepare(`
         SELECT m.*, 'me' as sender 
         FROM messages m 
         WHERE id = ?
       `).get(info.lastInsertRowid);
+
+      // Emit the message to the receiver
+      io.to(`user_${receiverId}`).emit('new_message', {
+        ...message,
+        sender: 'other' // from the receiver's perspective, the sender is 'other'
+      });
 
       res.json(message);
     } catch (error) {
@@ -906,32 +1365,161 @@ async function startServer() {
     
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const buyerId = decoded.userId;
+      const senderId = decoded.userId;
       const listingId = req.params.id;
-      const { amount } = req.body;
+      const { amount, buyerId: providedBuyerId } = req.body;
 
       if (!amount || isNaN(amount)) {
         return res.status(400).json({ error: 'Invalid offer amount' });
       }
 
-      const listing = db.prepare('SELECT user_id FROM listings WHERE id = ?').get(listingId) as any;
+      const listing = db.prepare('SELECT user_id, title FROM listings WHERE id = ?').get(listingId) as any;
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
       
-      if (listing.user_id === buyerId) {
-        return res.status(400).json({ error: 'Cannot make an offer on your own listing' });
+      const isSeller = listing.user_id === senderId;
+      const buyerId = isSeller ? providedBuyerId : senderId;
+      const receiverId = isSeller ? buyerId : listing.user_id;
+
+      if (!buyerId) {
+        return res.status(400).json({ error: 'Buyer ID is required for counter-offers' });
       }
 
-      const stmt = db.prepare('INSERT INTO offers (listing_id, buyer_id, amount) VALUES (?, ?, ?)');
-      const info = stmt.run(listingId, buyerId, amount);
+      const stmt = db.prepare('INSERT INTO offers (listing_id, buyer_id, sender_id, amount) VALUES (?, ?, ?, ?)');
+      const info = stmt.run(listingId, buyerId, senderId, amount);
+      const offerId = info.lastInsertRowid;
 
       // Also send a message about the offer
-      const msgStmt = db.prepare('INSERT INTO messages (sender_id, receiver_id, listing_id, content) VALUES (?, ?, ?, ?)');
-      msgStmt.run(buyerId, listing.user_id, listingId, `Es piedāvāju €${amount} par šo preci.`);
+      const msgStmt = db.prepare('INSERT INTO messages (sender_id, receiver_id, listing_id, offer_id, content) VALUES (?, ?, ?, ?, ?)');
+      msgStmt.run(senderId, receiverId, listingId, offerId, isSeller ? `Es piedāvāju pretcenu €${amount}.` : `Es piedāvāju €${amount} par šo preci.`);
 
-      res.json({ id: info.lastInsertRowid, message: 'Offer sent successfully' });
+      // Notify receiver
+      db.prepare(`
+        INSERT INTO notifications (user_id, type, title, message, link)
+        VALUES (?, 'new_offer', ?, ?, ?)
+      `).run(
+        receiverId,
+        isSeller ? 'Saņemts pretpiedāvājums' : 'Jauns piedāvājums',
+        isSeller 
+          ? `Pārdevējs izteica pretpiedāvājumu €${amount} sludinājumam "${listing.title}".`
+          : `Saņemts jauns piedāvājums €${amount} sludinājumam "${listing.title}".`,
+        `/chat?userId=${senderId}&listingId=${listingId}`
+      );
+
+      res.json({ id: offerId, message: 'Offer sent successfully' });
     } catch (error) {
       console.error("Error sending offer:", error);
       res.status(500).json({ error: 'Server error sending offer' });
+    }
+  });
+
+  app.get("/api/users/me/offers/received", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const offers = db.prepare(`
+        SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as buyer_name
+        FROM offers o
+        JOIN listings l ON o.listing_id = l.id
+        JOIN users u ON o.buyer_id = u.id
+        WHERE l.user_id = ?
+        ORDER BY o.created_at DESC
+      `).all(decoded.userId);
+      res.json(offers);
+    } catch (error) {
+      console.error("Error fetching received offers:", error);
+      res.status(500).json({ error: 'Server error fetching offers' });
+    }
+  });
+
+  app.get("/api/users/me/offers/sent", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const offers = db.prepare(`
+        SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as seller_name, l.user_id as seller_id
+        FROM offers o
+        JOIN listings l ON o.listing_id = l.id
+        JOIN users u ON l.user_id = u.id
+        WHERE o.buyer_id = ?
+        ORDER BY o.created_at DESC
+      `).all(decoded.userId);
+      res.json(offers);
+    } catch (error) {
+      console.error("Error fetching sent offers:", error);
+      res.status(500).json({ error: 'Server error fetching offers' });
+    }
+  });
+
+  app.patch("/api/offers/:id/status", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const offerId = req.params.id;
+      const { status } = req.body; // 'accepted' or 'rejected'
+
+      if (!['accepted', 'rejected'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+
+      // Verify ownership (only receiver can accept/reject)
+      const offer = db.prepare(`
+        SELECT o.*, l.user_id as seller_id, l.title as listing_title
+        FROM offers o
+        JOIN listings l ON o.listing_id = l.id
+        WHERE o.id = ?
+      `).get(offerId) as any;
+
+      if (!offer) return res.status(404).json({ error: 'Offer not found' });
+      
+      const isSeller = offer.seller_id === decoded.userId;
+      const isBuyer = offer.buyer_id === decoded.userId;
+      const isSender = offer.sender_id === decoded.userId;
+
+      // Receiver is the one who didn't send it
+      if (isSender) {
+        return res.status(403).json({ error: 'Cannot accept/reject your own offer' });
+      }
+
+      if (!isSeller && !isBuyer) {
+        return res.status(403).json({ error: 'Unauthorized to update this offer' });
+      }
+
+      if (offer.status !== 'pending') {
+        return res.status(400).json({ error: 'Offer status already updated' });
+      }
+
+      db.prepare('UPDATE offers SET status = ? WHERE id = ?').run(status, offerId);
+
+      // If accepted, mark listing as sold
+      if (status === 'accepted') {
+        db.prepare('UPDATE listings SET status = "sold" WHERE id = ?').run(offer.listing_id);
+      }
+
+      // Notify the other party (the sender)
+      const statusText = status === 'accepted' ? 'pieņemts' : 'noraidīts';
+      db.prepare(`
+        INSERT INTO notifications (user_id, type, title, message, link)
+        VALUES (?, 'offer_status', ?, ?, ?)
+      `).run(
+        offer.sender_id,
+        `Piedāvājums ${statusText}`,
+        `Jūsu piedāvājums €${offer.amount} sludinājumam "${offer.listing_title}" tika ${statusText}.`,
+        `/chat?userId=${decoded.userId}&listingId=${offer.listing_id}`
+      );
+
+      res.json({ success: true, status });
+    } catch (error) {
+      console.error("Error updating offer status:", error);
+      res.status(500).json({ error: 'Server error updating offer status' });
     }
   });
   app.post("/api/listings/:id/bids", (req, res) => {
@@ -949,8 +1537,12 @@ async function startServer() {
       }
 
       // Check if listing exists and is an auction
-      const listing = db.prepare('SELECT price, attributes, user_id FROM listings WHERE id = ?').get(listingId) as any;
+      const listing = db.prepare('SELECT price, attributes, user_id, status FROM listings WHERE id = ?').get(listingId) as any;
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
+      
+      if (listing.status !== 'active') {
+        return res.status(400).json({ error: 'This auction has ended' });
+      }
       
       if (listing.user_id === decoded.userId) {
         return res.status(400).json({ error: 'Cannot bid on your own listing' });
@@ -969,10 +1561,45 @@ async function startServer() {
         return res.status(400).json({ error: `Bid must be higher than current highest bid: €${currentHighest}` });
       }
 
+      // Soft Close logic
+      if (attributes.auctionEndDate) {
+        const endDate = new Date(attributes.auctionEndDate);
+        const now = new Date();
+        const timeDiffMs = endDate.getTime() - now.getTime();
+        
+        // If less than 3 minutes remaining, extend by 3 minutes
+        if (timeDiffMs > 0 && timeDiffMs < 3 * 60 * 1000) {
+          const newEndDate = new Date(now.getTime() + 3 * 60 * 1000);
+          attributes.auctionEndDate = newEndDate.toISOString();
+          
+          db.prepare('UPDATE listings SET attributes = ? WHERE id = ?').run(
+            JSON.stringify(attributes),
+            listingId
+          );
+        }
+      }
+
       const stmt = db.prepare('INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)');
-      stmt.run(listingId, decoded.userId, amount);
+      const info = stmt.run(listingId, decoded.userId, amount);
       
-      res.json({ message: 'Bid placed successfully' });
+      const newBid = db.prepare(`
+        SELECT b.id, b.amount, b.created_at, u.name as bidder_name
+        FROM bids b
+        JOIN users u ON b.user_id = u.id
+        WHERE b.id = ?
+      `).get(info.lastInsertRowid) as any;
+
+      // Notify seller
+      db.prepare(`
+        INSERT INTO notifications (user_id, type, title, message, link)
+        VALUES (?, 'new_bid', 'Jauns solījums jūsu izsolē', ?, ?)
+      `).run(
+        listing.user_id,
+        `Lietotājs ${newBid.bidder_name} veica solījumu €${amount} jūsu izsolē.`,
+        `/listing/${listingId}`
+      );
+
+      res.json(newBid);
     } catch (error) {
       console.error("Error placing bid:", error);
       res.status(500).json({ error: 'Server error while placing bid' });
@@ -1005,7 +1632,7 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      const { title, description, price, category, image_url } = req.body;
+      const { title, description, price, category, image_url, location } = req.body;
 
       // Verify ownership
       const listing = db.prepare('SELECT user_id FROM listings WHERE id = ?').get(listingId) as { user_id: number } | undefined;
@@ -1015,9 +1642,9 @@ async function startServer() {
 
       db.prepare(`
         UPDATE listings 
-        SET title = ?, description = ?, price = ?, category = ?, image_url = ?
+        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?
         WHERE id = ?
-      `).run(title, description, price, category, image_url, listingId);
+      `).run(title, description, price, category, image_url, location || null, listingId);
 
       res.json({ message: 'Listing updated successfully' });
     } catch (error) {
@@ -1059,29 +1686,6 @@ async function startServer() {
     }
   });
 
-  app.post("/api/wallet/add-funds", (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { amount } = req.body;
-
-      if (!amount || isNaN(amount) || amount <= 0) {
-        return res.status(400).json({ error: 'Invalid amount' });
-      }
-
-      db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, decoded.userId);
-      
-      const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(decoded.userId) as { balance: number };
-      res.json({ message: 'Funds added successfully', balance: user.balance });
-    } catch (error) {
-      console.error("Error adding funds:", error);
-      res.status(500).json({ error: 'Server error adding funds' });
-    }
-  });
-
   app.get("/api/settings", (req, res) => {
     try {
       const settings = db.prepare('SELECT key, value FROM settings').all() as { key: string, value: string }[];
@@ -1119,34 +1723,6 @@ async function startServer() {
     } catch (error) {
       console.error("Error updating settings:", error);
       res.status(500).json({ error: 'Server error updating settings' });
-    }
-  });
-
-  app.post("/api/wallet/buy-points", (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { points } = req.body;
-      
-      if (!points || points <= 0 || !Number.isInteger(points)) {
-        return res.status(400).json({ error: 'Invalid points amount' });
-      }
-
-      // In a real app, this would integrate with Stripe or another payment gateway.
-      // For now, we simulate a successful purchase and add points directly.
-      db.transaction(() => {
-        db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(points, decoded.userId);
-        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(decoded.userId, points, `Punktu iegāde`);
-      })();
-
-      const updatedUser = db.prepare('SELECT points FROM users WHERE id = ?').get(decoded.userId) as any;
-      res.json({ message: 'Punkti veiksmīgi iegādāti', points: updatedUser.points });
-    } catch (error) {
-      console.error("Error buying points:", error);
-      res.status(500).json({ error: 'Server error buying points' });
     }
   });
 
@@ -1251,6 +1827,33 @@ async function startServer() {
     }
   };
 
+  app.get("/api/admin/stats", isAdmin, (req, res) => {
+    try {
+      const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+      const totalListings = db.prepare('SELECT COUNT(*) as count FROM listings').get() as { count: number };
+      const pendingReports = db.prepare('SELECT COUNT(*) as count FROM reports WHERE status = ?').get('pending') as { count: number };
+      
+      // Calculate total revenue from transactions (assuming we have a transactions table, or we can sum up wallet balances for now, or sum up ad payments)
+      // For now, let's just sum up the balances of all users as a proxy for money in the system.
+      let totalRevenueResult = { total: 0 };
+      try {
+         totalRevenueResult = db.prepare('SELECT SUM(balance) as total FROM users').get() as { total: number };
+      } catch (e) {
+         // Ignore if error
+      }
+
+      res.json({
+        totalUsers: totalUsers.count,
+        totalListings: totalListings.count,
+        pendingReports: pendingReports.count,
+        totalRevenue: totalRevenueResult.total || 0
+      });
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).json({ error: 'Server error fetching stats' });
+    }
+  });
+
   app.get("/api/admin/users", isAdmin, (req, res) => {
     try {
       const users = db.prepare('SELECT id, email, name, role, created_at, balance FROM users ORDER BY created_at DESC').all();
@@ -1258,6 +1861,20 @@ async function startServer() {
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ error: 'Server error fetching users' });
+    }
+  });
+
+  app.put("/api/admin/users/:id/role", isAdmin, (req, res) => {
+    try {
+      const { role } = req.body;
+      if (!['user', 'b2b', 'admin'].includes(role)) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, req.params.id);
+      res.json({ message: 'User role updated successfully' });
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      res.status(500).json({ error: 'Server error updating user role' });
     }
   });
 
@@ -1586,6 +2203,146 @@ async function startServer() {
     }
   });
 
+  // Stripe Payment Intent
+  app.post("/api/create-payment-intent", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      jwt.verify(token, JWT_SECRET);
+      const { amount, currency = 'eur' } = req.body;
+
+      if (!amount || isNaN(amount)) {
+        return res.status(400).json({ error: 'Invalid amount' });
+      }
+
+      const stripe = getStripe();
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount * 100), // Convert to cents
+        currency,
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      });
+
+      res.json({ clientSecret: paymentIntent.client_secret });
+    } catch (error) {
+      console.error("Error creating payment intent:", error);
+      res.status(500).json({ error: 'Server error creating payment intent' });
+    }
+  });
+
+  // Stripe Checkout Session
+  app.post("/api/create-checkout-session", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const { amount, type = 'funds', planId, pointsAmount } = req.body;
+
+      const stripe = getStripe();
+      
+      if (type === 'subscription') {
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          line_items: [
+            {
+              price: planId, // This should be a Stripe Price ID
+              quantity: 1,
+            },
+          ],
+          mode: 'subscription',
+          success_url: `${process.env.APP_URL}/profile?success=true&type=subscription`,
+          cancel_url: `${process.env.APP_URL}/profile?canceled=true`,
+          client_reference_id: decoded.userId.toString(),
+        });
+        return res.json({ url: session.url });
+      }
+
+      if (!amount || isNaN(amount)) {
+        return res.status(400).json({ error: 'Invalid amount' });
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'eur',
+              product_data: {
+                name: type === 'funds' ? 'Konta papildināšana' : 'Punktu iegāde',
+              },
+              unit_amount: Math.round(amount * 100),
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${process.env.APP_URL}/profile?success=true&amount=${amount}&type=${type}`,
+        cancel_url: `${process.env.APP_URL}/profile?canceled=true`,
+        client_reference_id: decoded.userId.toString(),
+        metadata: {
+          type: String(type),
+          amount: String(type === 'points' ? pointsAmount : amount)
+        }
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("Error creating checkout session:", error);
+      res.status(500).json({ error: 'Server error creating checkout session' });
+    }
+  });
+
+  // Notifications API
+  app.get("/api/notifications", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const notifications = db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC').all(decoded.userId);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.put("/api/notifications/:id/read", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(req.params.id, decoded.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating notification:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.put("/api/notifications/read-all", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(decoded.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating notifications:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1617,7 +2374,88 @@ async function startServer() {
     console.log(`Server is starting...`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Server running on http://localhost:${PORT}`);
+    
+    // Start background task for auctions
+    setInterval(checkEndedAuctions, 60 * 1000); // Check every minute
+    checkEndedAuctions(); // Run once on startup
   });
+}
+
+function checkEndedAuctions() {
+  try {
+    // Find all active listings
+    const activeListings = db.prepare("SELECT id, user_id, title, attributes FROM listings WHERE status = 'active'").all() as any[];
+    
+    const now = new Date();
+    
+    for (const listing of activeListings) {
+      if (!listing.attributes) continue;
+      
+      try {
+        const attributes = JSON.parse(listing.attributes);
+        if (attributes.saleType === 'auction' && attributes.auctionEndDate) {
+          const endDate = new Date(attributes.auctionEndDate);
+          
+          if (endDate <= now) {
+            // Auction has ended
+            console.log(`Auction ${listing.id} has ended. Processing...`);
+            
+            // Get highest bid
+            const highestBid = db.prepare(`
+              SELECT b.id, b.user_id, b.amount, u.name as bidder_name 
+              FROM bids b
+              JOIN users u ON b.user_id = u.id
+              WHERE b.listing_id = ? 
+              ORDER BY b.amount DESC LIMIT 1
+            `).get(listing.id) as any;
+            
+            if (highestBid) {
+              // Update listing status to sold
+              db.prepare("UPDATE listings SET status = 'sold' WHERE id = ?").run(listing.id);
+              
+              // Notify winner
+              db.prepare(`
+                INSERT INTO notifications (user_id, type, title, message, link)
+                VALUES (?, 'auction_won', 'Apsveicam! Jūs uzvarējāt izsolē', ?, ?)
+              `).run(
+                highestBid.user_id, 
+                `Jūs uzvarējāt izsolē "${listing.title}" ar solījumu €${highestBid.amount}.`,
+                `/listing/${listing.id}`
+              );
+              
+              // Notify seller
+              db.prepare(`
+                INSERT INTO notifications (user_id, type, title, message, link)
+                VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies', ?, ?)
+              `).run(
+                listing.user_id,
+                `Izsole "${listing.title}" ir noslēgusies. Uzvarētājs: ${highestBid.bidder_name} ar solījumu €${highestBid.amount}.`,
+                `/listing/${listing.id}`
+              );
+              
+            } else {
+              // Update listing status to expired
+              db.prepare("UPDATE listings SET status = 'expired' WHERE id = ?").run(listing.id);
+              
+              // Notify seller
+              db.prepare(`
+                INSERT INTO notifications (user_id, type, title, message, link)
+                VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies bez solījumiem', ?, ?)
+              `).run(
+                listing.user_id,
+                `Izsole "${listing.title}" ir noslēgusies, bet neviens neveica solījumus.`,
+                `/listing/${listing.id}`
+              );
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore JSON parse errors
+      }
+    }
+  } catch (error) {
+    console.error('Error checking ended auctions:', error);
+  }
 }
 
 console.log("Initializing server...");

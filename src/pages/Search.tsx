@@ -1,13 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X } from 'lucide-react';
+import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../components/AuthContext';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Listing {
   id: number;
@@ -17,6 +26,7 @@ interface Listing {
   image_url: string;
   created_at: string;
   author_name: string;
+  location?: string;
   is_highlighted?: number;
 }
 
@@ -24,58 +34,72 @@ const categories = ['Visi', ...CATEGORY_NAMES];
 
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') || '';
-  const initialCategory = searchParams.get('category') || 'Visi';
 
   const { user } = useAuth();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
 
+  // Initialize attribute filters from URL
+  const initialAttributes: Record<string, string> = {};
+  searchParams.forEach((value, key) => {
+    if (key.startsWith('attr_')) {
+      initialAttributes[key.replace('attr_', '')] = value;
+    }
+  });
+
   // Filter states
-  const [query, setQuery] = useState(initialQuery);
-  const [category, setCategory] = useState(initialCategory);
-  const [subcategory, setSubcategory] = useState('');
-  const [minPrice, setMinPrice] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
-  const [attributeFilters, setAttributeFilters] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState(searchParams.get('q') || '');
+  const [category, setCategory] = useState(searchParams.get('category') || 'Visi');
+  const [subcategory, setSubcategory] = useState(searchParams.get('subcategory') || '');
+  const [minPrice, setMinPrice] = useState(searchParams.get('minPrice') || '');
+  const [maxPrice, setMaxPrice] = useState(searchParams.get('maxPrice') || '');
+  const [location, setLocation] = useState(searchParams.get('location') || '');
+  const [sort, setSort] = useState(searchParams.get('sort') || 'newest');
+  const [attributeFilters, setAttributeFilters] = useState<Record<string, string>>(initialAttributes);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Sync local state with URL params when they change externally (e.g., back navigation, links)
+  useEffect(() => {
+    setQuery(searchParams.get('q') || '');
+    setCategory(searchParams.get('category') || 'Visi');
+    setSubcategory(searchParams.get('subcategory') || '');
+    setMinPrice(searchParams.get('minPrice') || '');
+    setMaxPrice(searchParams.get('maxPrice') || '');
+    setLocation(searchParams.get('location') || '');
+    setSort(searchParams.get('sort') || 'newest');
+    
+    const newAttributes: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (key.startsWith('attr_')) {
+        newAttributes[key.replace('attr_', '')] = value;
+      }
+    });
+    setAttributeFilters(newAttributes);
+  }, [searchParams]);
 
   // Reset attributes when category changes
   useEffect(() => {
-    setSubcategory('');
-    setAttributeFilters({});
-  }, [category]);
+    if (category !== searchParams.get('category')) {
+      setSubcategory('');
+      setAttributeFilters({});
+    }
+  }, [category, searchParams]);
 
   // Reset attributes when subcategory changes
   useEffect(() => {
-    setAttributeFilters({});
-  }, [subcategory]);
+    if (subcategory !== searchParams.get('subcategory')) {
+      setAttributeFilters({});
+    }
+  }, [subcategory, searchParams]);
 
   const fetchListings = async () => {
     setLoading(true);
     try {
-      let url = '/api/listings';
-      const params = new URLSearchParams();
+      const q = searchParams.get('q');
+      let url = q ? '/api/listings/search' : '/api/listings';
       
-      if (query) {
-        url = '/api/listings/search';
-        params.append('q', query);
-      }
-      
-      if (category !== 'Visi') params.append('category', category);
-      if (subcategory) params.append('subcategory', subcategory);
-      if (minPrice) params.append('minPrice', minPrice);
-      if (maxPrice) params.append('maxPrice', maxPrice);
-      
-      // Append attribute filters
-      Object.entries(attributeFilters).forEach(([key, value]) => {
-        if (value) {
-          params.append(`attr_${key}`, String(value));
-        }
-      });
-
-      const queryString = params.toString();
+      const queryString = searchParams.toString();
       const finalUrl = queryString ? `${url}?${queryString}` : url;
 
       const res = await fetch(finalUrl);
@@ -149,17 +173,35 @@ export default function Search() {
     }
   }, [user, searchParams]); // Re-fetch when URL params change
 
-  // Apply filters client-side for immediate feedback on category/price if search is active
-  // But since we are moving to server-side, we should trigger fetch on form submit
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSearch = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (category !== 'Visi') params.set('category', category);
+    if (subcategory) params.set('subcategory', subcategory);
+    if (location) params.set('location', location);
     if (minPrice) params.set('minPrice', minPrice);
     if (maxPrice) params.set('maxPrice', maxPrice);
+    if (sort !== 'newest') params.set('sort', sort);
+    
+    Object.entries(attributeFilters).forEach(([key, value]) => {
+      if (value) params.set(`attr_${key}`, value);
+    });
+    
     setSearchParams(params);
     setShowFilters(false);
+  };
+
+  const clearFilters = () => {
+    setQuery('');
+    setCategory('Visi');
+    setSubcategory('');
+    setLocation('');
+    setMinPrice('');
+    setMaxPrice('');
+    setSort('newest');
+    setAttributeFilters({});
+    setSearchParams(new URLSearchParams());
   };
 
   const filteredListings = listings; // We now rely on server-side filtering
@@ -171,8 +213,44 @@ export default function Search() {
     return diffMinutes <= 15;
   };
 
+  const handleSaveSearch = async () => {
+    if (!user) {
+      alert('Lūdzu, ienāciet, lai saglabātu meklējumu.');
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/users/me/saved-searches', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          query,
+          category: category !== 'Visi' ? category : null,
+          subcategory,
+          min_price: minPrice ? parseFloat(minPrice) : null,
+          max_price: maxPrice ? parseFloat(maxPrice) : null,
+          attributes: Object.keys(attributeFilters).length > 0 ? attributeFilters : null
+        })
+      });
+
+      if (!res.ok) throw new Error('Neizdevās saglabāt meklējumu');
+      alert('Meklējums veiksmīgi saglabāts! Jūs saņemsiet paziņojumus par jauniem sludinājumiem.');
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 flex flex-col md:flex-row">
+      <Helmet>
+        <title>Meklēšana | Sludinājumi</title>
+        <meta name="description" content="Meklējiet un atrodiet labākos sludinājumus. Izmantojiet filtrus, lai atrastu tieši to, ko meklējat." />
+      </Helmet>
+
       {/* Mobile filter toggle */}
       <div className="md:hidden bg-white p-4 border-b border-slate-200 flex justify-between items-center sticky top-16 z-30 shadow-sm">
         <span className="font-medium text-slate-700">Atrasti {filteredListings.length} sludinājumi</span>
@@ -217,45 +295,49 @@ export default function Search() {
               </div>
             </div>
 
+            {/* Location Input */}
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-slate-900">Atrašanās vieta</label>
+              <Input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Pilsēta vai novads..."
+              />
+            </div>
+
             {/* Category */}
             <div className="space-y-3">
               <label className="block text-sm font-semibold text-slate-900">Kategorija</label>
-              <div className="space-y-2.5">
+              <RadioGroup value={category} onValueChange={setCategory} className="space-y-2.5">
                 {categories.map(cat => (
-                  <label key={cat} className="flex items-center cursor-pointer group">
-                    <input
-                      type="radio"
-                      name="category"
-                      value={cat}
-                      checked={category === cat}
-                      onChange={(e) => setCategory(e.target.value)}
-                      className="w-4 h-4 text-primary-600 border-slate-300 focus:ring-primary-500 cursor-pointer"
-                    />
-                    <span className="ml-3 text-sm text-slate-600 group-hover:text-slate-900 transition-colors">{cat}</span>
-                  </label>
+                  <div key={cat} className="flex items-center space-x-3">
+                    <RadioGroupItem value={cat} id={`cat-${cat}`} />
+                    <label htmlFor={`cat-${cat}`} className="text-sm text-slate-600 cursor-pointer hover:text-slate-900 transition-colors">
+                      {cat}
+                    </label>
+                  </div>
                 ))}
-              </div>
+              </RadioGroup>
             </div>
 
             {/* Subcategory */}
             {category !== 'Visi' && CATEGORY_SCHEMAS[category]?.subcategories && Object.keys(CATEGORY_SCHEMAS[category].subcategories).length > 0 && (
               <div className="space-y-3">
                 <label className="block text-sm font-semibold text-slate-900">Apakškategorija</label>
-                <div className="relative">
-                  <select
-                    value={subcategory}
-                    onChange={(e) => setSubcategory(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                  >
-                    <option value="">Visas</option>
+                <Select value={subcategory || 'all'} onValueChange={(value) => setSubcategory(value === 'all' ? '' : value)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Visas">
+                      {subcategory || 'Visas'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Visas</SelectItem>
                     {Object.keys(CATEGORY_SCHEMAS[category].subcategories).map(subcat => (
-                      <option key={subcat} value={subcat}>{subcat}</option>
+                      <SelectItem key={subcat} value={subcat}>{subcat}</SelectItem>
                     ))}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                  </div>
-                </div>
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
@@ -284,21 +366,22 @@ export default function Search() {
               <div key={field.name} className="space-y-3">
                 <label className="block text-sm font-semibold text-slate-900">{field.label}</label>
                 {field.type === 'select' ? (
-                  <div className="relative">
-                    <select
-                      value={attributeFilters[field.name] || ''}
-                      onChange={(e) => setAttributeFilters(prev => ({ ...prev, [field.name]: e.target.value }))}
-                      className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                    >
-                      <option value="">Visi</option>
+                  <Select 
+                    value={attributeFilters[field.name] || 'all'} 
+                    onValueChange={(value) => setAttributeFilters(prev => ({ ...prev, [field.name]: value === 'all' ? '' : value }))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Visi">
+                        {attributeFilters[field.name] || 'Visi'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Visi</SelectItem>
                       {field.options?.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                       ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                    </div>
-                  </div>
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <Input
                     type={field.type === 'number' ? 'number' : 'text'}
@@ -310,25 +393,60 @@ export default function Search() {
               </div>
             ))}
 
-            <Button 
-              type="submit"
-              className="w-full"
-              size="lg"
-              onClick={() => setShowFilters(false)}
-            >
-              Parādīt rezultātus
-            </Button>
+            <div className="space-y-3 pt-4">
+              <Button 
+                type="submit"
+                className="w-full"
+                size="lg"
+                onClick={() => setShowFilters(false)}
+              >
+                Parādīt rezultātus
+              </Button>
+              <Button 
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={clearFilters}
+              >
+                Notīrīt filtrus
+              </Button>
+            </div>
           </form>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-        <div className="mb-8 hidden md:block">
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Atrasti {filteredListings.length} sludinājumi
-          </h1>
-          <p className="text-slate-500 mt-1">Pārlūkojiet un atrodiet labākos piedāvājumus.</p>
+        <div className="mb-8 hidden md:flex justify-between items-end">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              Atrasti {filteredListings.length} sludinājumi
+            </h1>
+            <p className="text-slate-500 mt-1">Pārlūkojiet un atrodiet labākos piedāvājumus.</p>
+          </div>
+          <div className="flex items-center space-x-2">
+            {user && (
+              <Button variant="outline" onClick={handleSaveSearch} className="mr-2">
+                <Heart className="w-4 h-4 mr-2" />
+                Saglabāt meklējumu
+              </Button>
+            )}
+            <span className="text-sm text-slate-500">Kārtot pēc:</span>
+            <Select value={sort} onValueChange={(val) => { setSort(val); setTimeout(() => handleSearch(), 0); }}>
+              <SelectTrigger className="w-[180px] bg-white">
+                <SelectValue placeholder="Jaunākie">
+                  {sort === 'newest' ? 'Jaunākie' : 
+                   sort === 'price_asc' ? 'Lētākie vispirms' : 
+                   sort === 'price_desc' ? 'Dārgākie vispirms' : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Jaunākie</SelectItem>
+                <SelectItem value="price_asc">Lētākie vispirms</SelectItem>
+                <SelectItem value="price_desc">Dārgākie vispirms</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {loading ? (
@@ -350,12 +468,7 @@ export default function Search() {
             <p className="text-slate-500">Mēģiniet mainīt meklēšanas kritērijus vai noņemt filtrus.</p>
             <Button 
               variant="link"
-              onClick={() => {
-                setQuery('');
-                setCategory('Visi');
-                setMinPrice('');
-                setMaxPrice('');
-              }}
+              onClick={clearFilters}
               className="mt-4"
             >
               Notīrīt visus filtrus
@@ -409,14 +522,16 @@ export default function Search() {
                         {listing.category}
                       </Badge>
                     </div>
-                    <button 
+                    <Button 
+                      variant="secondary"
+                      size="icon"
                       onClick={(e) => toggleFavorite(e, listing.id)}
-                      className="absolute top-3 right-3 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:bg-white transition-colors"
+                      className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm shadow-sm hover:bg-white transition-colors"
                     >
                       <Heart 
                         className={`w-4 h-4 ${favorites.has(listing.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} 
                       />
-                    </button>
+                    </Button>
                   </div>
                   
                   <div className="p-5 flex flex-col flex-grow">
@@ -432,8 +547,9 @@ export default function Search() {
                         <Clock className="w-3.5 h-3.5 mr-1" />
                         {formatDate(listing.created_at)}
                       </div>
-                      <div className="font-medium truncate max-w-[100px]">
-                        {listing.author_name}
+                      <div className="flex items-center font-medium truncate max-w-[100px]">
+                        <MapPin className="w-3.5 h-3.5 mr-1" />
+                        {listing.location || 'Latvija'}
                       </div>
                     </div>
                   </div>

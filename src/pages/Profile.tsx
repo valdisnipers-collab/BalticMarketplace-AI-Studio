@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X } from 'lucide-react';
+import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface Listing {
@@ -16,6 +23,7 @@ interface Listing {
   category: string;
   image_url: string;
   created_at: string;
+  location?: string;
   is_highlighted?: number;
 }
 
@@ -42,6 +50,21 @@ interface AdData {
   status: string;
 }
 
+interface Offer {
+  id: number;
+  listing_id: number;
+  listing_title: string;
+  listing_image: string;
+  buyer_id: number;
+  buyer_name?: string;
+  seller_id?: number;
+  seller_name?: string;
+  sender_id: number;
+  amount: number;
+  status: 'pending' | 'accepted' | 'rejected';
+  created_at: string;
+}
+
 export default function Profile() {
   const { user, loading, updateUser } = useAuth();
   const navigate = useNavigate();
@@ -50,11 +73,18 @@ export default function Profile() {
   const [balance, setBalance] = useState<number>(0);
   const [pointsHistory, setPointsHistory] = useState<PointsHistory[]>([]);
   const [myAds, setMyAds] = useState<AdData[]>([]);
+  const [receivedOffers, setReceivedOffers] = useState<Offer[]>([]);
+  const [sentOffers, setSentOffers] = useState<Offer[]>([]);
+  const [savedSearches, setSavedSearches] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [isLoadingListings, setIsLoadingListings] = useState(true);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
   const [isLoadingAds, setIsLoadingAds] = useState(true);
+  const [isLoadingOffers, setIsLoadingOffers] = useState(true);
+  const [isLoadingSavedSearches, setIsLoadingSavedSearches] = useState(true);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet' | 'ads' | 'company' | 'settings'>('listings');
+  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet' | 'ads' | 'offers' | 'company' | 'settings' | 'saved-searches' | 'notifications'>('listings');
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
@@ -84,6 +114,26 @@ export default function Profile() {
     if (!loading && !user) {
       navigate('/login');
       return;
+    }
+
+    // Handle Stripe Checkout success
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      const type = params.get('type');
+      if (type === 'funds') {
+        alert('Konta papildināšana veiksmīga! Līdzekļi drīz parādīsies jūsu kontā.');
+      } else if (type === 'points') {
+        alert('Punktu iegāde veiksmīga! Punkti drīz parādīsies jūsu kontā.');
+      } else if (type === 'subscription') {
+        alert('Abonements veiksmīgi noformēts!');
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+      // Force a reload to get updated balance/points from server
+      setTimeout(() => window.location.reload(), 1500);
+    }
+    if (params.get('canceled') === 'true') {
+      alert('Maksājums tika atcelts.');
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
 
     const fetchMyListings = async () => {
@@ -193,6 +243,51 @@ export default function Profile() {
       }
     };
 
+    const fetchOffers = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const [receivedRes, sentRes] = await Promise.all([
+          fetch('/api/users/me/offers/received', { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch('/api/users/me/offers/sent', { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+        
+        if (receivedRes.ok) setReceivedOffers(await receivedRes.json());
+        if (sentRes.ok) setSentOffers(await sentRes.json());
+      } catch (err) {
+        console.error("Error fetching offers:", err);
+      } finally {
+        setIsLoadingOffers(false);
+      }
+    };
+
+    const fetchSavedSearches = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch('/api/users/me/saved-searches', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) setSavedSearches(await res.json());
+      } catch (err) {
+        console.error("Error fetching saved searches:", err);
+      } finally {
+        setIsLoadingSavedSearches(false);
+      }
+    };
+
+    const fetchNotifications = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch('/api/users/me/notifications', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) setNotifications(await res.json());
+      } catch (err) {
+        console.error("Error fetching notifications:", err);
+      } finally {
+        setIsLoadingNotifications(false);
+      }
+    };
+
     if (user) {
       fetchMyListings();
       fetchFavorites();
@@ -200,6 +295,9 @@ export default function Profile() {
       fetchPointsHistory();
       fetchSettings();
       fetchMyAds();
+      fetchOffers();
+      fetchSavedSearches();
+      fetchNotifications();
       setCompanyForm({
         company_name: user.company_name || '',
         company_reg_number: user.company_reg_number || '',
@@ -212,23 +310,21 @@ export default function Profile() {
     setAddingFunds(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/wallet/add-funds', {
+      const res = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ amount })
+        body: JSON.stringify({ amount, type: 'funds' })
       });
 
-      if (!res.ok) throw new Error('Neizdevās pievienot līdzekļus');
+      if (!res.ok) throw new Error('Neizdevās izveidot maksājumu');
 
       const data = await res.json();
-      setBalance(data.balance);
-      setIsAddFundsModalOpen(false);
+      window.location.href = data.url;
     } catch (err: any) {
       alert(err.message);
-    } finally {
       setAddingFunds(false);
     }
   };
@@ -323,34 +419,26 @@ export default function Profile() {
     }
   };
 
-  const handleBuyPoints = async (amount: number) => {
-    if (!window.confirm(`Vai vēlies iegādāties ${amount} punktus?`)) return;
+  const handleBuyPoints = async (amount: number, priceEur: number) => {
+    setAddingFunds(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/wallet/buy-points', {
+      const res = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ points: amount })
+        body: JSON.stringify({ amount: priceEur, type: 'points', pointsAmount: amount })
       });
+
+      if (!res.ok) throw new Error('Neizdevās izveidot maksājumu');
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Neizdevās iegādāties punktus');
-
-      updateUser({ points: data.points });
-      alert(data.message);
-      
-      // Refresh points history
-      const historyRes = await fetch('/api/wallet/points-history', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (historyRes.ok) {
-        setPointsHistory(await historyRes.json());
-      }
+      window.location.href = data.url;
     } catch (err: any) {
       alert(err.message);
+      setAddingFunds(false);
     }
   };
 
@@ -567,18 +655,22 @@ export default function Profile() {
           {[
             { id: 'listings', label: 'Mani sludinājumi', icon: Package },
             { id: 'favorites', label: 'Favorīti', icon: Heart },
+            { id: 'saved-searches', label: 'Saglabātie meklējumi', icon: Eye },
+            { id: 'offers', label: 'Piedāvājumi', icon: Handshake },
+            { id: 'notifications', label: 'Paziņojumi', icon: Fingerprint },
             { id: 'wallet', label: 'Mans Maks', icon: Wallet },
             { id: 'ads', label: 'Reklāmas', icon: Star },
             ...(user.user_type === 'b2b' ? [{ id: 'company', label: 'Uzņēmums', icon: BarChart3 }] : []),
             { id: 'settings', label: 'Iestatījumi', icon: Pencil }
           ].map((tab) => (
-            <button
+            <Button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`py-4 px-8 font-bold text-sm flex items-center border-b-2 transition-all whitespace-nowrap relative ${
+              variant="ghost"
+              className={`py-4 px-8 font-bold text-sm flex items-center border-b-2 rounded-none transition-all whitespace-nowrap relative ${
                 activeTab === tab.id 
-                  ? 'text-primary-600 border-primary-600' 
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
+                  ? 'text-primary-600 border-primary-600 bg-transparent hover:bg-transparent' 
+                  : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
               }`}
             >
               <tab.icon className={`w-4 h-4 mr-2.5 ${activeTab === tab.id ? 'text-primary-600' : 'text-slate-400'}`} />
@@ -589,9 +681,100 @@ export default function Profile() {
                   className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600"
                 />
               )}
-            </button>
+            </Button>
           ))}
         </div>
+
+        {/* Piedāvājumi */}
+        {activeTab === 'offers' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-10"
+          >
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Saņemtie piedāvājumi</h2>
+              {isLoadingOffers ? (
+                <div className="space-y-4">
+                  {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
+                </div>
+              ) : receivedOffers.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                  <Handshake className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-500 font-medium">Jums vēl nav saņemtu piedāvājumu.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {receivedOffers.map(offer => (
+                    <div key={offer.id} className="bg-white rounded-2xl p-4 border border-slate-100 flex items-center gap-6">
+                      <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-slate-50">
+                        <img src={offer.listing_image} alt={offer.listing_title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                      <div className="flex-grow">
+                        <h3 className="font-bold text-slate-900">{offer.listing_title}</h3>
+                        <p className="text-sm text-slate-500">Pircējs: {offer.buyer_name}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-lg font-bold text-primary-600">€{offer.amount.toLocaleString()}</span>
+                          <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'pending' ? 'secondary' : 'destructive'} className="text-[10px] uppercase">
+                            {offer.status === 'accepted' ? 'Pieņemts' : offer.status === 'pending' ? 'Gaida' : 'Noraidīts'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => navigate(`/chat?userId=${offer.buyer_id}&listingId=${offer.listing_id}`)}
+                      >
+                        Skatīt čatā
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Mani izteiktie piedāvājumi</h2>
+              {isLoadingOffers ? (
+                <div className="space-y-4">
+                  {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
+                </div>
+              ) : sentOffers.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                  <Handshake className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-500 font-medium">Jūs vēl neesat izteicis nevienu piedāvājumu.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {sentOffers.map(offer => (
+                    <div key={offer.id} className="bg-white rounded-2xl p-4 border border-slate-100 flex items-center gap-6">
+                      <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-slate-50">
+                        <img src={offer.listing_image} alt={offer.listing_title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                      <div className="flex-grow">
+                        <h3 className="font-bold text-slate-900">{offer.listing_title}</h3>
+                        <p className="text-sm text-slate-500">Pārdevējs: {offer.seller_name}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-lg font-bold text-primary-600">€{offer.amount.toLocaleString()}</span>
+                          <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'pending' ? 'secondary' : 'destructive'} className="text-[10px] uppercase">
+                            {offer.status === 'accepted' ? 'Pieņemts' : offer.status === 'pending' ? 'Gaida' : 'Noraidīts'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => navigate(`/chat?userId=${offer.seller_id}&listingId=${offer.listing_id}`)}
+                      >
+                        Skatīt čatā
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* Mans Maks */}
         {activeTab === 'wallet' && (
@@ -662,18 +845,19 @@ export default function Profile() {
                       const pricePer100 = parseFloat(settings.points_price_eur_per_100) || 1.00;
                       const price = (amount / 100) * pricePer100;
                       return (
-                        <button
-                          key={amount}
-                          onClick={() => handleBuyPoints(amount)}
-                          className="p-4 border border-slate-100 rounded-xl hover:border-primary-200 hover:bg-primary-50 transition-all text-center group active:scale-95"
-                        >
-                          <div className="text-xl font-bold text-slate-900 group-hover:text-primary-600 mb-0.5">
-                            {amount}
-                          </div>
-                          <div className="text-[10px] font-bold text-slate-400 group-hover:text-primary-400 uppercase tracking-wider">
-                            {price.toFixed(2)} €
-                          </div>
-                        </button>
+                      <Button
+                        onClick={() => handleBuyPoints(amount, price)}
+                        disabled={addingFunds}
+                        variant="outline"
+                        className="h-auto p-4 flex flex-col items-center justify-center gap-1 group"
+                      >
+                        <div className="text-xl font-bold text-slate-900 group-hover:text-primary-600">
+                          {amount}
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-400 group-hover:text-primary-400 uppercase tracking-wider">
+                          {price.toFixed(2)} €
+                        </div>
+                      </Button>
                       );
                     })}
                   </div>
@@ -788,6 +972,198 @@ export default function Profile() {
                 </Button>
               </div>
             </div>
+
+            {/* SaaS Subscription Section */}
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/20 blur-[80px] rounded-full -mr-32 -mt-32" />
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold uppercase tracking-tight flex items-center">
+                    <Star className="w-6 h-6 mr-3 text-amber-400" />
+                    B2B Pro Abonements
+                  </h3>
+                  <Badge className="bg-primary-500 text-white border-none">Aktīvs</Badge>
+                </div>
+                <p className="text-slate-300 mb-8 max-w-2xl">
+                  Jūsu uzņēmums izmanto Pro plānu, kas sniedz piekļuvi neierobežotiem sludinājumiem, prioritāram atbalstam un padziļinātai analītikai.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                  <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/10">
+                    <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Nākamais rēķins</div>
+                    <div className="text-xl font-bold">15. Maijs, 2026</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/10">
+                    <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Mēneša maksa</div>
+                    <div className="text-xl font-bold">€49.00</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/10">
+                    <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Sludinājumu limits</div>
+                    <div className="text-xl font-bold text-emerald-400">Neierobežots</div>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <Button className="bg-white text-slate-900 hover:bg-slate-100" onClick={async () => {
+                    try {
+                      const token = localStorage.getItem('auth_token');
+                      const res = await fetch('/api/create-checkout-session', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ type: 'subscription', planId: 'price_123456789' }) // Replace with actual Stripe Price ID
+                      });
+                      if (!res.ok) throw new Error('Neizdevās izveidot abonementu');
+                      const data = await res.json();
+                      window.location.href = data.url;
+                    } catch (err: any) {
+                      alert(err.message);
+                    }
+                  }}>
+                    Pārvaldīt abonementu
+                  </Button>
+                  <Button variant="outline" className="border-white/20 text-white hover:bg-white/10">
+                    Skatīt rēķinus
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Saved Searches */}
+        {activeTab === 'saved-searches' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Saglabātie meklējumi</h2>
+            </div>
+            
+            {isLoadingSavedSearches ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
+              </div>
+            ) : savedSearches.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                <Eye className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Jums nav saglabātu meklējumu</h3>
+                <p className="text-slate-500 mb-6">Saglabājiet meklējumus, lai saņemtu paziņojumus par jauniem sludinājumiem.</p>
+                <Button onClick={() => navigate('/search')}>Pāriet uz meklēšanu</Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {savedSearches.map(search => (
+                  <div key={search.id} className="bg-white rounded-2xl border border-slate-100 p-6 flex items-center justify-between hover:shadow-md transition-shadow">
+                    <div>
+                      <h3 className="font-bold text-lg text-slate-900">
+                        {search.query || search.category || 'Visi sludinājumi'}
+                      </h3>
+                      <p className="text-sm text-slate-500 mt-1">
+                        {search.subcategory && `${search.subcategory} • `}
+                        {search.min_price && `No €${search.min_price} `}
+                        {search.max_price && `Līdz €${search.max_price}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Button variant="outline" onClick={() => {
+                        const params = new URLSearchParams();
+                        if (search.query) params.set('q', search.query);
+                        if (search.category) params.set('category', search.category);
+                        if (search.subcategory) params.set('subcategory', search.subcategory);
+                        if (search.min_price) params.set('minPrice', search.min_price);
+                        if (search.max_price) params.set('maxPrice', search.max_price);
+                        navigate(`/search?${params.toString()}`);
+                      }}>
+                        Meklēt
+                      </Button>
+                      <Button variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={async () => {
+                        if (!window.confirm('Vai tiešām vēlies dzēst šo meklējumu?')) return;
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          await fetch(`/api/users/me/saved-searches/${search.id}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                          });
+                          setSavedSearches(prev => prev.filter(s => s.id !== search.id));
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* Notifications */}
+        {activeTab === 'notifications' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Paziņojumi</h2>
+            </div>
+            
+            {isLoadingNotifications ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full rounded-2xl" />)}
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                <Fingerprint className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Jums nav jaunu paziņojumu</h3>
+                <p className="text-slate-500">Šeit parādīsies informācija par jauniem piedāvājumiem un saglabātajiem meklējumiem.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {notifications.map(notification => (
+                  <div 
+                    key={notification.id} 
+                    className={`bg-white rounded-2xl border p-6 flex items-start gap-4 transition-colors ${
+                      notification.is_read ? 'border-slate-100' : 'border-primary-200 bg-primary-50/30'
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      notification.is_read ? 'bg-slate-100 text-slate-500' : 'bg-primary-100 text-primary-600'
+                    }`}>
+                      <Fingerprint className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className={`font-bold ${notification.is_read ? 'text-slate-700' : 'text-slate-900'}`}>
+                        {notification.title}
+                      </h4>
+                      <p className="text-slate-600 mt-1">{notification.message}</p>
+                      <p className="text-xs text-slate-400 mt-2">{formatDate(notification.created_at)}</p>
+                    </div>
+                    {!notification.is_read && (
+                      <Button variant="ghost" size="sm" onClick={async () => {
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          await fetch(`/api/users/me/notifications/${notification.id}/read`, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                          });
+                          setNotifications(prev => prev.map(n => n.id === notification.id ? { ...n, is_read: 1 } : n));
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}>
+                        Atzīmēt kā izlasītu
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -966,6 +1342,12 @@ export default function Profile() {
                           <Clock className="w-3 h-3 mr-1" />
                           {formatDate(listing.created_at)}
                         </span>
+                        {listing.location && (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center">
+                            <MapPin className="w-3 h-3 mr-1" />
+                            {listing.location}
+                          </span>
+                        )}
                       </div>
                       <Link to={`/listing/${listing.id}`} className="block group-hover:text-primary-600 transition-colors">
                         <h3 className="text-lg font-bold text-slate-900 truncate uppercase tracking-tight">{listing.title}</h3>
@@ -1070,6 +1452,12 @@ export default function Profile() {
                           <Clock className="w-3 h-3 mr-1" />
                           {formatDate(listing.created_at)}
                         </span>
+                        {listing.location && (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center">
+                            <MapPin className="w-3 h-3 mr-1" />
+                            {listing.location}
+                          </span>
+                        )}
                       </div>
                       <Link to={`/listing/${listing.id}`} className="block group-hover:text-primary-600 transition-colors">
                         <h3 className="text-lg font-bold text-slate-900 truncate uppercase tracking-tight">{listing.title}</h3>
@@ -1221,27 +1609,30 @@ export default function Profile() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 relative"
           >
-            <button 
+            <Button 
               onClick={() => setIsAddFundsModalOpen(false)}
               disabled={addingFunds}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors disabled:opacity-50"
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
             >
               <X className="w-5 h-5" />
-            </button>
+            </Button>
 
             <h3 className="text-2xl font-bold text-slate-900 mb-2 uppercase tracking-tight">Papildināt maku</h3>
             <p className="text-slate-500 mb-8 text-sm font-medium">Izvēlieties summu, par kādu vēlaties papildināt savu kontu.</p>
             
             <div className="grid grid-cols-2 gap-4">
               {[10, 20, 50, 100].map((amount) => (
-                <button
+                <Button
                   key={amount}
                   onClick={() => handleAddFunds(amount)}
                   disabled={addingFunds}
-                  className="px-6 py-6 bg-slate-50 border border-slate-100 hover:border-primary-200 hover:bg-primary-50 rounded-xl font-bold text-xl text-slate-900 transition-all disabled:opacity-50 active:scale-95"
+                  variant="outline"
+                  className="h-auto py-6 font-bold text-xl text-slate-900 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200"
                 >
                   {amount} €
-                </button>
+                </Button>
               ))}
             </div>
           </motion.div>
@@ -1258,12 +1649,14 @@ export default function Profile() {
           >
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Izveidot jaunu reklāmu</h3>
-              <button 
+              <Button 
                 onClick={() => setIsAdModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+                variant="ghost"
+                size="icon"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </Button>
             </div>
             
             <form onSubmit={handleAddAd} className="p-8 overflow-y-auto space-y-6">
@@ -1307,31 +1700,40 @@ export default function Profile() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Izmērs</label>
-                  <select
-                    value={adForm.size}
-                    onChange={e => setAdForm({...adForm, size: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all font-medium"
-                  >
-                    <option value="300x250">Vidējs taisnstūris (300x250)</option>
-                    <option value="300x600">Puslapa (300x600)</option>
-                    <option value="728x90">Liels baneris (728x90)</option>
-                    <option value="970x250">Milzu baneris (970x250)</option>
-                  </select>
+                  <Select value={adForm.size} onValueChange={value => setAdForm({...adForm, size: value})}>
+                    <SelectTrigger className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all font-medium h-auto">
+                      <SelectValue placeholder="Izvēlieties izmēru">
+                        {adForm.size === '300x250' ? 'Vidējs taisnstūris (300x250)' : 
+                         adForm.size === '300x600' ? 'Puslapa (300x600)' : 
+                         adForm.size === '728x90' ? 'Liels baneris (728x90)' : 
+                         adForm.size === '970x250' ? 'Milzu baneris (970x250)' : adForm.size}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="300x250">Vidējs taisnstūris (300x250)</SelectItem>
+                      <SelectItem value="300x600">Puslapa (300x600)</SelectItem>
+                      <SelectItem value="728x90">Liels baneris (728x90)</SelectItem>
+                      <SelectItem value="970x250">Milzu baneris (970x250)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Kategorija (neobligāti)</label>
-                  <select
-                    value={adForm.category}
-                    onChange={e => setAdForm({...adForm, category: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all font-medium"
-                  >
-                    <option value="">Visas kategorijas</option>
-                    <option value="Elektronika">Elektronika</option>
-                    <option value="Transports">Transports</option>
-                    <option value="Mājoklis">Mājoklis</option>
-                    <option value="Darbs">Darbs</option>
-                    <option value="Pakalpojumi">Pakalpojumi</option>
-                  </select>
+                  <Select value={adForm.category || 'all'} onValueChange={value => setAdForm({...adForm, category: value === 'all' ? '' : value})}>
+                    <SelectTrigger className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all font-medium h-auto">
+                      <SelectValue placeholder="Visas kategorijas">
+                        {adForm.category || 'Visas kategorijas'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Visas kategorijas</SelectItem>
+                      <SelectItem value="Elektronika">Elektronika</SelectItem>
+                      <SelectItem value="Transports">Transports</SelectItem>
+                      <SelectItem value="Mājoklis">Mājoklis</SelectItem>
+                      <SelectItem value="Darbs">Darbs</SelectItem>
+                      <SelectItem value="Pakalpojumi">Pakalpojumi</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -1380,12 +1782,14 @@ export default function Profile() {
           >
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Statistika: {selectedAd.title}</h3>
-              <button 
+              <Button 
                 onClick={() => setIsStatsModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+                variant="ghost"
+                size="icon"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </Button>
             </div>
             
             <div className="p-8">
