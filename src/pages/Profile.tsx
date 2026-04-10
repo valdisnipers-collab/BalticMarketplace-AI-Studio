@@ -577,13 +577,13 @@ export default function Profile() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100vh-4rem)] bg-[#f8f9fa] py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-10">
         
         {/* Lietotāja informācija */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="bg-white rounded-[24px] shadow-sm border border-slate-200/60 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex items-center space-x-6">
-            <div className="h-20 w-20 bg-primary-50 text-primary-600 rounded-2xl flex items-center justify-center flex-shrink-0 relative shadow-inner">
+            <div className="h-20 w-20 bg-[#E64415]/10 text-[#E64415] rounded-[20px] flex items-center justify-center flex-shrink-0 relative shadow-inner">
               <User className="h-10 w-10" />
               {user.is_verified ? (
                 <div className="absolute -bottom-1 -right-1 bg-green-500 text-white p-1.5 rounded-full border-2 border-white shadow-sm" title="Verificēts lietotājs">
@@ -616,13 +616,13 @@ export default function Profile() {
           </div>
 
           {!user.is_verified && (
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 max-w-sm w-full md:w-auto">
+            <div className="bg-white border border-slate-200/60 rounded-[24px] p-6 max-w-sm w-full md:w-auto">
               <h3 className="text-slate-900 font-bold mb-2 flex items-center text-base uppercase tracking-tight">
                 <ShieldAlert className="w-5 h-5 mr-2 text-amber-500" />
                 Verifikācija
               </h3>
               <p className="text-slate-500 text-sm mb-4 leading-relaxed font-medium">
-                Verificējiet savu identitāti ar Smart-ID un saņemiet <span className="text-primary-600 font-bold">300 bonusa punktus</span>!
+                Verificējiet savu identitāti ar Smart-ID un saņemiet <span className="text-[#E64415] font-bold">300 bonusa punktus</span>!
               </p>
               {verifying ? (
                 <div className="text-center p-3 bg-white rounded-lg border border-amber-200">
@@ -642,7 +642,7 @@ export default function Profile() {
               ) : (
                 <Button
                   onClick={handleSmartIdVerification}
-                  className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                 >
                   <Fingerprint className="w-4 h-4 mr-2" />
                   Verificēt ar Smart-ID
@@ -653,7 +653,7 @@ export default function Profile() {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-100 overflow-x-auto no-scrollbar">
+        <div className="flex overflow-x-auto no-scrollbar gap-2 mb-8 p-1.5 bg-slate-100/50 rounded-2xl w-max max-w-full border border-slate-200/60">
           {[
             { id: 'listings', label: t('profile.myListings'), icon: Package },
             { id: 'favorites', label: t('profile.favorites'), icon: Heart },
@@ -669,18 +669,18 @@ export default function Profile() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               variant="ghost"
-              className={`py-4 px-8 font-bold text-sm flex items-center border-b-2 rounded-none transition-all whitespace-nowrap relative ${
+              className={`py-2.5 px-5 font-medium text-sm flex items-center rounded-xl transition-all whitespace-nowrap relative ${
                 activeTab === tab.id 
-                  ? 'text-primary-600 border-primary-600 bg-transparent hover:bg-transparent' 
-                  : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                  ? 'text-slate-900' 
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
               }`}
             >
-              <tab.icon className={`w-4 h-4 mr-2.5 ${activeTab === tab.id ? 'text-primary-600' : 'text-slate-400'}`} />
-              {tab.label}
+              <tab.icon className={`w-4 h-4 mr-2 relative z-10 ${activeTab === tab.id ? 'text-[#E64415]' : 'text-slate-400'}`} />
+              <span className="relative z-10">{tab.label}</span>
               {activeTab === tab.id && (
                 <motion.div 
                   layoutId="activeTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600"
+                  className="absolute inset-0 bg-white rounded-xl shadow-sm border border-slate-200/50 pointer-events-none"
                 />
               )}
             </Button>
@@ -698,17 +698,17 @@ export default function Profile() {
               <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">{t('profile.offers')} (Saņemtie)</h2>
               {isLoadingOffers ? (
                 <div className="space-y-4">
-                  {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
+                  {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-[24px]" />)}
                 </div>
               ) : receivedOffers.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                <div className="bg-white rounded-[24px] border border-slate-200/60 p-12 text-center">
                   <Handshake className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                   <p className="text-slate-500 font-medium">Jums vēl nav saņemtu piedāvājumu.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
                   {receivedOffers.map(offer => (
-                    <div key={offer.id} className="bg-white rounded-2xl p-4 border border-slate-100 flex items-center gap-6">
+                    <div key={offer.id} className="bg-white rounded-[24px] p-4 border border-slate-200/60 flex items-center gap-6">
                       <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-slate-50">
                         <img src={offer.listing_image} alt={offer.listing_title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       </div>
@@ -716,7 +716,7 @@ export default function Profile() {
                         <h3 className="font-bold text-slate-900">{offer.listing_title}</h3>
                         <p className="text-sm text-slate-500">Pircējs: {offer.buyer_name}</p>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-lg font-bold text-primary-600">€{offer.amount.toLocaleString()}</span>
+                          <span className="text-lg font-bold text-[#E64415]">€{offer.amount.toLocaleString()}</span>
                           <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'pending' ? 'secondary' : 'destructive'} className="text-[10px] uppercase">
                             {offer.status === 'accepted' ? 'Pieņemts' : offer.status === 'pending' ? 'Gaida' : 'Noraidīts'}
                           </Badge>
@@ -726,6 +726,7 @@ export default function Profile() {
                         variant="outline" 
                         size="sm"
                         onClick={() => navigate(`/chat?userId=${offer.buyer_id}&listingId=${offer.listing_id}`)}
+                        className="rounded-xl font-bold uppercase tracking-wider text-xs px-4"
                       >
                         Skatīt čatā
                       </Button>
@@ -742,7 +743,7 @@ export default function Profile() {
                   {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
                 </div>
               ) : sentOffers.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                <div className="bg-white rounded-2xl border border-slate-200/60 p-12 text-center">
                   <Handshake className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                   <p className="text-slate-500 font-medium">Jūs vēl neesat izteicis nevienu piedāvājumu.</p>
                 </div>
@@ -757,7 +758,7 @@ export default function Profile() {
                         <h3 className="font-bold text-slate-900">{offer.listing_title}</h3>
                         <p className="text-sm text-slate-500">Pārdevējs: {offer.seller_name}</p>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-lg font-bold text-primary-600">€{offer.amount.toLocaleString()}</span>
+                          <span className="text-lg font-bold text-[#E64415]">€{offer.amount.toLocaleString()}</span>
                           <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'pending' ? 'secondary' : 'destructive'} className="text-[10px] uppercase">
                             {offer.status === 'accepted' ? 'Pieņemts' : offer.status === 'pending' ? 'Gaida' : 'Noraidīts'}
                           </Badge>
@@ -767,6 +768,7 @@ export default function Profile() {
                         variant="outline" 
                         size="sm"
                         onClick={() => navigate(`/chat?userId=${offer.seller_id}&listingId=${offer.listing_id}`)}
+                        className="rounded-xl font-bold uppercase tracking-wider text-xs px-4"
                       >
                         Skatīt čatā
                       </Button>
@@ -786,10 +788,10 @@ export default function Profile() {
             className="space-y-8"
           >
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-50 rounded-full -mr-32 -mt-32 opacity-50" />
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[#E64415]/10 rounded-full -mr-32 -mt-32 opacity-50" />
               <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-8">
                 <div>
-                  <h2 className="text-xs font-bold text-primary-600 uppercase tracking-wider mb-3 flex items-center">
+                  <h2 className="text-xs font-bold text-[#E64415] uppercase tracking-wider mb-3 flex items-center">
                     <Wallet className="w-4 h-4 mr-2" />
                     Konta atlikums
                   </h2>
@@ -800,7 +802,7 @@ export default function Profile() {
                 <Button
                   onClick={() => setIsAddFundsModalOpen(true)}
                   size="lg"
-                  className="w-full sm:w-auto uppercase tracking-wider text-xs"
+                  className="w-full sm:w-auto bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                 >
                   <Plus className="w-5 h-5 mr-2" />
                   Papildināt maku
@@ -833,7 +835,7 @@ export default function Profile() {
                     <Button
                       onClick={handleBuyEarlyAccess}
                       disabled={user?.points ? user.points < (parseInt(settings.early_access_price) || 150) : true}
-                      className="w-full bg-amber-500 hover:bg-amber-600 text-white uppercase tracking-wider text-xs"
+                      className="w-full bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                     >
                       Aktivizēt ({settings.early_access_price || 150} punkti)
                     </Button>
@@ -851,12 +853,12 @@ export default function Profile() {
                         onClick={() => handleBuyPoints(amount, price)}
                         disabled={addingFunds}
                         variant="outline"
-                        className="h-auto p-4 flex flex-col items-center justify-center gap-1 group"
+                        className="h-auto p-4 flex flex-col items-center justify-center gap-1 group rounded-xl transition-all hover:bg-slate-50"
                       >
-                        <div className="text-xl font-bold text-slate-900 group-hover:text-primary-600">
+                        <div className="text-xl font-bold text-slate-900 group-hover:text-[#E64415]">
                           {amount}
                         </div>
-                        <div className="text-[10px] font-bold text-slate-400 group-hover:text-primary-400 uppercase tracking-wider">
+                        <div className="text-[10px] font-bold text-slate-400 group-hover:text-[#E64415]/70 uppercase tracking-wider">
                           {price.toFixed(2)} €
                         </div>
                       </Button>
@@ -969,7 +971,7 @@ export default function Profile() {
               </div>
 
               <div className="mt-10 pt-8 border-t border-slate-100">
-                <Button variant="outline" className="uppercase tracking-wider text-xs">
+                <Button variant="outline" className="rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all hover:bg-slate-50">
                   Rediģēt uzņēmuma datus
                 </Button>
               </div>
@@ -977,14 +979,14 @@ export default function Profile() {
 
             {/* SaaS Subscription Section */}
             <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/20 blur-[80px] rounded-full -mr-32 -mt-32" />
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[#E64415]/20 blur-[80px] rounded-full -mr-32 -mt-32" />
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-2xl font-bold uppercase tracking-tight flex items-center">
                     <Star className="w-6 h-6 mr-3 text-amber-400" />
                     B2B Pro Abonements
                   </h3>
-                  <Badge className="bg-primary-500 text-white border-none">Aktīvs</Badge>
+                  <Badge className="bg-[#E64415] text-white border-none">Aktīvs</Badge>
                 </div>
                 <p className="text-slate-300 mb-8 max-w-2xl">
                   Jūsu uzņēmums izmanto Pro plānu, kas sniedz piekļuvi neierobežotiem sludinājumiem, prioritāram atbalstam un padziļinātai analītikai.
@@ -1004,7 +1006,7 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="flex gap-4">
-                  <Button className="bg-white text-slate-900 hover:bg-slate-100" onClick={async () => {
+                  <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all" onClick={async () => {
                     try {
                       const token = localStorage.getItem('auth_token');
                       const res = await fetch('/api/create-checkout-session', {
@@ -1024,7 +1026,7 @@ export default function Profile() {
                   }}>
                     Pārvaldīt abonementu
                   </Button>
-                  <Button variant="outline" className="border-white/20 text-white hover:bg-white/10">
+                  <Button variant="outline" className="border-white/20 text-white hover:bg-white/10 rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all">
                     Skatīt rēķinus
                   </Button>
                 </div>
@@ -1053,7 +1055,7 @@ export default function Profile() {
                 <Eye className="w-12 h-12 text-slate-300 mx-auto mb-4" />
                 <h3 className="text-lg font-bold text-slate-900 mb-2">Jums nav saglabātu meklējumu</h3>
                 <p className="text-slate-500 mb-6">Saglabājiet meklējumus, lai saņemtu paziņojumus par jauniem sludinājumiem.</p>
-                <Button onClick={() => navigate('/search')}>Pāriet uz meklēšanu</Button>
+                <Button onClick={() => navigate('/search')} className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all">Pāriet uz meklēšanu</Button>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">
@@ -1070,7 +1072,7 @@ export default function Profile() {
                       </p>
                     </div>
                     <div className="flex items-center space-x-3">
-                      <Button variant="outline" onClick={() => {
+                      <Button variant="outline" className="rounded-xl font-bold uppercase tracking-wider text-xs px-4" onClick={() => {
                         const params = new URLSearchParams();
                         if (search.query) params.set('q', search.query);
                         if (search.category) params.set('category', search.category);
@@ -1081,7 +1083,7 @@ export default function Profile() {
                       }}>
                         Meklēt
                       </Button>
-                      <Button variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={async () => {
+                      <Button variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl font-bold uppercase tracking-wider text-xs px-4" onClick={async () => {
                         if (!window.confirm('Vai tiešām vēlies dzēst šo meklējumu?')) return;
                         try {
                           const token = localStorage.getItem('auth_token');
@@ -1131,11 +1133,11 @@ export default function Profile() {
                   <div 
                     key={notification.id} 
                     className={`bg-white rounded-2xl border p-6 flex items-start gap-4 transition-colors ${
-                      notification.is_read ? 'border-slate-100' : 'border-primary-200 bg-primary-50/30'
+                      notification.is_read ? 'border-slate-100' : 'border-[#E64415]/30 bg-[#E64415]/5'
                     }`}
                   >
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      notification.is_read ? 'bg-slate-100 text-slate-500' : 'bg-primary-100 text-primary-600'
+                      notification.is_read ? 'bg-slate-100 text-slate-500' : 'bg-[#E64415]/20 text-primary-600'
                     }`}>
                       <Fingerprint className="w-5 h-5" />
                     </div>
@@ -1147,7 +1149,7 @@ export default function Profile() {
                       <p className="text-xs text-slate-400 mt-2">{formatDate(notification.created_at)}</p>
                     </div>
                     {!notification.is_read && (
-                      <Button variant="ghost" size="sm" onClick={async () => {
+                      <Button variant="ghost" size="sm" className="rounded-xl font-bold uppercase tracking-wider text-xs px-4" onClick={async () => {
                         try {
                           const token = localStorage.getItem('auth_token');
                           await fetch(`/api/users/me/notifications/${notification.id}/read`, {
@@ -1200,7 +1202,7 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <Button className="uppercase tracking-wider text-xs">
+                  <Button className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all">
                     Saglabāt izmaiņas
                   </Button>
                 </div>
@@ -1244,7 +1246,7 @@ export default function Profile() {
                     <Button 
                       type="submit"
                       disabled={isUpdatingCompany}
-                      className="uppercase tracking-wider text-xs"
+                      className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                     >
                       {isUpdatingCompany ? 'Saglabā...' : 'Atjaunināt uzņēmuma datus'}
                     </Button>
@@ -1264,7 +1266,7 @@ export default function Profile() {
               <h2 className="text-2xl font-bold text-slate-900 flex items-center uppercase tracking-tight">Mani sludinājumi</h2>
               <Button 
                 render={<Link to="/add" />}
-                className="uppercase tracking-wider text-xs"
+                className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Pievienot jaunu
@@ -1297,7 +1299,7 @@ export default function Profile() {
               </div>
             ) : myListings.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-100 border-dashed p-16 text-center">
-                <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <div className="w-16 h-16 bg-[#f8f9fa] rounded-[24px] flex items-center justify-center mx-auto mb-6">
                   <Package className="w-8 h-8 text-slate-300" />
                 </div>
                 <h3 className="text-xl font-bold text-slate-900 mb-2 uppercase tracking-tight">Tev vēl nav neviena sludinājuma</h3>
@@ -1305,7 +1307,7 @@ export default function Profile() {
                 <Button 
                   render={<Link to="/add" />}
                   size="lg"
-                  className="uppercase tracking-wider text-xs"
+                  className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                 >
                   Izveidot pirmo sludinājumu
                 </Button>
@@ -1313,7 +1315,7 @@ export default function Profile() {
             ) : (
               <div className="grid grid-cols-1 gap-4">
                 {myListings.map((listing) => (
-                  <div key={listing.id} className={`bg-white rounded-2xl p-4 border border-slate-100 hover:border-primary-100 transition-all flex flex-col sm:flex-row items-center gap-6 group ${listing.is_highlighted ? 'ring-2 ring-amber-100 bg-amber-50/10' : ''}`}>
+                  <div key={listing.id} className={`bg-white rounded-2xl p-4 border border-slate-100 hover:border-[#E64415]/20 transition-all flex flex-col sm:flex-row items-center gap-6 group ${listing.is_highlighted ? 'ring-2 ring-amber-100 bg-amber-50/10' : ''}`}>
                     <div className="w-full sm:w-32 h-32 bg-slate-50 rounded-xl overflow-hidden flex-shrink-0 relative">
                       {listing.image_url ? (
                         <img 
@@ -1363,7 +1365,7 @@ export default function Profile() {
                       <Button 
                         render={<Link to={`/edit/${listing.id}`} />}
                         variant="outline"
-                        className="flex-1 sm:w-32 uppercase tracking-wider text-xs"
+                        className="flex-1 sm:w-32 rounded-xl font-bold uppercase tracking-wider text-xs px-4"
                       >
                         <Pencil className="w-4 h-4 mr-2" />
                         Rediģēt
@@ -1371,7 +1373,7 @@ export default function Profile() {
                       <Button 
                         onClick={() => handleDelete(listing.id)}
                         variant="destructive"
-                        className="flex-1 sm:w-32 uppercase tracking-wider text-xs"
+                        className="flex-1 sm:w-32 rounded-xl font-bold uppercase tracking-wider text-xs px-4"
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Dzēst
@@ -1421,7 +1423,7 @@ export default function Profile() {
                 <Button 
                   render={<Link to="/" />}
                   size="lg"
-                  className="uppercase tracking-wider text-xs"
+                  className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                 >
                   Skatīt sludinājumus
                 </Button>
@@ -1429,7 +1431,7 @@ export default function Profile() {
             ) : (
               <div className="grid grid-cols-1 gap-4">
                 {favorites.map((listing) => (
-                  <div key={listing.id} className={`bg-white rounded-2xl p-4 border border-slate-100 hover:border-primary-100 transition-all flex flex-col sm:flex-row items-center gap-6 group ${listing.is_highlighted ? 'ring-2 ring-amber-100 bg-amber-50/10' : ''}`}>
+                  <div key={listing.id} className={`bg-white rounded-2xl p-4 border border-slate-100 hover:border-[#E64415]/20 transition-all flex flex-col sm:flex-row items-center gap-6 group ${listing.is_highlighted ? 'ring-2 ring-amber-100 bg-amber-50/10' : ''}`}>
                     <div className="w-full sm:w-32 h-32 bg-slate-50 rounded-xl overflow-hidden flex-shrink-0 relative">
                       {listing.image_url ? (
                         <img 
@@ -1473,7 +1475,7 @@ export default function Profile() {
                       <Button 
                         onClick={() => handleRemoveFavorite(listing.id)}
                         variant="outline"
-                        className="w-full sm:w-32 text-red-500 hover:text-red-600 hover:bg-red-50 uppercase tracking-wider text-xs"
+                        className="w-full sm:w-32 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl font-bold uppercase tracking-wider text-xs px-4"
                       >
                         <Heart className="w-4 h-4 mr-2 fill-current" />
                         Noņemt
@@ -1498,7 +1500,7 @@ export default function Profile() {
               </h2>
               <Button
                 onClick={() => setIsAdModalOpen(true)}
-                className="uppercase tracking-wider text-xs"
+                className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Pievienot reklāmu
@@ -1531,7 +1533,7 @@ export default function Profile() {
                 <Button 
                   onClick={() => setIsAdModalOpen(true)}
                   size="lg"
-                  className="uppercase tracking-wider text-xs"
+                  className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                 >
                   Izveidot pirmo reklāmu
                 </Button>
@@ -1590,7 +1592,7 @@ export default function Profile() {
                       <Button 
                         onClick={() => openStatsModal(ad)}
                         variant="outline"
-                        className="w-full sm:w-32 uppercase tracking-wider text-xs"
+                        className="w-full sm:w-32 rounded-xl font-bold uppercase tracking-wider text-xs px-4"
                       >
                         <BarChart3 className="w-4 h-4 mr-2" />
                         Statistika
@@ -1631,7 +1633,7 @@ export default function Profile() {
                   onClick={() => handleAddFunds(amount)}
                   disabled={addingFunds}
                   variant="outline"
-                  className="h-auto py-6 font-bold text-xl text-slate-900 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200"
+                  className="rounded-xl h-auto py-6 font-bold text-xl text-slate-900 hover:bg-[#E64415]/10 hover:text-primary-600 hover:border-[#E64415]/30 shadow-sm transition-all"
                 >
                   {amount} €
                 </Button>
@@ -1703,7 +1705,7 @@ export default function Profile() {
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Izmērs</label>
                   <Select value={adForm.size} onValueChange={value => setAdForm({...adForm, size: value})}>
-                    <SelectTrigger className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all font-medium h-auto">
+                    <SelectTrigger className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-[#E64415]/20 focus:border-[#E64415] outline-none transition-all font-medium h-auto">
                       <SelectValue placeholder="Izvēlieties izmēru">
                         {adForm.size === '300x250' ? 'Vidējs taisnstūris (300x250)' : 
                          adForm.size === '300x600' ? 'Puslapa (300x600)' : 
@@ -1722,7 +1724,7 @@ export default function Profile() {
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Kategorija (neobligāti)</label>
                   <Select value={adForm.category || 'all'} onValueChange={value => setAdForm({...adForm, category: value === 'all' ? '' : value})}>
-                    <SelectTrigger className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all font-medium h-auto">
+                    <SelectTrigger className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-[#E64415]/20 focus:border-[#E64415] outline-none transition-all font-medium h-auto">
                       <SelectValue placeholder="Visas kategorijas">
                         {adForm.category || 'Visas kategorijas'}
                       </SelectValue>
@@ -1764,7 +1766,7 @@ export default function Profile() {
                 <Button 
                   type="submit"
                   disabled={user && user.points < parseInt(settings.ad_price_points || '500', 10)}
-                  className="w-full uppercase tracking-wider text-xs"
+                  className="w-full bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
                 >
                   Izveidot un apmaksāt
                 </Button>
@@ -1796,7 +1798,7 @@ export default function Profile() {
             
             <div className="p-8">
               <div className="grid grid-cols-2 gap-6 mb-8">
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                <div className="bg-[#f8f9fa] p-6 rounded-[24px] border border-slate-200/60">
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Kopējie skatījumi</div>
                   <div className="text-3xl font-bold text-slate-900">{selectedAd.views}</div>
                 </div>
