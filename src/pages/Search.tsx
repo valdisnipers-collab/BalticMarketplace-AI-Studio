@@ -4,6 +4,7 @@ import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as
 import { motion, AnimatePresence } from 'motion/react';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../components/AuthContext';
+import { useI18n } from '../components/I18nContext';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +34,7 @@ interface Listing {
 const categories = ['Visi', ...CATEGORY_NAMES];
 
 export default function Search() {
+  const { t, lang } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const { user } = useAuth();
@@ -130,7 +132,7 @@ export default function Search() {
   const toggleFavorite = async (e: React.MouseEvent, listingId: number) => {
     e.preventDefault();
     if (!user) {
-      alert("Lūdzu, ienāciet sistēmā, lai pievienotu favorītiem.");
+      alert(t('nav.login'));
       return;
     }
 
@@ -247,13 +249,13 @@ export default function Search() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 flex flex-col md:flex-row">
       <Helmet>
-        <title>Meklēšana | Sludinājumi</title>
+        <title>{t('nav.discover')} | Sludinājumi</title>
         <meta name="description" content="Meklējiet un atrodiet labākos sludinājumus. Izmantojiet filtrus, lai atrastu tieši to, ko meklējat." />
       </Helmet>
 
       {/* Mobile filter toggle */}
       <div className="md:hidden bg-white p-4 border-b border-slate-200 flex justify-between items-center sticky top-16 z-30 shadow-sm">
-        <span className="font-medium text-slate-700">Atrasti {filteredListings.length} sludinājumi</span>
+        <span className="font-medium text-slate-700">{filteredListings.length} sludinājumi</span>
         <Button 
           variant="outline"
           size="sm"
@@ -261,19 +263,19 @@ export default function Search() {
           className="gap-2"
         >
           <SlidersHorizontal className="w-4 h-4" />
-          Filtri
+          {t('search.filters')}
         </Button>
       </div>
 
       {/* Sidebar Filters */}
       <div className={`
-        fixed inset-0 z-50 bg-white md:bg-transparent md:static md:w-80 flex-shrink-0 border-r border-slate-200
+        fixed inset-0 z-[110] bg-white md:bg-transparent md:static md:w-80 flex-shrink-0 border-r border-slate-200 md:z-0
         transform transition-transform duration-300 ease-in-out
         ${showFilters ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div className="h-full overflow-y-auto p-6 md:p-8">
           <div className="flex justify-between items-center mb-8 md:hidden">
-            <h2 className="text-xl font-bold text-slate-900">Filtri</h2>
+            <h2 className="text-xl font-bold text-slate-900">{t('search.filters')}</h2>
             <Button variant="ghost" size="icon" onClick={() => setShowFilters(false)}>
               <X className="w-5 h-5" />
             </Button>
@@ -282,14 +284,14 @@ export default function Search() {
           <form onSubmit={handleSearch} className="space-y-8">
             {/* Search Input */}
             <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">Meklēt</label>
+              <label className="block text-sm font-semibold text-slate-900">{t('home.search.placeholder').replace('...', '')}</label>
               <div className="relative">
                 <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Atslēgvārds..."
+                  placeholder={t('home.search.placeholder')}
                   className="pl-9"
                 />
               </div>
@@ -297,7 +299,7 @@ export default function Search() {
 
             {/* Location Input */}
             <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">Atrašanās vieta</label>
+              <label className="block text-sm font-semibold text-slate-900">{t('search.location')}</label>
               <Input
                 type="text"
                 value={location}
@@ -308,13 +310,13 @@ export default function Search() {
 
             {/* Category */}
             <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">Kategorija</label>
+              <label className="block text-sm font-semibold text-slate-900">{t('home.categories.title')}</label>
               <RadioGroup value={category} onValueChange={setCategory} className="space-y-2.5">
                 {categories.map(cat => (
                   <div key={cat} className="flex items-center space-x-3">
                     <RadioGroupItem value={cat} id={`cat-${cat}`} />
                     <label htmlFor={`cat-${cat}`} className="text-sm text-slate-600 cursor-pointer hover:text-slate-900 transition-colors">
-                      {cat}
+                      {cat === 'Visi' ? (lang === 'EN' ? 'All' : lang === 'RU' ? 'Все' : lang === 'LT' ? 'Visi' : lang === 'EE' ? 'Kõik' : 'Visi') : cat}
                     </label>
                   </div>
                 ))}
@@ -324,7 +326,7 @@ export default function Search() {
             {/* Subcategory */}
             {category !== 'Visi' && CATEGORY_SCHEMAS[category]?.subcategories && Object.keys(CATEGORY_SCHEMAS[category].subcategories).length > 0 && (
               <div className="space-y-3">
-                <label className="block text-sm font-semibold text-slate-900">Apakškategorija</label>
+                <label className="block text-sm font-semibold text-slate-900">{t('add.step2')}</label>
                 <Select value={subcategory || 'all'} onValueChange={(value) => setSubcategory(value === 'all' ? '' : value)}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Visas">
@@ -343,18 +345,18 @@ export default function Search() {
 
             {/* Price Range */}
             <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">Cena (€)</label>
+              <label className="block text-sm font-semibold text-slate-900">{t('listing.price')} (€)</label>
               <div className="flex items-center space-x-3">
                 <Input
                   type="number"
-                  placeholder="No"
+                  placeholder={t('search.minPrice')}
                   value={minPrice}
                   onChange={(e) => setMinPrice(e.target.value)}
                 />
                 <span className="text-slate-400">-</span>
                 <Input
                   type="number"
-                  placeholder="Līdz"
+                  placeholder={t('search.maxPrice')}
                   value={maxPrice}
                   onChange={(e) => setMaxPrice(e.target.value)}
                 />
@@ -400,7 +402,7 @@ export default function Search() {
                 size="lg"
                 onClick={() => setShowFilters(false)}
               >
-                Parādīt rezultātus
+                {t('search.apply')}
               </Button>
               <Button 
                 type="button"
@@ -408,7 +410,7 @@ export default function Search() {
                 className="w-full"
                 onClick={clearFilters}
               >
-                Notīrīt filtrus
+                {t('search.reset')}
               </Button>
             </div>
           </form>
@@ -420,7 +422,7 @@ export default function Search() {
         <div className="mb-8 hidden md:flex justify-between items-end">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Atrasti {filteredListings.length} sludinājumi
+              {filteredListings.length} sludinājumi
             </h1>
             <p className="text-slate-500 mt-1">Pārlūkojiet un atrodiet labākos piedāvājumus.</p>
           </div>
@@ -431,19 +433,19 @@ export default function Search() {
                 Saglabāt meklējumu
               </Button>
             )}
-            <span className="text-sm text-slate-500">Kārtot pēc:</span>
+            <span className="text-sm text-slate-500">{t('search.sort')}:</span>
             <Select value={sort} onValueChange={(val) => { setSort(val); setTimeout(() => handleSearch(), 0); }}>
               <SelectTrigger className="w-[180px] bg-white">
-                <SelectValue placeholder="Jaunākie">
-                  {sort === 'newest' ? 'Jaunākie' : 
-                   sort === 'price_asc' ? 'Lētākie vispirms' : 
-                   sort === 'price_desc' ? 'Dārgākie vispirms' : undefined}
+                <SelectValue placeholder={t('search.newest')}>
+                  {sort === 'newest' ? t('search.newest') : 
+                   sort === 'price_asc' ? t('search.priceLow') : 
+                   sort === 'price_desc' ? t('search.priceHigh') : undefined}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="newest">Jaunākie</SelectItem>
-                <SelectItem value="price_asc">Lētākie vispirms</SelectItem>
-                <SelectItem value="price_desc">Dārgākie vispirms</SelectItem>
+                <SelectItem value="newest">{t('search.newest')}</SelectItem>
+                <SelectItem value="price_asc">{t('search.priceLow')}</SelectItem>
+                <SelectItem value="price_desc">{t('search.priceHigh')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -464,14 +466,14 @@ export default function Search() {
         ) : filteredListings.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 shadow-sm">
             <SearchIcon className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Nekas netika atrasts</h3>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">{t('search.noResults')}</h3>
             <p className="text-slate-500">Mēģiniet mainīt meklēšanas kritērijus vai noņemt filtrus.</p>
             <Button 
               variant="link"
               onClick={clearFilters}
               className="mt-4"
             >
-              Notīrīt visus filtrus
+              {t('search.reset')}
             </Button>
           </div>
         ) : (

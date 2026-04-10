@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { useI18n } from '../components/I18nContext';
 import { 
   ArrowLeft, 
   MapPin, 
@@ -82,6 +83,7 @@ interface Bid {
 export default function ListingDetails() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [listing, setListing] = useState<ListingDetails | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -326,11 +328,11 @@ export default function ListingDetails() {
         <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center mb-8">
           <ShieldAlert className="w-10 h-10 text-red-500" />
         </div>
-        <h2 className="text-3xl font-bold text-slate-900 mb-4">Sludinājums nav atrasts</h2>
+        <h2 className="text-3xl font-bold text-slate-900 mb-4">{t('search.noResults')}</h2>
         <p className="text-slate-500 mb-10 font-medium max-w-sm mx-auto">{error || "Pieprasītais sludinājums nevarēja tikt ielādēts."}</p>
         <Button size="lg" onClick={() => navigate('/')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Atgriezties sākumā
+          {t('add.back')}
         </Button>
       </div>
     );
@@ -355,11 +357,11 @@ export default function ListingDetails() {
       </Helmet>
 
       {/* Top Navigation Bar */}
-      <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100">
+      <div className="sticky top-16 z-40 bg-white border-b border-slate-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/search" className="group flex items-center text-sm font-semibold text-slate-500 hover:text-primary-600 transition-colors">
             <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-            Atpakaļ uz meklēšanu
+            {t('add.back')}
           </Link>
           <div className="flex items-center gap-2">
             <Button 
@@ -472,7 +474,7 @@ export default function ListingDetails() {
                 </Badge>
                 <span className="text-sm font-medium text-slate-500 flex items-center">
                   <Clock className="w-4 h-4 mr-1.5" />
-                  Pievienots {formatDate(listing.created_at)}
+                  {formatDate(listing.created_at)}
                 </span>
               </div>
               
@@ -517,7 +519,7 @@ export default function ListingDetails() {
             <div className="space-y-6">
               <h2 className="text-2xl font-bold text-slate-900 flex items-center">
                 <Info className="w-6 h-6 mr-3 text-primary-600" />
-                Apraksts
+                {t('listing.description')}
               </h2>
               <div className="prose prose-slate max-w-none">
                 <p className="text-slate-600 text-lg leading-relaxed whitespace-pre-wrap">
@@ -532,7 +534,7 @@ export default function ListingDetails() {
               <div className="relative z-10">
                 <h3 className="text-xl font-bold mb-8 flex items-center uppercase tracking-wide">
                   <TrendingUp className="w-6 h-6 mr-3 text-amber-400" />
-                  Tirgus analīze
+                  {t('listing.marketAnalysis')}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-white/5 backdrop-blur-sm p-5 rounded-2xl border border-white/10">
@@ -558,15 +560,15 @@ export default function ListingDetails() {
             <div className="space-y-6 pt-8 border-t border-slate-100">
               <h2 className="text-2xl font-bold text-slate-900 flex items-center">
                 <Star className="w-6 h-6 mr-3 text-amber-400 fill-current" />
-                Pārdevēja atsauksmes
+                {t('listing.reviews')}
               </h2>
               
               {user && user.id !== listing.user_id && (
                 <form onSubmit={handleReviewSubmit} className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-8">
-                  <h3 className="font-bold text-slate-900 mb-4">Pievienot atsauksmi</h3>
+                  <h3 className="font-bold text-slate-900 mb-4">{t('listing.addReview')}</h3>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Vērtējums</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">{t('listing.rating')}</label>
                       <div className="flex items-center space-x-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
@@ -581,7 +583,7 @@ export default function ListingDetails() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Komentārs</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">{t('listing.comment')}</label>
                       <textarea
                         value={newReviewComment}
                         onChange={(e) => setNewReviewComment(e.target.value)}
@@ -592,14 +594,14 @@ export default function ListingDetails() {
                       />
                     </div>
                     <Button type="submit" disabled={isSubmittingReview}>
-                      {isSubmittingReview ? 'Pievieno...' : 'Pievienot atsauksmi'}
+                      {isSubmittingReview ? t('listing.submitting') : t('listing.submitReview')}
                     </Button>
                   </div>
                 </form>
               )}
 
               {reviews.length === 0 ? (
-                <p className="text-slate-500 italic">Šim pārdevējam vēl nav atsauksmju.</p>
+                <p className="text-slate-500 italic">{t('listing.noReviews')}</p>
               ) : (
                 <div className="space-y-4">
                   {reviews.map((review) => (
@@ -636,16 +638,16 @@ export default function ListingDetails() {
                   <>
                     <div className="mb-6">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pašreizējā cena</div>
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('listing.currentBid')}</div>
                         <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                          <Clock className="w-3 h-3 mr-1" /> Izsole
+                          <Clock className="w-3 h-3 mr-1" /> {t('listing.auction')}
                         </Badge>
                       </div>
                       <div className="text-5xl font-bold text-slate-900">
                         €{bids.length > 0 ? Math.max(...bids.map(b => b.amount)).toLocaleString() : listing.price.toLocaleString()}
                       </div>
                       <div className="text-sm text-slate-500 mt-2 font-medium">
-                        Sākuma cena: €{listing.price.toLocaleString()} • {bids.length} solījumi
+                        {t('listing.startingPrice')}: €{listing.price.toLocaleString()} • {bids.length} {t('listing.bids')}
                       </div>
                     </div>
 
@@ -654,8 +656,7 @@ export default function ListingDetails() {
                         <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center mx-auto mb-3">
                           <Clock className="w-6 h-6 text-slate-500" />
                         </div>
-                        <h3 className="text-lg font-bold text-slate-900 mb-1">Izsole ir noslēgusies</h3>
-                        <p className="text-sm text-slate-500">Šajā izsolē vairs nevar veikt solījumus.</p>
+                        <h3 className="text-lg font-bold text-slate-900 mb-1">{t('listing.auctionEnded')}</h3>
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -665,7 +666,6 @@ export default function ListingDetails() {
                             type="number" 
                             value={bidAmount}
                             onChange={(e) => setBidAmount(e.target.value)}
-                            placeholder="Ievadiet savu solījumu"
                             className="w-full pl-8 pr-4 py-3 rounded-xl border-2 border-slate-200 focus:border-primary-500 focus:ring-0 transition-colors font-bold text-lg"
                           />
                         </div>
@@ -675,7 +675,7 @@ export default function ListingDetails() {
                           onClick={handleBid}
                           disabled={isBidding}
                         >
-                          {isBidding ? 'Apstrādā...' : 'Solīt tagad'}
+                          {isBidding ? '...' : t('listing.placeBid')}
                         </Button>
                         <Button 
                           variant="outline" 
@@ -684,7 +684,7 @@ export default function ListingDetails() {
                           onClick={() => navigate(`/chat?userId=${listing.user_id}&listingId=${listing.id}`)}
                         >
                           <MessageCircle className="w-5 h-5 mr-2" />
-                          Jautāt pārdevējam
+                          {t('listing.contactSeller')}
                         </Button>
                       </div>
                     )}
@@ -709,7 +709,7 @@ export default function ListingDetails() {
                 ) : (
                   <>
                     <div className="mb-8">
-                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cena</div>
+                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('listing.price')}</div>
                       <div className="text-5xl font-bold text-slate-900">
                         €{listing.price.toLocaleString()}
                       </div>
@@ -722,11 +722,11 @@ export default function ListingDetails() {
                         onClick={() => navigate(`/chat?userId=${listing.user_id}&listingId=${listing.id}`)}
                       >
                         <MessageCircle className="w-5 h-5 mr-2" />
-                        Sazināties ar pārdevēju
+                        {t('listing.contactSeller')}
                       </Button>
                       <Button variant="outline" size="lg" className="w-full text-sm border-2 border-primary-200 text-primary-700 hover:bg-primary-50">
                         <Zap className="w-5 h-5 mr-2 text-amber-500" />
-                        Piedāvāt savu cenu
+                        {t('listing.makeOffer')}
                       </Button>
                     </div>
                   </>
@@ -769,7 +769,7 @@ export default function ListingDetails() {
                         // In a real app, this would fetch the phone number or reveal it if already fetched
                       }}
                     >
-                      Rādīt telefona numuru
+                      {t('listing.showPhone')}
                     </Button>
                   </div>
                 </div>
@@ -784,7 +784,7 @@ export default function ListingDetails() {
                 <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
                   <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center uppercase tracking-wide">
                     <Calculator className="w-5 h-5 mr-3 text-primary-600" />
-                    Kredīta kalkulators
+                    {t('listing.creditCalculator')}
                   </h3>
                   
                   <div className="space-y-6">

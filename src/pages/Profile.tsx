@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { useI18n } from '../components/I18nContext';
 import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -66,6 +67,7 @@ interface Offer {
 }
 
 export default function Profile() {
+  const { t } = useI18n();
   const { user, loading, updateUser } = useAuth();
   const navigate = useNavigate();
   const [myListings, setMyListings] = useState<Listing[]>([]);
@@ -653,15 +655,15 @@ export default function Profile() {
         {/* Tabs */}
         <div className="flex border-b border-slate-100 overflow-x-auto no-scrollbar">
           {[
-            { id: 'listings', label: 'Mani sludinājumi', icon: Package },
-            { id: 'favorites', label: 'Favorīti', icon: Heart },
-            { id: 'saved-searches', label: 'Saglabātie meklējumi', icon: Eye },
-            { id: 'offers', label: 'Piedāvājumi', icon: Handshake },
-            { id: 'notifications', label: 'Paziņojumi', icon: Fingerprint },
-            { id: 'wallet', label: 'Mans Maks', icon: Wallet },
-            { id: 'ads', label: 'Reklāmas', icon: Star },
+            { id: 'listings', label: t('profile.myListings'), icon: Package },
+            { id: 'favorites', label: t('profile.favorites'), icon: Heart },
+            { id: 'saved-searches', label: t('profile.savedSearches'), icon: Eye },
+            { id: 'offers', label: t('profile.offers'), icon: Handshake },
+            { id: 'notifications', label: t('profile.notifications'), icon: Fingerprint },
+            { id: 'wallet', label: t('profile.wallet'), icon: Wallet },
+            { id: 'ads', label: t('profile.ads'), icon: Star },
             ...(user.user_type === 'b2b' ? [{ id: 'company', label: 'Uzņēmums', icon: BarChart3 }] : []),
-            { id: 'settings', label: 'Iestatījumi', icon: Pencil }
+            { id: 'settings', label: t('profile.settings'), icon: Pencil }
           ].map((tab) => (
             <Button
               key={tab.id}
@@ -693,7 +695,7 @@ export default function Profile() {
             className="space-y-10"
           >
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Saņemtie piedāvājumi</h2>
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">{t('profile.offers')} (Saņemtie)</h2>
               {isLoadingOffers ? (
                 <div className="space-y-4">
                   {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}

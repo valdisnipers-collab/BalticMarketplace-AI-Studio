@@ -1346,7 +1346,7 @@ async function startServer() {
 
       // Emit the message to the receiver
       io.to(`user_${receiverId}`).emit('new_message', {
-        ...message,
+        ...(message as any),
         sender: 'other' // from the receiver's perspective, the sender is 'other'
       });
 

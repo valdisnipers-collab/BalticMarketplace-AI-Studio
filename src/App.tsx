@@ -7,6 +7,7 @@ import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-route
 import { AnimatePresence, motion } from 'motion/react';
 import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './components/AuthContext';
+import { I18nProvider } from './components/I18nContext';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
 import Home from './pages/Home';
@@ -53,17 +54,19 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <HelmetProvider>
-      <AuthProvider>
-        <Router>
-          <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
-            <Navbar />
-            <main className="flex-grow">
-              <AnimatedRoutes />
-            </main>
-            <BottomNav />
-          </div>
-        </Router>
-      </AuthProvider>
+      <I18nProvider>
+        <AuthProvider>
+          <Router>
+            <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
+              <Navbar />
+              <main className="flex-grow">
+                <AnimatedRoutes />
+              </main>
+              <BottomNav />
+            </div>
+          </Router>
+        </AuthProvider>
+      </I18nProvider>
     </HelmetProvider>
   );
 }

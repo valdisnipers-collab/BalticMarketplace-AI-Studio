@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { useI18n } from '../components/I18nContext';
 import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/select";
 
 export default function AddListing() {
+  const { t } = useI18n();
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -229,7 +231,7 @@ export default function AddListing() {
         <div className="mb-16 text-center">
           <Badge variant="secondary" className="mb-6 uppercase tracking-wider text-[10px] px-4 py-2">
             <PlusCircle className="w-3 h-3 mr-2" />
-            Create New Listing
+            {t('add.title')}
           </Badge>
           <h1 className="text-3xl md:text-4xl font-bold text-slate-900 tracking-tight mb-4">
             List your <span className="text-primary-600">Masterpiece</span>.
@@ -260,10 +262,10 @@ export default function AddListing() {
             ))}
           </div>
           <div className="flex justify-between mt-6 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            <span className={step >= 1 ? 'text-primary-900' : ''}>Category</span>
-            <span className={step >= 2 ? 'text-primary-900' : ''}>Subcategory</span>
-            <span className={step >= 3 ? 'text-primary-900' : ''}>Details</span>
-            <span className={step >= 4 ? 'text-primary-900' : ''}>Publish</span>
+            <span className={step >= 1 ? 'text-primary-900' : ''}>{t('add.step1')}</span>
+            <span className={step >= 2 ? 'text-primary-900' : ''}>{t('add.step2')}</span>
+            <span className={step >= 3 ? 'text-primary-900' : ''}>{t('add.step3')}</span>
+            <span className={step >= 4 ? 'text-primary-900' : ''}>{t('add.step4')}</span>
           </div>
         </div>
 
@@ -586,17 +588,39 @@ export default function AddListing() {
                     </div>
 
                     {saleType === 'auction' && (
-                      <div className="space-y-4">
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          Auction End Date & Time *
-                        </label>
-                        <Input
-                          type="datetime-local"
-                          required
-                          value={auctionEndDate}
-                          onChange={(e) => setAuctionEndDate(e.target.value)}
-                          className="w-full px-8 py-6 bg-slate-50 border-none rounded-3xl focus-visible:ring-2 focus-visible:ring-primary-600 text-xl font-bold text-primary-950 transition-all h-auto"
-                        />
+                      <div className="space-y-6">
+                        <div className="space-y-4">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            Auction End Date & Time *
+                          </label>
+                          <Input
+                            type="datetime-local"
+                            required
+                            value={auctionEndDate}
+                            onChange={(e) => setAuctionEndDate(e.target.value)}
+                            className="w-full px-8 py-6 bg-slate-50 border-none rounded-3xl focus-visible:ring-2 focus-visible:ring-primary-600 text-xl font-bold text-primary-950 transition-all h-auto"
+                          />
+                        </div>
+                        <div className="space-y-4">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            Reserve Price (€) (Optional)
+                          </label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-8 flex items-center pointer-events-none">
+                              <span className="text-2xl font-bold text-slate-300">€</span>
+                            </div>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={reservePrice}
+                              onChange={(e) => setReservePrice(e.target.value)}
+                              className="w-full pl-16 px-8 py-6 bg-slate-50 border-none rounded-3xl focus-visible:ring-2 focus-visible:ring-primary-600 text-4xl font-bold text-primary-950 placeholder:text-slate-200 transition-all h-auto"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-500">If the auction ends below this price, you are not obligated to sell.</p>
+                        </div>
                       </div>
                     )}
 
@@ -632,7 +656,7 @@ export default function AddListing() {
                     className="flex-1 px-8 py-6 text-xs font-bold uppercase tracking-widest rounded-2xl"
                   >
                     <ArrowLeft className="w-4 h-4 mr-3" />
-                    Back
+                    {t('add.back')}
                   </Button>
                 ) : (
                   <div className="flex-1"></div>
@@ -644,7 +668,7 @@ export default function AddListing() {
                     onClick={nextStep}
                     className="flex-1 px-8 py-6 text-xs font-bold uppercase tracking-widest rounded-2xl shadow-xl shadow-primary-900/20"
                   >
-                    Continue
+                    {t('add.next')}
                     <ArrowRight className="w-4 h-4 ml-3" />
                   </Button>
                 ) : (
@@ -658,7 +682,7 @@ export default function AddListing() {
                     ) : (
                       <>
                         <CheckCircle2 className="w-4 h-4 mr-3" />
-                        Publish Listing
+                        {t('add.submit')}
                       </>
                     )}
                   </Button>

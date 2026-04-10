@@ -3,6 +3,7 @@ import { Send, ArrowLeft, Handshake, Search, MoreVertical, Loader2, Image as Ima
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../components/AuthContext';
+import { useI18n } from '../components/I18nContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { io, Socket } from 'socket.io-client';
@@ -36,6 +37,7 @@ interface Message {
 }
 
 export default function Chat() {
+  const { t } = useI18n();
   const { token, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -397,12 +399,12 @@ export default function Chat() {
       {/* Conversations List (Sidebar) */}
       <div className={`w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col h-[calc(100vh-4rem)] ${activeConversation && !initialUserId ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-4 border-b border-slate-200">
-          <h1 className="text-xl font-bold text-slate-900 mb-4">Ziņojumi</h1>
+          <h1 className="text-xl font-bold text-slate-900 mb-4">{t('chat.title')}</h1>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input 
               type="text" 
-              placeholder="Meklēt sarunas..." 
+              placeholder={t('search.placeholder')} 
               className="pl-9"
             />
           </div>
@@ -415,7 +417,7 @@ export default function Chat() {
             </div>
           ) : conversations.length === 0 ? (
             <div className="p-8 text-center text-slate-500">
-              <p>Jums vēl nav nevienas sarunas.</p>
+              <p>{t('chat.noConversations')}</p>
             </div>
           ) : (
             conversations.map((conv) => (
@@ -650,7 +652,7 @@ export default function Chat() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-slate-50 text-slate-500">
-            <p>Izvēlieties sarunu, lai sāktu saraksti</p>
+            <p>{t('chat.noConversations')}</p>
           </div>
         )}
       </div>
@@ -671,12 +673,12 @@ export default function Chat() {
               className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100">
-                <h3 className="text-xl font-bold text-slate-900">Piedāvāt cenu</h3>
+                <h3 className="text-xl font-bold text-slate-900">{t('chat.makeOffer')}</h3>
                 <p className="text-sm text-slate-500 mt-1">Sludinājums: {activeConversation.item}</p>
               </div>
               <form onSubmit={handleSendOffer} className="p-6">
                 <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Jūsu piedāvājums (€)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('listing.price')} (€)</label>
                   <Input 
                     type="number" 
                     value={offerAmount}
@@ -693,7 +695,7 @@ export default function Chat() {
                     onClick={() => setShowOfferModal(false)}
                     className="flex-1"
                   >
-                    Atcelt
+                    {t('search.reset')}
                   </Button>
                   <Button 
                     type="submit"
@@ -701,7 +703,7 @@ export default function Chat() {
                     className="flex-1"
                   >
                     {sendingOffer ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                    Nosūtīt piedāvājumu
+                    {t('chat.makeOffer')}
                   </Button>
                 </div>
               </form>
