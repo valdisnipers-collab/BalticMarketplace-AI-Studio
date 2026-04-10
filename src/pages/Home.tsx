@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
@@ -102,9 +102,112 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [locationQuery, setLocationQuery] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState('auto');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollPos, setScrollPos] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  const tripledCategories = [...mainCategories, ...mainCategories, ...mainCategories];
+
+  useEffect(() => {
+    // Initial scroll to the middle "Transports"
+    const initScroll = () => {
+      if (scrollRef.current) {
+        const itemHeight = 80; // h-20 = 80px
+        const container = scrollRef.current;
+        const currentContainerHeight = container.clientHeight;
+        setContainerHeight(currentContainerHeight);
+        
+        // If container height is 0, wait for next frame
+        if (currentContainerHeight === 0) {
+          requestAnimationFrame(initScroll);
+          return;
+        }
+
+        const centerOffset = currentContainerHeight / 2;
+        const transportsIndex = mainCategories.findIndex(c => c.id === 'auto');
+        // Target the "Transports" in the middle set
+        const targetIndex = mainCategories.length + transportsIndex;
+        const targetScroll = (targetIndex * itemHeight) + (itemHeight / 2) - centerOffset;
+        
+        container.scrollTop = targetScroll;
+        
+        // Update state immediately
+        setScrollPos(targetScroll);
+        setActiveCategoryId('auto');
+      }
+    };
+
+    // Small delay to ensure layout is ready
+    const timer = setTimeout(initScroll, 150);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleSidebarScroll = () => {
+    if (!scrollRef.current) return;
+    const container = scrollRef.current;
+    const itemHeight = 80;
+    const scrollTop = container.scrollTop;
+    const currentContainerHeight = container.clientHeight;
+    
+    if (currentContainerHeight !== containerHeight) {
+      setContainerHeight(currentContainerHeight);
+    }
+
+    // Update scroll position for animations
+    setScrollPos(scrollTop);
+
+    // Calculate which item is at the center
+    const center = scrollTop + (currentContainerHeight / 2);
+    const index = Math.round((center - (itemHeight / 2)) / itemHeight);
+    
+    // Ensure index is within bounds of tripledCategories
+    if (index >= 0 && index < tripledCategories.length) {
+      const newActiveId = tripledCategories[index].id;
+      if (newActiveId !== activeCategoryId) {
+        setActiveCategoryId(newActiveId);
+      }
+    }
+
+    // Handle Infinite Loop - Keep scroll in the middle section
+    const totalHeight = mainCategories.length * itemHeight;
+    // Jump when we leave the middle set (mainCategories.length to 2*mainCategories.length)
+    if (scrollTop < totalHeight) {
+      container.scrollTop = scrollTop + totalHeight;
+      setScrollPos(container.scrollTop);
+    } else if (scrollTop >= totalHeight * 2) {
+      container.scrollTop = scrollTop - totalHeight;
+      setScrollPos(container.scrollTop);
+    }
+  };
+
   const [searchFilters, setSearchFilters] = useState<Record<string, string>>({});
   
   const activeCategory = mainCategories.find(c => c.id === activeCategoryId) || mainCategories[0];
+
+  const getAIPlaceholder = (categoryId: string) => {
+    switch (categoryId) {
+      case 'auto':
+        return "Piem. 'Meklēju ekonomisku pilsētas auto sievietei līdz 10 000 €'...";
+      case 'nekustamais-ipasums':
+        return "Piem. 'Meklēju saulainu 3-istabu dzīvokli jaunajā projektā Teikā'...";
+      case 'elektronika':
+        return "Piem. 'Meklēju jaudīgu klēpjdatoru video montāžai un spēlēm'...";
+      case 'darbs':
+        return "Piem. 'Meklēju attālinātu darbu mārketingā ar elastīgu grafiku'...";
+      case 'majai':
+        return "Piem. 'Meklēju stūra dīvānu pelēkā krāsā mazai viesistabai'...";
+      case 'mode':
+        return "Piem. 'Meklēju elegantu vakarkleitu vasaras kāzām, izmērs M'...";
+      case 'berniem':
+        return "Piem. 'Meklēju drošu autokrēsliņu zīdainim līdz 13 kg'...";
+      case 'sports':
+        return "Piem. 'Meklēju kalnu velosipēdu ar alumīnija rāmi un disku bremzēm'...";
+      case 'dzivnieki':
+        return "Piem. 'Meklēju draudzīgu Labradora kucēnu no sertificētas audzētavas'...";
+      default:
+        return "Ko jūs meklējat? Aprakstiet savu vēlmi šeit...";
+    }
+  };
 
   const updateFilter = (key: string, value: string) => {
     setSearchFilters(prev => ({ ...prev, [key]: value }));
@@ -525,41 +628,63 @@ export default function Home() {
           </div>
 
           <div className="bg-white rounded-[40px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col md:flex-row max-h-[600px]">
-            {/* Sidebar Categories - Compact & Scrollable */}
-            <div className="w-full md:w-24 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col items-center justify-start py-4 px-2 gap-2 overflow-x-auto md:overflow-y-auto scrollbar-hide">
-              {mainCategories.map((cat) => (
-                <motion.button 
-                  key={cat.id} 
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => {
-                    setActiveCategoryId(cat.id);
-                    resetFilters();
-                  }}
-                  className={cn(
-                    "p-4 rounded-2xl transition-all group shrink-0 relative flex flex-col items-center justify-center gap-1 w-full aspect-square md:aspect-auto md:h-20",
-                    activeCategoryId === cat.id ? "bg-white shadow-md" : "hover:bg-white/50"
-                  )}
-                  title={cat.name}
-                >
-                  <cat.icon className={cn(
-                    "w-7 h-7 transition-all",
-                    activeCategoryId === cat.id ? "text-[#E64415] scale-110" : "text-slate-400 opacity-70 group-hover:opacity-100"
-                  )} />
-                  <span className={cn(
-                    "text-[9px] font-bold uppercase tracking-tighter text-center leading-none",
-                    activeCategoryId === cat.id ? "text-[#E64415]" : "text-slate-400"
-                  )}>
-                    {cat.name}
-                  </span>
-                  {activeCategoryId === cat.id && (
-                    <motion.div 
-                      layoutId="activeCategory"
-                      className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-[#E64415] rounded-r-full" 
-                    />
-                  )}
-                </motion.button>
-              ))}
+            {/* Sidebar Categories - Infinite Circular Scroll */}
+            <div 
+              ref={scrollRef}
+              onScroll={handleSidebarScroll}
+              className="w-full md:w-32 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col items-center justify-start py-4 px-2 gap-0 overflow-x-auto md:overflow-y-auto scrollbar-hide snap-y snap-mandatory h-[400px] md:h-auto relative"
+            >
+              {tripledCategories.map((cat, idx) => {
+                const itemHeight = 80;
+                const itemCenter = (idx * itemHeight) + (itemHeight / 2);
+                const containerCenter = scrollPos + (containerHeight / 2);
+                const distanceFromCenter = Math.abs(itemCenter - containerCenter);
+                
+                // Calculate opacity based on distance from center
+                // 1.0 for center, 0.6 for neighbors, 0.3 for next neighbors
+                let opacity = 0.2;
+
+                if (distanceFromCenter <= itemHeight * 0.5) {
+                  opacity = 1;
+                } else if (distanceFromCenter <= itemHeight * 1.5) {
+                  opacity = 0.6;
+                } else if (distanceFromCenter <= itemHeight * 2.5) {
+                  opacity = 0.3;
+                }
+
+                const isActive = activeCategoryId === cat.id && distanceFromCenter <= itemHeight * 0.5;
+
+                return (
+                  <motion.button 
+                    key={`${cat.id}-${idx}`} 
+                    animate={{ opacity }}
+                    transition={{ type: 'spring', stiffness: 200, damping: 25 }}
+                    onClick={() => {
+                      if (scrollRef.current) {
+                        const currentContainerHeight = scrollRef.current.clientHeight;
+                        const targetScroll = (idx * itemHeight) - (currentContainerHeight / 2) + (itemHeight / 2);
+                        scrollRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+                      }
+                    }}
+                    className={cn(
+                      "p-3 rounded-2xl transition-all group shrink-0 relative flex flex-col items-center justify-center gap-1 w-full h-20 snap-center",
+                      isActive ? "bg-white shadow-md z-10" : "z-0"
+                    )}
+                    title={cat.name}
+                  >
+                    <cat.icon className={cn(
+                      "w-7 h-7 transition-all shrink-0",
+                      isActive ? "text-[#E64415]" : "text-slate-400"
+                    )} />
+                    <span className={cn(
+                      "text-[8px] md:text-[9px] font-bold uppercase tracking-tight text-center leading-tight w-full px-0.5 whitespace-normal break-words",
+                      isActive ? "text-[#E64415]" : "text-slate-400"
+                    )}>
+                      {cat.name}
+                    </span>
+                  </motion.button>
+                );
+              })}
             </div>
 
             {/* Main Search Area - Compact */}
@@ -592,7 +717,7 @@ export default function Home() {
                     <Sparkles className="w-5 h-5 text-[#E64415] mr-3 shrink-0 animate-pulse" />
                     <Input 
                       type="text"
-                      placeholder="Piem. 'Meklēju ģimenes auto ar zemu patēriņu un lielu bagāžnieku'..."
+                      placeholder={getAIPlaceholder(activeCategoryId)}
                       className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base h-12 bg-transparent font-semibold text-slate-900 placeholder:text-slate-400 italic"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
