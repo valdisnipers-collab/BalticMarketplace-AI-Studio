@@ -13,6 +13,14 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { cn } from '@/lib/utils';
 
 const mainCategories = [
+  { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'text-[#E64415]', subcategories: [
+    { name: 'Dzīvokļi', icon: Building2 },
+    { name: 'Mājas', icon: HomeIcon },
+    { name: 'Zeme', icon: MapPin },
+    { name: 'Telpu īre', icon: Briefcase },
+    { name: 'Garāžas', icon: Lock },
+    { name: 'Mežs', icon: Trees }
+  ]},
   { id: 'auto', name: 'Transports', icon: Car, color: 'text-[#E64415]', subcategories: [
     { name: 'Vieglie auto', icon: Car },
     { name: 'Motocikli', icon: Bike },
@@ -23,14 +31,6 @@ const mainCategories = [
     { name: 'Būvtehnika', icon: HardHat },
     { name: 'Ūdens transports', icon: Ship },
     { name: 'Detaļas un piederumi', icon: Settings }
-  ]},
-  { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'text-[#E64415]', subcategories: [
-    { name: 'Dzīvokļi', icon: Building2 },
-    { name: 'Mājas', icon: HomeIcon },
-    { name: 'Zeme', icon: MapPin },
-    { name: 'Telpu īre', icon: Briefcase },
-    { name: 'Garāžas', icon: Lock },
-    { name: 'Mežs', icon: Trees }
   ]},
   { id: 'elektronika', name: 'Elektronika', icon: Smartphone, color: 'text-[#E64415]', subcategories: [
     { name: 'Telefoni', icon: Smartphone },
@@ -524,63 +524,76 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="bg-white rounded-[40px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col md:flex-row min-h-[480px]">
-            {/* Sidebar Categories */}
-            <div className="w-full md:w-24 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col items-center justify-start py-6 px-2 gap-3 overflow-x-auto md:overflow-x-visible scrollbar-hide">
+          <div className="bg-white rounded-[40px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col md:flex-row max-h-[600px]">
+            {/* Sidebar Categories - Compact & Scrollable */}
+            <div className="w-full md:w-24 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col items-center justify-start py-4 px-2 gap-2 overflow-x-auto md:overflow-y-auto scrollbar-hide">
               {mainCategories.map((cat) => (
-                <button 
+                <motion.button 
                   key={cat.id} 
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={() => {
                     setActiveCategoryId(cat.id);
                     resetFilters();
                   }}
                   className={cn(
-                    "p-4 rounded-2xl transition-all group shrink-0 relative",
+                    "p-4 rounded-2xl transition-all group shrink-0 relative flex flex-col items-center justify-center gap-1 w-full aspect-square md:aspect-auto md:h-20",
                     activeCategoryId === cat.id ? "bg-white shadow-md" : "hover:bg-white/50"
                   )}
                   title={cat.name}
                 >
                   <cat.icon className={cn(
-                    "w-8 h-8 transition-all",
+                    "w-7 h-7 transition-all",
                     activeCategoryId === cat.id ? "text-[#E64415] scale-110" : "text-slate-400 opacity-70 group-hover:opacity-100"
                   )} />
+                  <span className={cn(
+                    "text-[9px] font-bold uppercase tracking-tighter text-center leading-none",
+                    activeCategoryId === cat.id ? "text-[#E64415]" : "text-slate-400"
+                  )}>
+                    {cat.name}
+                  </span>
                   {activeCategoryId === cat.id && (
-                    <div className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#E64415] rounded-r-full" />
+                    <motion.div 
+                      layoutId="activeCategory"
+                      className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-[#E64415] rounded-r-full" 
+                    />
                   )}
-                </button>
+                </motion.button>
               ))}
-              <button className="p-4 rounded-2xl hover:bg-white hover:shadow-md transition-all group shrink-0">
-                <MoreHorizontal className="w-8 h-8 text-slate-400" />
-              </button>
             </div>
 
-            {/* Main Search Area */}
-            <div className="flex-grow p-8 md:p-12 flex flex-col">
-              <div className="flex items-center justify-between mb-8">
+            {/* Main Search Area - Compact */}
+            <div className="flex-grow p-6 md:p-10 flex flex-col overflow-y-auto">
+              <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                  <motion.div 
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    key={activeCategoryId}
+                    className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center"
+                  >
                     <activeCategory.icon className="w-6 h-6 text-[#E64415]" />
-                  </div>
+                  </motion.div>
                   <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{activeCategory.name}</h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t('home.hero.ai_search')}</span>
-                  <Badge className="bg-[#E64415] text-white hover:bg-[#E64415] border-none font-bold text-[10px] px-2 py-0.5 italic">POWERED</Badge>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('home.hero.ai_search')}</span>
+                  <Badge className="bg-[#E64415] text-white hover:bg-[#E64415] border-none font-bold text-[9px] px-2 py-0.5 italic">POWERED</Badge>
                 </div>
               </div>
 
               {/* AI Search Bar - Core Engine */}
-              <div className="mb-10">
+              <div className="mb-8">
                 <form 
                   onSubmit={handleSearch}
-                  className="relative flex items-center bg-slate-50 rounded-2xl border-2 border-slate-100 p-2 focus-within:border-[#E64415] focus-within:bg-white transition-all shadow-sm"
+                  className="relative flex items-center bg-slate-50 rounded-2xl border-2 border-slate-100 p-1.5 focus-within:border-[#E64415] focus-within:bg-white transition-all shadow-sm"
                 >
                   <div className="flex-grow flex items-center px-4">
-                    <Sparkles className="w-6 h-6 text-[#E64415] mr-3 shrink-0 animate-pulse" />
+                    <Sparkles className="w-5 h-5 text-[#E64415] mr-3 shrink-0 animate-pulse" />
                     <Input 
                       type="text"
                       placeholder="Piem. 'Meklēju ģimenes auto ar zemu patēriņu un lielu bagāžnieku'..."
-                      className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-lg h-14 bg-transparent font-semibold text-slate-900 placeholder:text-slate-400 italic"
+                      className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base h-12 bg-transparent font-semibold text-slate-900 placeholder:text-slate-400 italic"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
@@ -588,41 +601,46 @@ export default function Home() {
                 </form>
               </div>
 
-              {/* Category Filters */}
-              <div className="flex-grow">
+              {/* Category Filters - Compact */}
+              <motion.div 
+                key={activeCategoryId}
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex-grow"
+              >
                 {renderCategoryFilters()}
                 
                 {activeCategoryId === 'auto' && (
-                  <div className="mt-6 flex items-center gap-2">
-                    <input type="checkbox" id="electric" className="w-4 h-4 accent-[#E64415]" />
-                    <label htmlFor="electric" className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
-                      Tikai elektroauto <Zap className="w-4 h-4 text-[#E64415]" />
+                  <div className="mt-4 flex items-center gap-2">
+                    <input type="checkbox" id="electric" className="w-4 h-4 accent-[#E64415] rounded" />
+                    <label htmlFor="electric" className="text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer">
+                      Tikai elektroauto <Zap className="w-3.5 h-3.5 text-[#E64415]" />
                     </label>
                   </div>
                 )}
-              </div>
+              </motion.div>
 
-              {/* Action Buttons */}
-              <div className="mt-10 pt-8 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-6">
-                <div className="flex items-center gap-6">
+              {/* Action Buttons - Compact */}
+              <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
                   <button 
                     onClick={resetFilters}
-                    className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                    className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors"
                   >
-                    <Settings className="w-4 h-4" />
-                    Notīrīt filtrus
+                    <Settings className="w-3.5 h-3.5" />
+                    Notīrīt
                   </button>
-                  <button className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors">
-                    <MoreHorizontal className="w-4 h-4" />
-                    Vairāk filtru
+                  <button className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">
+                    <MoreHorizontal className="w-3.5 h-3.5" />
+                    Vairāk
                   </button>
                 </div>
                 
                 <Button 
                   onClick={handleSearch}
-                  className="bg-[#E64415] hover:bg-[#d13d13] text-white font-black text-lg px-10 py-7 rounded-2xl shadow-lg shadow-orange-200 flex items-center gap-3 w-full sm:w-auto"
+                  className="bg-[#E64415] hover:bg-[#d13d13] text-white font-black text-base px-8 py-6 rounded-2xl shadow-lg shadow-orange-200 flex items-center gap-2 w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98]"
                 >
-                  <Search className="w-6 h-6" />
+                  <Search className="w-5 h-5" />
                   ATRAST PIEDĀVĀJUMUS
                 </Button>
               </div>

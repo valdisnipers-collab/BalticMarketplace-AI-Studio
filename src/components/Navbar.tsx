@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { useI18n } from './I18nContext';
-import { Plus, User, LogOut, MessageSquare, ShieldAlert, ShieldCheck, Coins, Bell, Globe, ChevronDown, Search, Heart, Star, Info, PlusCircle } from 'lucide-react';
+import { Plus, User, LogOut, MessageSquare, ShieldAlert, ShieldCheck, Coins, Bell, Globe, ChevronDown, ChevronUp, Search, Heart, Star, Info, PlusCircle } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +39,10 @@ export default function Navbar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSellOpen, setIsSellOpen] = useState(false);
+  const [isInformOpen, setIsInformOpen] = useState(false);
+  const [isUserOpen, setIsUserOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
 
   const unreadNotificationsCount = notifications.filter(n => !n.is_read).length;
@@ -129,10 +133,10 @@ export default function Navbar() {
             </Link>
             
             <div className="hidden md:flex items-center space-x-1 lg:space-x-4">
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setIsSearchOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="text-base font-semibold text-slate-900 hover:bg-transparent hover:text-[#E64415] gap-1 px-2 group">
-                    {t('home.search.button')} <ChevronDown className="w-4 h-4 opacity-50 transition-transform group-data-[state=open]:rotate-180" />
+                    {t('home.search.button')} {isSearchOpen ? <ChevronUp className="w-4 h-4 text-[#E64415]" /> : <ChevronDown className="w-4 h-4 opacity-50" />}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" sideOffset={20} className="w-[800px] p-0 overflow-hidden rounded-[32px] shadow-2xl border-none ring-1 ring-slate-200">
@@ -200,10 +204,10 @@ export default function Navbar() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setIsSellOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="text-base font-semibold text-slate-900 hover:bg-transparent hover:text-[#E64415] gap-1 px-2 group">
-                    {t('nav.sell')} <ChevronDown className="w-4 h-4 opacity-50 transition-transform group-data-[state=open]:rotate-180" />
+                    {t('nav.sell')} {isSellOpen ? <ChevronUp className="w-4 h-4 text-[#E64415]" /> : <ChevronDown className="w-4 h-4 opacity-50" />}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" sideOffset={20} className="w-64 p-2 rounded-3xl shadow-2xl border-none ring-1 ring-slate-200">
@@ -226,10 +230,10 @@ export default function Navbar() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setIsInformOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="text-base font-semibold text-slate-900 hover:bg-transparent hover:text-[#E64415] gap-1 px-2 group">
-                    {t('nav.inform')} <ChevronDown className="w-4 h-4 opacity-50 transition-transform group-data-[state=open]:rotate-180" />
+                    {t('nav.inform')} {isInformOpen ? <ChevronUp className="w-4 h-4 text-[#E64415]" /> : <ChevronDown className="w-4 h-4 opacity-50" />}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" sideOffset={20} className="w-64 p-2 rounded-3xl shadow-2xl border-none ring-1 ring-slate-200">
@@ -348,14 +352,14 @@ export default function Navbar() {
 
             {user ? (
               <div className="flex items-center space-x-2 ml-2">
-                <DropdownMenu>
+                <DropdownMenu onOpenChange={setIsUserOpen}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="flex items-center space-x-2 p-1 pr-2 rounded-full hover:bg-slate-50 border border-transparent hover:border-slate-200">
                       <div className="w-8 h-8 bg-[#2D1152] text-white rounded-full flex items-center justify-center font-bold text-sm">
                         {user.name?.[0] || 'U'}
                       </div>
                       <span className="hidden lg:block text-sm font-semibold text-slate-900">{user.name || user.phone}</span>
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                      {isUserOpen ? <ChevronUp className="w-4 h-4 text-[#E64415]" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" sideOffset={12} className="w-56">
