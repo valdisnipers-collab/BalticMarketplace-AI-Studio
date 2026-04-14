@@ -119,6 +119,16 @@ async function startServer() {
           } else {
             // Add funds (EUR)
             db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, userId);
+            
+            // Reward bonus points for purchase (10 points per 1 EUR)
+            const bonusPoints = Math.floor(amount * 10);
+            if (bonusPoints > 0) {
+              db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(bonusPoints, userId);
+              db.prepare(`
+                INSERT INTO points_history (user_id, points, reason)
+                VALUES (?, ?, 'Bonuss par maka papildināšanu')
+              `).run(userId, bonusPoints);
+            }
           }
           console.log(`Successfully processed payment for user ${userId}: ${amount} ${type}`);
         } catch (dbError) {
@@ -428,11 +438,14 @@ async function startServer() {
       const hash = await bcrypt.hash(password, 10);
       const role = email === 'valdis.nipers@gmail.com' ? 'admin' : 'user';
       const uType = user_type === 'b2b' ? 'b2b' : 'c2c';
-      const stmt = db.prepare('INSERT INTO users (email, password_hash, name, phone, user_type, role, company_name, company_reg_number, company_vat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(email, hash, name, phone || null, uType, role, company_name || null, company_reg_number || null, company_vat || null);
+      const stmt = db.prepare('INSERT INTO users (email, password_hash, name, phone, user_type, role, company_name, company_reg_number, company_vat, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const info = stmt.run(email, hash, name, phone || null, uType, role, company_name || null, company_reg_number || null, company_vat || null, 50);
+      
+      const userId = info.lastInsertRowid;
+      db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(userId, 50, 'Reģistrācijas bonuss');
       
       const token = jwt.sign({ userId: info.lastInsertRowid }, JWT_SECRET, { expiresIn: '7d' });
-      res.json({ token, user: { id: info.lastInsertRowid, email, name, phone, user_type: uType, role, points: 0, early_access_until: null, company_name, company_reg_number, company_vat, is_verified: 0 } });
+      res.json({ token, user: { id: info.lastInsertRowid, email, name, phone, user_type: uType, role, points: 50, early_access_until: null, company_name, company_reg_number, company_vat, is_verified: 0 } });
     } catch (error: any) {
       if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
         res.status(400).json({ error: 'Email already exists' });
@@ -994,36 +1007,59 @@ async function startServer() {
       
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
-      const prompt = `Lūdzu, analizē šo sludinājumu un nosaki, vai tas satur aizliegtu saturu (lamuvārdus, krāpniecības pazīmes, nelegālas preces) vai pilnīgi neadekvātu cenu.
+      const prompt = `Esi pieredzējis sludinājumu portāla moderators un krāpniecības apkarošanas eksperts. Analizē šo sludinājumu un sniedz detalizētu drošības novērtējumu.
+      
       Virsraksts: ${title}
       Apraksts: ${description}
-      Cena: ${price}
+      Cena: ${price} EUR
       
-      Atbildi TIKAI ar JSON formātu:
+      Pārbaudi šādus riskus:
+      1. Krāpniecības pazīmes (pārāk zema cena, aizdomīgi kontakti, steidzamība).
+      2. Phishing saites vai aizdomīgi ārējie resursi.
+      3. Aizliegts saturs (narkotikas, ieroči, lamuvārdi, naida runa).
+      4. Neadekvāta cena attiecībā pret aprakstīto preci.
+      5. Maldinoša informācija.
+      
+      Atbildi TIKAI JSON formātā:
       {
-        "isFlagged": true/false,
-        "reason": "īss paskaidrojums, ja isFlagged ir true, citādi tukšs",
-        "riskScore": skaitlis no 0 līdz 100
+        "isFlagged": boolean,
+        "reason": "īss, profesionāls paskaidrojums latviešu valodā",
+        "trustScore": number (0-100, kur 100 ir pilnīgi drošs),
+        "status": "approved" | "flagged" | "pending_review"
       }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: prompt,
       });
 
       const resultText = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || '{}';
       const result = JSON.parse(resultText);
 
-      if (result.isFlagged || result.riskScore > 70) {
-        console.log(`[MODERATION] Listing ${listingId} flagged. Reason: ${result.reason}, Score: ${result.riskScore}`);
-        // Update listing status to flagged
-        db.prepare("UPDATE listings SET status = 'flagged' WHERE id = ?").run(listingId);
+      // Update database with AI results
+      db.prepare(`
+        UPDATE listings 
+        SET ai_trust_score = ?, 
+            ai_moderation_status = ?, 
+            ai_moderation_reason = ?,
+            status = CASE WHEN ? = 'flagged' THEN 'flagged' ELSE status END
+        WHERE id = ?
+      `).run(
+        result.trustScore || 100,
+        result.status || 'approved',
+        result.reason || null,
+        result.status,
+        listingId
+      );
+
+      if (result.isFlagged || result.status === 'flagged') {
+        console.log(`[AI MODERATION] Listing ${listingId} flagged. Reason: ${result.reason}`);
         
         // Add to reports table for admin review
         db.prepare(`
           INSERT INTO reports (reporter_id, listing_id, reason, status)
           VALUES (1, ?, ?, 'pending')
-        `).run(listingId, `AI Moderation: ${result.reason} (Risk: ${result.riskScore})`);
+        `).run(listingId, `AI Moderācija: ${result.reason} (Uzticamība: ${result.trustScore}%)`);
       }
     } catch (error) {
       console.error("Error in AI moderation:", error);
@@ -1047,6 +1083,14 @@ async function startServer() {
       const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null);
       
       const listingId = info.lastInsertRowid;
+      
+      // Reward user with 50 points for posting a listing
+      try {
+        db.prepare('UPDATE users SET points = points + 50 WHERE id = ?').run(decoded.userId);
+        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(decoded.userId, 50, 'Sludinājuma pievienošana');
+      } catch (pointsError) {
+        console.error("Error rewarding points for listing:", pointsError);
+      }
       
       // Check saved searches and notify users asynchronously
       setTimeout(() => {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake } from 'lucide-react';
+import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake, UserPlus, PlusCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
@@ -577,7 +577,7 @@ export default function Profile() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-[#f8f9fa] py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-10">
         
         {/* Lietotāja informācija */}
@@ -839,6 +839,48 @@ export default function Profile() {
                     >
                       Aktivizēt ({settings.early_access_price || 150} punkti)
                     </Button>
+                  </div>
+                </div>
+
+                <div className="mb-8 space-y-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Kā nopelnīt punktus?</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center">
+                          <UserPlus className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold text-slate-700">Reģistrācijas bonuss</span>
+                      </div>
+                      <span className="text-xs font-black text-orange-600">+50</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold text-slate-700">Smart-ID verifikācija</span>
+                      </div>
+                      <span className="text-xs font-black text-green-600">+300</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                          <PlusCircle className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold text-slate-700">Sludinājuma pievienošana</span>
+                      </div>
+                      <span className="text-xs font-black text-blue-600">+50</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+                          <Wallet className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold text-slate-700">Maka papildināšana (1€)</span>
+                      </div>
+                      <span className="text-xs font-black text-purple-600">+10</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1607,7 +1649,7 @@ export default function Profile() {
 
         {/* Add Funds Modal */}
       {isAddFundsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1645,7 +1687,7 @@ export default function Profile() {
 
       {/* Ad Modal */}
       {isAdModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1778,7 +1820,7 @@ export default function Profile() {
 
       {/* Stats Modal */}
       {isStatsModalOpen && selectedAd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}

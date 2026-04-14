@@ -225,7 +225,7 @@ export default function AddListing() {
   const subcategories = Object.keys(CATEGORY_SCHEMAS[category]?.subcategories || {});
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-white py-16 px-6 lg:px-8 selection:bg-primary-100 selection:text-primary-900">
+    <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-16 px-6 lg:px-8 selection:bg-primary-100 selection:text-primary-900">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="mb-16 text-center">

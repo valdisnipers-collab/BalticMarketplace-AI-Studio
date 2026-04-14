@@ -37,6 +37,7 @@ import {
   LayoutGrid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '@/lib/utils';
 import { Helmet } from 'react-helmet-async';
 import useEmblaCarousel from 'embla-carousel-react';
 import { CATEGORY_SCHEMAS } from '../lib/categories';
@@ -63,6 +64,9 @@ interface ListingDetails {
   is_highlighted?: number;
   location?: string;
   status?: string;
+  ai_trust_score?: number;
+  ai_moderation_status?: string;
+  ai_moderation_reason?: string;
 }
 
 interface Review {
@@ -347,7 +351,7 @@ export default function ListingDetails() {
     : '5.0';
 
   return (
-    <div className="min-h-screen bg-white pb-32 selection:bg-primary-100 selection:text-primary-900">
+    <div className="min-h-screen bg-slate-50 pb-32 selection:bg-primary-100 selection:text-primary-900">
       <Helmet>
         <title>{listing.title} | Sludinājumi</title>
         <meta name="description" content={listing.description ? listing.description.substring(0, 160) : `Pārdod ${listing.title} par €${listing.price}`} />
@@ -472,6 +476,20 @@ export default function ListingDetails() {
                 <Badge variant="secondary" className="bg-primary-50 text-primary-700 hover:bg-primary-100 font-semibold px-2.5 py-1">
                   {listing.category}
                 </Badge>
+                {listing.ai_trust_score !== undefined && (
+                  <Badge 
+                    variant="outline" 
+                    className={cn(
+                      "font-bold px-2.5 py-1 gap-1.5",
+                      listing.ai_trust_score >= 80 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                      listing.ai_trust_score >= 50 ? "bg-amber-50 text-amber-700 border-amber-200" :
+                      "bg-red-50 text-red-700 border-red-200"
+                    )}
+                  >
+                    <ShieldCheck className={cn("w-3.5 h-3.5", listing.ai_trust_score < 50 && "text-red-500")} />
+                    AI Drošība: {listing.ai_trust_score}%
+                  </Badge>
+                )}
                 <span className="text-sm font-medium text-slate-500 flex items-center">
                   <Clock className="w-4 h-4 mr-1.5" />
                   {formatDate(listing.created_at)}
@@ -527,6 +545,78 @@ export default function ListingDetails() {
                 </p>
               </div>
             </div>
+
+            {/* AI Safety Analysis */}
+            {listing.ai_moderation_status && (
+              <div className={cn(
+                "rounded-3xl p-8 border relative overflow-hidden",
+                listing.ai_trust_score >= 80 ? "bg-emerald-50 border-emerald-100" :
+                listing.ai_trust_score >= 50 ? "bg-amber-50 border-amber-100" :
+                "bg-red-50 border-red-100"
+              )}>
+                <div className="relative z-10">
+                  <h3 className={cn(
+                    "text-xl font-bold mb-4 flex items-center uppercase tracking-wide",
+                    listing.ai_trust_score >= 80 ? "text-emerald-900" :
+                    listing.ai_trust_score >= 50 ? "text-amber-900" :
+                    "text-red-900"
+                  )}>
+                    <ShieldCheck className="w-6 h-6 mr-3" />
+                    AI Drošības Analīze
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                    <div>
+                      <p className={cn(
+                        "text-sm font-medium leading-relaxed",
+                        listing.ai_trust_score >= 80 ? "text-emerald-700" :
+                        listing.ai_trust_score >= 50 ? "text-amber-700" :
+                        "text-red-700"
+                      )}>
+                        {listing.ai_moderation_reason || "Sludinājums ir veiksmīgi izgājis AI drošības pārbaudi un atbilst portāla noteikumiem."}
+                      </p>
+                      <div className="mt-4 flex items-center gap-2">
+                        <Badge className={cn(
+                          "border-none font-bold",
+                          listing.ai_trust_score >= 80 ? "bg-emerald-500 text-white" :
+                          listing.ai_trust_score >= 50 ? "bg-amber-500 text-white" :
+                          "bg-red-500 text-white"
+                        )}>
+                          Uzticamība: {listing.ai_trust_score}%
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex justify-center md:justify-end">
+                      <div className="relative w-24 h-24">
+                        <svg className="w-full h-full" viewBox="0 0 36 36">
+                          <path
+                            className="text-slate-200 stroke-current"
+                            strokeWidth="3"
+                            fill="none"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          />
+                          <path
+                            className={cn(
+                              "stroke-current transition-all duration-1000",
+                              listing.ai_trust_score >= 80 ? "text-emerald-500" :
+                              listing.ai_trust_score >= 50 ? "text-amber-500" :
+                              "text-red-500"
+                            )}
+                            strokeWidth="3"
+                            strokeDasharray={`${listing.ai_trust_score}, 100`}
+                            strokeLinecap="round"
+                            fill="none"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          />
+                          <text x="18" y="20.35" className="font-bold text-[8px] text-center fill-current" textAnchor="middle">
+                            {listing.ai_trust_score}%
+                          </text>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Market Intelligence */}
             <div className="bg-slate-900 rounded-3xl p-8 text-white overflow-hidden relative">

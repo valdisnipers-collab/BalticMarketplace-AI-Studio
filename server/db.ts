@@ -224,6 +224,13 @@ db.exec(`
   INSERT OR IGNORE INTO settings (key, value) VALUES ('ad_price_points', '500');
 `);
 
+// Bootstrap admin rights for the owner
+try {
+  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'valdis.nipers@gmail.com'").run();
+} catch (e) {
+  console.error("Error bootstrapping admin:", e);
+}
+
 try {
   db.exec('ALTER TABLE ads ADD COLUMN category TEXT');
 } catch (e) {}
@@ -347,5 +354,17 @@ try {
 } catch (e) {
   // Column might already exist
 }
+
+try {
+  db.exec('ALTER TABLE listings ADD COLUMN ai_trust_score INTEGER DEFAULT 100');
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE listings ADD COLUMN ai_moderation_status TEXT DEFAULT "pending"'); // 'pending', 'approved', 'flagged'
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE listings ADD COLUMN ai_moderation_reason TEXT');
+} catch (e) {}
 
 export default db;

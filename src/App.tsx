@@ -59,6 +59,8 @@ export default function App() {
           <Router>
             <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
               <Navbar />
+              {/* Fade-out efekts, kas darbojas zem galvenes */}
+              <div className="sticky top-0 z-[95] h-20 w-full bg-gradient-to-t from-transparent to-slate-50 pointer-events-none -mb-20" />
               <main className="flex-grow">
                 <AnimatedRoutes />
               </main>

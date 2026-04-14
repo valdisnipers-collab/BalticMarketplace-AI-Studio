@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin } from 'lucide-react';
+import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '@/lib/utils';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
@@ -29,6 +30,8 @@ interface Listing {
   author_name: string;
   location?: string;
   is_highlighted?: number;
+  ai_trust_score?: number;
+  ai_moderation_status?: string;
 }
 
 const categories = ['Visi', ...CATEGORY_NAMES];
@@ -523,6 +526,20 @@ export default function Search() {
                       <Badge variant="secondary" className="bg-white/90 backdrop-blur-sm text-slate-700 hover:bg-white font-semibold shadow-sm">
                         {listing.category}
                       </Badge>
+                      {listing.ai_trust_score !== undefined && (
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "border-none font-bold shadow-sm",
+                            listing.ai_trust_score >= 80 ? "bg-emerald-500 text-white" :
+                            listing.ai_trust_score >= 50 ? "bg-amber-500 text-white" :
+                            "bg-red-500 text-white"
+                          )}
+                        >
+                          <ShieldCheck className="w-3 h-3 mr-1" />
+                          {listing.ai_trust_score}%
+                        </Badge>
+                      )}
                     </div>
                     <Button 
                       variant="secondary"

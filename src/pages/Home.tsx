@@ -89,6 +89,8 @@ interface Listing {
   location: string;
   is_highlighted?: number;
   is_verified_seller?: boolean;
+  ai_trust_score?: number;
+  ai_moderation_status?: string;
   attributes?: Record<string, any>;
 }
 
@@ -556,10 +558,22 @@ export default function Home() {
               onClick={(e) => toggleFavorite(e, listing.id)}
               variant="ghost"
               size="icon"
-              className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:bg-white transition-all"
+              className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:bg-white transition-all z-20"
             >
               <Heart className={`w-5 h-5 transition-colors ${isFavorite ? 'fill-[#E64415] text-[#E64415]' : 'text-slate-400'}`} />
             </Button>
+
+            {listing.ai_trust_score !== undefined && (
+              <div className={cn(
+                "absolute top-3 left-3 text-[10px] font-black px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg z-10",
+                listing.ai_trust_score >= 80 ? "bg-emerald-500 text-white" :
+                listing.ai_trust_score >= 50 ? "bg-amber-500 text-white" :
+                "bg-red-500 text-white"
+              )}>
+                <ShieldCheck className="w-3 h-3" />
+                {listing.ai_trust_score}%
+              </div>
+            )}
           </div>
           
           <div className="py-4 flex flex-col h-full">
@@ -616,13 +630,34 @@ export default function Home() {
         <meta name="description" content="Atrodiet labākos piedāvājumus Baltijā. Premium sludinājumi, pārbaudīti pārdevēji, droši darījumi." />
       </Helmet>
       {/* Hero & Search Section */}
-      <section className="bg-slate-50 py-12 md:py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4 tracking-tight">
-              {t('home.hero.title_mobile')}
+      <section className="bg-slate-50 pt-16 pb-12 md:pt-24 md:pb-20 overflow-hidden relative">
+        {/* Subtle background decorative elements */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none overflow-hidden">
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
+          <div className="absolute top-1/2 -right-24 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-6 relative">
+          <div className="text-center mb-16">
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm mb-6"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E64415]"></span>
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Jaunums: AI meklēšana ir klāt</span>
+            </motion.div>
+
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-heading font-extrabold text-slate-900 mb-6 tracking-tight leading-[1.1]">
+              Atrodi visu nepieciešamo.<br />
+              <span className="bg-gradient-to-r from-[#E64415] to-[#FF8C00] bg-clip-text text-transparent">
+                Baltijas lielākais
+              </span> sludinājumu portāls.
             </h1>
-            <p className="text-slate-500 font-medium text-lg">
+            <p className="text-slate-500 font-medium text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
               {t('home.hero.subtitle')}
             </p>
           </div>

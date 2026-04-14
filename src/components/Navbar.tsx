@@ -116,7 +116,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-[100] bg-white border-b border-slate-200">
+    <nav className="sticky top-0 z-[100] bg-white/40 backdrop-blur-md border-b border-slate-200/60 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20 items-center">
           <div className="flex items-center space-x-4 lg:space-x-8">
@@ -292,7 +292,7 @@ export default function Navbar() {
                 </Button>
 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-50">
+                  <div className="absolute right-0 mt-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-[1000]">
                     <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                       <h3 className="font-semibold text-slate-900 uppercase tracking-tight text-xs">{t('profile.notifications')}</h3>
                       {unreadNotificationsCount > 0 && (
@@ -363,6 +363,11 @@ export default function Navbar() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" sideOffset={12} className="w-56">
+                    {user.role === 'admin' && (
+                      <DropdownMenuItem onClick={() => navigate('/admin')} className="flex items-center text-primary-600 font-bold">
+                        <ShieldCheck className="w-4 h-4 mr-2" /> Admin Panelis
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => navigate('/profile')} className="flex items-center"><User className="w-4 h-4 mr-2" /> {t('nav.profile')}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => navigate('/chat')} className="flex items-center"><MessageSquare className="w-4 h-4 mr-2" /> {t('chat.title')}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => navigate('/profile?tab=wallet')} className="flex items-center"><Coins className="w-4 h-4 mr-2" /> {t('profile.wallet')}</DropdownMenuItem>
