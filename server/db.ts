@@ -254,13 +254,6 @@ db.exec(`
   INSERT OR IGNORE INTO settings (key, value) VALUES ('ad_price_points', '500');
 `);
 
-// Bootstrap admin rights for the owner
-try {
-  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'valdis.nipers@gmail.com'").run();
-} catch (e) {
-  console.error("Error bootstrapping admin:", e);
-}
-
 try {
   db.exec('ALTER TABLE ads ADD COLUMN category TEXT');
 } catch (e) {}
@@ -404,5 +397,12 @@ try {
 try {
   db.exec('ALTER TABLE listings ADD COLUMN auction_end_date DATETIME');
 } catch (e) {}
+
+// Bootstrap admin rights for the owner (must run after all ALTER TABLE migrations)
+try {
+  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'valdis.nipers@gmail.com'").run();
+} catch (e) {
+  // Silently ignore - user may not exist yet
+}
 
 export default db;

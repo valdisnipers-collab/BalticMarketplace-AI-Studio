@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight, Shirt, Baby, Trophy, PawPrint, Bike, Zap, Tent, ArrowRight, Calendar, Fuel, Settings, Truck, Bus, Tractor, Ship, Anchor, Monitor, Laptop, Gamepad2, Flower2, Hammer, Wrench, Watch, Target, Bone, HardHat, Construction, Building2, Warehouse, Trees, Cpu, Gamepad, Dumbbell, FishSymbol, Waves, ChevronDown } from 'lucide-react';
+import { Search, Car, CarFront, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight, Shirt, Baby, Trophy, PawPrint, Bike, Zap, Tent, ArrowRight, Calendar, Fuel, Settings, Truck, Bus, Tractor, Ship, Anchor, Monitor, Laptop, Gamepad2, Flower2, Hammer, Wrench, Watch, Target, Bone, HardHat, Construction, Building2, Warehouse, Trees, Cpu, Gamepad, Dumbbell, FishSymbol, Waves, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Helmet } from 'react-helmet-async';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SectionHeader } from '@/components/ui/section-header';
+import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
 import { cn } from '@/lib/utils';
 
 const mainCategories = [
@@ -21,7 +22,7 @@ const mainCategories = [
     { name: 'Garāžas', icon: Lock },
     { name: 'Mežs', icon: Trees }
   ]},
-  { id: 'auto', name: 'Transports', icon: Car, color: 'text-[#E64415]', subcategories: [
+  { id: 'auto', name: 'Transports', icon: CarFront, color: 'text-[#E64415]', subcategories: [
     { name: 'Vieglie auto', icon: Car },
     { name: 'Motocikli', icon: Bike },
     { name: 'Kravas auto', icon: Truck },
@@ -186,30 +187,101 @@ export default function Home() {
   
   const activeCategory = mainCategories.find(c => c.id === activeCategoryId) || mainCategories[0];
 
-  const getAIPlaceholder = (categoryId: string) => {
-    switch (categoryId) {
-      case 'auto':
-        return "Piem. 'Meklēju ekonomisku pilsētas auto sievietei līdz 10 000 €'...";
-      case 'nekustamais-ipasums':
-        return "Piem. 'Meklēju saulainu 3-istabu dzīvokli jaunajā projektā Teikā'...";
-      case 'elektronika':
-        return "Piem. 'Meklēju jaudīgu klēpjdatoru video montāžai un spēlēm'...";
-      case 'darbs':
-        return "Piem. 'Meklēju attālinātu darbu mārketingā ar elastīgu grafiku'...";
-      case 'majai':
-        return "Piem. 'Meklēju stūra dīvānu pelēkā krāsā mazai viesistabai'...";
-      case 'mode':
-        return "Piem. 'Meklēju elegantu vakarkleitu vasaras kāzām, izmērs M'...";
-      case 'berniem':
-        return "Piem. 'Meklēju drošu autokrēsliņu zīdainim līdz 13 kg'...";
-      case 'sports':
-        return "Piem. 'Meklēju kalnu velosipēdu ar alumīnija rāmi un disku bremzēm'...";
-      case 'dzivnieki':
-        return "Piem. 'Meklēju draudzīgu Labradora kucēnu no sertificētas audzētavas'...";
-      default:
-        return "Ko jūs meklējat? Aprakstiet savu vēlmi šeit...";
-    }
+  const AI_PLACEHOLDERS: Record<string, string[]> = {
+    'auto': [
+      "Meklēju ekonomisku pilsētas auto sievietei līdz 10 000 €...",
+      "Meklēju jaudīgu SUV ģimenei ar zemu nobraukumu...",
+      "Meklēju elektroauto ar vismaz 300 km gājienu...",
+      "Meklēju sportisku kupeja automašīnu līdz 20 000 €...",
+    ],
+    'nekustamais-ipasums': [
+      "Meklēju saulainu 3-istabu dzīvokli jaunajā projektā Teikā...",
+      "Meklēju māju ar dārzu Pierīgā līdz 150 000 €...",
+      "Meklēju 1-istabu dzīvokli īrei studentam līdz 400 € mēnesī...",
+      "Meklēju biroja telpas Rīgas centrā līdz 100 m²...",
+    ],
+    'elektronika': [
+      "Meklēju jaudīgu klēpjdatoru video montāžai un spēlēm...",
+      "Meklēju lētu Android telefonu ar labu kameru līdz 200 €...",
+      "Meklēju 4K televizoru līdz 55 collām par pieņemamu cenu...",
+      "Meklēju bezvadu austiņas ar trokšņu slāpēšanu...",
+    ],
+    'darbs': [
+      "Meklēju attālinātu darbu mārketingā ar elastīgu grafiku...",
+      "Meklēju grāmatveža darbu uz nepilnu slodzi Rīgā...",
+      "Meklēju IT programmētāja vakanci ar konkurētspējīgu algu...",
+      "Meklēju vasaras darbu studentam noliktavā vai restorānā...",
+    ],
+    'majai': [
+      "Meklēju stūra dīvānu pelēkā krāsā mazai viesistabai...",
+      "Meklēju virtuves komplektu 3 metru garumā baltā krāsā...",
+      "Meklēju gultu 160×200 cm ar matraci līdz 500 €...",
+      "Meklēju retro stila galda lampu dzīvojamai istabai...",
+    ],
+    'mode': [
+      "Meklēju elegantu vakarkleitu vasaras kāzām, izmērs M...",
+      "Meklēju ādas jaku vīriešiem izmērs XL līdz 100 €...",
+      "Meklēju Levi's džinsus taisnā griezumā izmērs 32/32...",
+      "Meklēju bērnu ziemas apģērbu komplektu izmērs 110...",
+    ],
+    'berniem': [
+      "Meklēju drošu autokrēsliņu zīdainim līdz 13 kg...",
+      "Meklēju bērnu velosipēdu 5–7 gadus vecam bērnam...",
+      "Meklēju saliekamos ratiņus kompaktus ceļošanai...",
+      "Meklēju LEGO komplektu bērnam dzimšanas dienā līdz 50 €...",
+    ],
+    'sports': [
+      "Meklēju kalnu velosipēdu ar alumīnija rāmi un disku bremzēm...",
+      "Meklēju skrejceļu ar motoru mājas trenažieru zālei...",
+      "Meklēju kajaku divietu ūdens tūrismam par saprātīgu cenu...",
+      "Meklēju svarcelt spēka sporta komplektu mājām...",
+    ],
+    'dzivnieki': [
+      "Meklēju draudzīgu Labradora kucēnu no sertificētas audzētavas...",
+      "Meklēju mājas kaķi šķirnes British Shorthair...",
+      "Meklēju akvāriju ar aprīkojumu sākumam zivtiņkopībā...",
+      "Meklēju trusi vai jūrascūciņu bērniem kā pirmo mājdzīvnieku...",
+    ],
   };
+
+  const [typedPlaceholder, setTypedPlaceholder] = useState('');
+
+  useEffect(() => {
+    const examples = AI_PLACEHOLDERS[activeCategoryId] ?? ["Ko jūs meklējat? Aprakstiet savu vēlmi šeit..."];
+    let exampleIndex = 0;
+    let charIndex = 0;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    setTypedPlaceholder('');
+
+    function typeChar() {
+      const current = examples[exampleIndex];
+      if (charIndex <= current.length) {
+        setTypedPlaceholder(current.slice(0, charIndex));
+        charIndex++;
+        timeoutId = setTimeout(typeChar, 50);
+      } else {
+        // Pauze pirms dzēšanas
+        timeoutId = setTimeout(eraseChar, 2000);
+      }
+    }
+
+    function eraseChar() {
+      const current = examples[exampleIndex];
+      if (charIndex > 0) {
+        charIndex--;
+        setTypedPlaceholder(current.slice(0, charIndex));
+        timeoutId = setTimeout(eraseChar, 28);
+      } else {
+        // Pauze pirms nākamā teksta
+        exampleIndex = (exampleIndex + 1) % examples.length;
+        timeoutId = setTimeout(typeChar, 400);
+      }
+    }
+
+    timeoutId = setTimeout(typeChar, 300);
+    return () => clearTimeout(timeoutId);
+  }, [activeCategoryId]);
 
   const updateFilter = (key: string, value: string) => {
     setSearchFilters(prev => ({ ...prev, [key]: value }));
@@ -318,33 +390,19 @@ export default function Home() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-500 uppercase ml-1">Marka</label>
-                <div className="relative">
-                  <select 
-                    className="w-full h-12 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 text-sm font-semibold appearance-none focus:border-[#E64415] outline-none transition-colors"
-                    value={searchFilters.make || ''}
-                    onChange={(e) => updateFilter('make', e.target.value)}
-                  >
-                    <option value="">Jebkura</option>
-                    <option value="BMW">BMW</option>
-                    <option value="Audi">Audi</option>
-                    <option value="VW">VW</option>
-                    <option value="Mercedes">Mercedes</option>
-                  </select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                <CarMakeDropdown
+                  value={searchFilters.make || ''}
+                  onChange={(make) => { updateFilter('make', make); updateFilter('model', ''); }}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-500 uppercase ml-1">Modelis</label>
-                <div className="relative">
-                  <select 
-                    className="w-full h-12 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 text-sm font-semibold appearance-none focus:border-[#E64415] outline-none transition-colors"
-                    value={searchFilters.model || ''}
-                    onChange={(e) => updateFilter('model', e.target.value)}
-                  >
-                    <option value="">Jebkurš</option>
-                  </select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                <CarModelDropdown
+                  make={searchFilters.make || ''}
+                  value={searchFilters.model || ''}
+                  onChange={(model) => updateFilter('model', model)}
+                  disabled={!searchFilters.make}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-500 uppercase ml-1">Gads no</label>
@@ -709,17 +767,19 @@ export default function Home() {
                       }
                     }}
                     className={cn(
-                      "p-3 rounded-2xl transition-all group shrink-0 relative flex flex-col items-center justify-center gap-1 w-full h-20 snap-center",
+                      "px-2 py-2 rounded-2xl transition-all group shrink-0 relative flex flex-col items-center justify-center gap-0.5 w-full h-20 snap-center",
                       isActive ? "bg-white shadow-md z-10" : "z-0"
                     )}
                     title={cat.name}
                   >
-                    <cat.icon className={cn(
-                      "w-7 h-7 transition-all shrink-0",
-                      isActive ? "text-[#E64415]" : "text-slate-400"
-                    )} />
+                    <div className="flex-none w-8 h-8 flex items-center justify-center">
+                      <cat.icon className={cn(
+                        "w-full h-full transition-all",
+                        isActive ? "text-[#E64415]" : "text-slate-400"
+                      )} />
+                    </div>
                     <span className={cn(
-                      "text-[8px] md:text-[9px] font-bold uppercase tracking-tight text-center leading-tight w-full px-0.5 whitespace-normal break-words",
+                      "text-[8px] font-bold uppercase tracking-tight text-center leading-tight w-full px-0.5 line-clamp-2",
                       isActive ? "text-[#E64415]" : "text-slate-400"
                     )}>
                       {cat.name}
@@ -759,7 +819,7 @@ export default function Home() {
                     <Sparkles className="w-5 h-5 text-[#E64415] mr-3 shrink-0 animate-pulse" />
                     <Input 
                       type="text"
-                      placeholder={getAIPlaceholder(activeCategoryId)}
+                      placeholder={typedPlaceholder}
                       className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base h-12 bg-transparent font-semibold text-slate-900 placeholder:text-slate-400 italic"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
