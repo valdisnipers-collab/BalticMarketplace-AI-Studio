@@ -24,6 +24,8 @@ db.exec(`
     category TEXT NOT NULL,
     image_url TEXT,
     attributes TEXT,
+    is_auction INTEGER DEFAULT 0,
+    auction_end_date DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id)
   );
@@ -41,11 +43,13 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reviewer_id INTEGER NOT NULL,
     seller_id INTEGER NOT NULL,
+    order_id INTEGER,
     rating INTEGER CHECK(rating >= 1 AND rating <= 5) NOT NULL,
     comment TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (reviewer_id) REFERENCES users (id) ON DELETE CASCADE,
-    FOREIGN KEY (seller_id) REFERENCES users (id) ON DELETE CASCADE
+    FOREIGN KEY (seller_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS bids (
@@ -214,6 +218,32 @@ db.exec(`
     clicks INTEGER DEFAULT 0,
     UNIQUE(ad_id, date)
   );
+
+  CREATE TABLE IF NOT EXISTS followers (
+    follower_id INTEGER NOT NULL,
+    following_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (follower_id, following_id),
+    FOREIGN KEY (follower_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (following_id) REFERENCES users (id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL,
+    buyer_id INTEGER NOT NULL,
+    seller_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'paid', 'shipped', 'completed', 'disputed', 'refunded'
+    shipping_method TEXT,
+    shipping_address TEXT,
+    stripe_session_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE RESTRICT,
+    FOREIGN KEY (buyer_id) REFERENCES users (id) ON DELETE RESTRICT,
+    FOREIGN KEY (seller_id) REFERENCES users (id) ON DELETE RESTRICT
+  );
 `);
 
 // Seed default settings if they don't exist
@@ -365,6 +395,14 @@ try {
 
 try {
   db.exec('ALTER TABLE listings ADD COLUMN ai_moderation_reason TEXT');
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE listings ADD COLUMN is_auction INTEGER DEFAULT 0');
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE listings ADD COLUMN auction_end_date DATETIME');
 } catch (e) {}
 
 export default db;

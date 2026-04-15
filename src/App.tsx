@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './components/AuthContext';
 import { I18nProvider } from './components/I18nContext';
+import { NotificationProvider } from './components/NotificationProvider';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
 import Home from './pages/Home';
@@ -56,17 +57,19 @@ export default function App() {
     <HelmetProvider>
       <I18nProvider>
         <AuthProvider>
-          <Router>
-            <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
-              <Navbar />
-              {/* Fade-out efekts, kas darbojas zem galvenes */}
-              <div className="sticky top-0 z-[95] h-20 w-full bg-gradient-to-t from-transparent to-slate-50 pointer-events-none -mb-20" />
-              <main className="flex-grow">
-                <AnimatedRoutes />
-              </main>
-              <BottomNav />
-            </div>
-          </Router>
+          <NotificationProvider>
+            <Router>
+              <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
+                <Navbar />
+                {/* Fade-out efekts, kas darbojas zem galvenes */}
+                <div className="sticky top-0 z-[95] h-20 w-full bg-gradient-to-t from-transparent to-slate-50 pointer-events-none -mb-20" />
+                <main className="flex-grow">
+                  <AnimatedRoutes />
+                </main>
+                <BottomNav />
+              </div>
+            </Router>
+          </NotificationProvider>
         </AuthProvider>
       </I18nProvider>
     </HelmetProvider>

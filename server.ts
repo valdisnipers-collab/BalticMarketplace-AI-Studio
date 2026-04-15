@@ -106,7 +106,17 @@ async function startServer() {
       const type = session.metadata?.type;
       const amount = parseInt(session.metadata?.amount || '0', 10);
 
-      if (userId && amount > 0) {
+      if (type === 'escrow_purchase') {
+        const orderId = session.metadata?.orderId;
+        if (orderId) {
+          try {
+            db.prepare('UPDATE orders SET status = ?, stripe_session_id = ? WHERE id = ?').run('paid', session.id, orderId);
+            console.log(`Successfully processed escrow payment for order ${orderId}`);
+          } catch (dbError) {
+            console.error('Database error processing escrow webhook:', dbError);
+          }
+        }
+      } else if (userId && amount > 0) {
         try {
           if (type === 'points') {
             // Add points
@@ -487,6 +497,244 @@ async function startServer() {
   });
 
   // User Profile Routes
+  app.get("/api/users/me/analytics", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      
+      // Get total views of user's listings
+      const viewsResult = db.prepare('SELECT SUM(views) as total_views FROM listings WHERE user_id = ?').get(decoded.userId) as { total_views: number | null };
+      
+      // Get total favorites
+      const favoritesResult = db.prepare(`
+        SELECT COUNT(*) as total_favorites 
+        FROM favorites f
+        JOIN listings l ON f.listing_id = l.id
+        WHERE l.user_id = ?
+      `).get(decoded.userId) as { total_favorites: number };
+
+      // Get total messages received for their listings
+      const messagesResult = db.prepare(`
+        SELECT COUNT(*) as total_messages
+        FROM messages m
+        JOIN listings l ON m.listing_id = l.id
+        WHERE l.user_id = ? AND m.receiver_id = ?
+      `).get(decoded.userId, decoded.userId) as { total_messages: number };
+
+      res.json({
+        total_views: viewsResult.total_views || 0,
+        total_favorites: favoritesResult.total_favorites || 0,
+        total_messages: messagesResult.total_messages || 0
+      });
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+      res.status(500).json({ error: 'Server error fetching analytics' });
+    }
+  });
+
+  app.post("/api/users/:id/follow", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const followingId = req.params.id;
+
+      if (decoded.userId.toString() === followingId) {
+        return res.status(400).json({ error: 'You cannot follow yourself' });
+      }
+
+      db.prepare('INSERT OR IGNORE INTO followers (follower_id, following_id) VALUES (?, ?)').run(decoded.userId, followingId);
+      res.json({ message: 'Successfully followed user' });
+    } catch (error) {
+      console.error("Error following user:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.delete("/api/users/:id/follow", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const followingId = req.params.id;
+
+      db.prepare('DELETE FROM followers WHERE follower_id = ? AND following_id = ?').run(decoded.userId, followingId);
+      res.json({ message: 'Successfully unfollowed user' });
+    } catch (error) {
+      console.error("Error unfollowing user:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get("/api/users/:id/follow-status", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.json({ isFollowing: false });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const followingId = req.params.id;
+
+      const result = db.prepare('SELECT 1 FROM followers WHERE follower_id = ? AND following_id = ?').get(decoded.userId, followingId);
+      res.json({ isFollowing: !!result });
+    } catch (error) {
+      res.json({ isFollowing: false });
+    }
+  });
+
+  app.get("/api/users/me/following/listings", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const { hasAccess, userId } = hasEarlyAccess(req);
+
+      let sql = `
+        SELECT listings.*, users.name as author_name 
+        FROM listings
+        JOIN users ON listings.user_id = users.id
+        JOIN followers ON followers.following_id = users.id
+        WHERE followers.follower_id = ?
+      `;
+      const params: any[] = [decoded.userId];
+
+      if (!hasAccess) {
+        if (userId) {
+          sql += ` AND (listings.created_at <= datetime('now', '-15 minutes') OR listings.user_id = ?)`;
+          params.push(userId);
+        } else {
+          sql += ` AND listings.created_at <= datetime('now', '-15 minutes')`;
+        }
+      }
+
+      sql += ` ORDER BY listings.created_at DESC LIMIT 50`;
+
+      const listings = db.prepare(sql).all(...params);
+      res.json(listings);
+    } catch (error) {
+      console.error("Error fetching following listings:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get("/api/users/me/orders/bought", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const orders = db.prepare(`
+        SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as seller_name
+        FROM orders o
+        JOIN listings l ON o.listing_id = l.id
+        JOIN users u ON o.seller_id = u.id
+        WHERE o.buyer_id = ?
+        ORDER BY o.created_at DESC
+      `).all(decoded.userId);
+      res.json(orders);
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get("/api/users/me/orders/sold", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const orders = db.prepare(`
+        SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as buyer_name
+        FROM orders o
+        JOIN listings l ON o.listing_id = l.id
+        JOIN users u ON o.buyer_id = u.id
+        WHERE o.seller_id = ?
+        ORDER BY o.created_at DESC
+      `).all(decoded.userId);
+      res.json(orders);
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post("/api/orders/:id/ship", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const orderId = req.params.id;
+
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (order.seller_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
+      if (order.status !== 'paid') return res.status(400).json({ error: 'Order is not in paid status' });
+
+      db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('shipped', orderId);
+      
+      const listing = db.prepare('SELECT title FROM listings WHERE id = ?').get(order.listing_id) as any;
+      io.to(`user_${order.buyer_id}`).emit('order_shipped', {
+        id: orderId,
+        listing_title: listing?.title || 'Prece'
+      });
+
+      res.json({ message: 'Order marked as shipped' });
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post("/api/orders/:id/confirm", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const orderId = req.params.id;
+
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (order.buyer_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
+      if (order.status !== 'shipped') return res.status(400).json({ error: 'Order is not shipped yet' });
+
+      // Begin transaction
+      const tx = db.transaction(() => {
+        // Mark order as completed
+        db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('completed', orderId);
+        
+        // Transfer funds to seller
+        db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(order.amount, order.seller_id);
+      });
+      
+      tx();
+
+      const listing = db.prepare('SELECT title FROM listings WHERE id = ?').get(order.listing_id) as any;
+      io.to(`user_${order.seller_id}`).emit('order_completed', {
+        id: orderId,
+        listing_title: listing?.title || 'Prece',
+        amount: order.amount
+      });
+
+      res.json({ message: 'Order confirmed and funds transferred' });
+    } catch (error) {
+      console.error("Error confirming order:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   app.get("/api/users/me/listings", (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
@@ -706,7 +954,7 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const sellerId = req.params.id;
-      const { rating, comment } = req.body;
+      const { rating, comment, orderId } = req.body;
 
       if (decoded.userId.toString() === sellerId) {
         return res.status(400).json({ error: 'You cannot review yourself' });
@@ -716,8 +964,25 @@ async function startServer() {
         return res.status(400).json({ error: 'Rating must be between 1 and 5' });
       }
 
-      const stmt = db.prepare('INSERT INTO reviews (reviewer_id, seller_id, rating, comment) VALUES (?, ?, ?, ?)');
-      const info = stmt.run(decoded.userId, sellerId, rating, comment);
+      if (!orderId) {
+        return res.status(400).json({ error: 'Order ID is required to leave a review' });
+      }
+
+      // Verify that the user actually bought from this seller and the order is completed
+      const order = db.prepare('SELECT * FROM orders WHERE id = ? AND buyer_id = ? AND seller_id = ? AND status = ?').get(orderId, decoded.userId, sellerId, 'completed');
+      
+      if (!order) {
+        return res.status(403).json({ error: 'You can only review sellers after a completed purchase' });
+      }
+
+      // Check if a review already exists for this order
+      const existingReview = db.prepare('SELECT id FROM reviews WHERE order_id = ?').get(orderId);
+      if (existingReview) {
+        return res.status(400).json({ error: 'You have already reviewed this order' });
+      }
+
+      const stmt = db.prepare('INSERT INTO reviews (reviewer_id, seller_id, order_id, rating, comment) VALUES (?, ?, ?, ?, ?)');
+      const info = stmt.run(decoded.userId, sellerId, orderId, rating, comment);
       
       res.json({ id: info.lastInsertRowid, message: 'Review added successfully' });
     } catch (error) {
@@ -1146,14 +1411,14 @@ async function startServer() {
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { title, description, price, category, image_url, attributes, location } = req.body;
+      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date } = req.body;
       
       if (!title || !price || !category) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null);
+      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null);
       
       const listingId = info.lastInsertRowid;
       
@@ -1749,7 +2014,7 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      const { title, description, price, category, image_url, location } = req.body;
+      const { title, description, price, category, image_url, location, is_auction, auction_end_date } = req.body;
 
       // Verify ownership
       const listing = db.prepare('SELECT user_id, price, title FROM listings WHERE id = ?').get(listingId) as { user_id: number, price: number, title: string } | undefined;
@@ -1759,9 +2024,9 @@ async function startServer() {
 
       db.prepare(`
         UPDATE listings 
-        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?
+        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?
         WHERE id = ?
-      `).run(title, description, price, category, image_url, location || null, listingId);
+      `).run(title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listingId);
 
       // Price Drop Alert Logic
       if (price < listing.price) {
@@ -2373,6 +2638,77 @@ async function startServer() {
   });
 
   // Stripe Checkout Session
+  app.post("/api/checkout/escrow", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const { listingId, shippingMethod, shippingAddress } = req.body;
+
+      const listing = db.prepare('SELECT * FROM listings WHERE id = ?').get(listingId) as any;
+      if (!listing) return res.status(404).json({ error: 'Listing not found' });
+      if (listing.user_id === decoded.userId) return res.status(400).json({ error: 'Cannot buy your own listing' });
+
+      let finalPrice = listing.price;
+      const attributes = listing.attributes ? JSON.parse(listing.attributes) : {};
+
+      if (attributes.saleType === 'auction') {
+        if (!attributes.auctionEndDate || new Date(attributes.auctionEndDate) > new Date()) {
+          return res.status(400).json({ error: 'Auction has not ended yet' });
+        }
+        const highestBid = db.prepare('SELECT user_id, amount FROM bids WHERE listing_id = ? ORDER BY amount DESC LIMIT 1').get(listingId) as any;
+        if (!highestBid) {
+          return res.status(400).json({ error: 'No bids on this auction' });
+        }
+        if (highestBid.user_id !== decoded.userId) {
+          return res.status(403).json({ error: 'You are not the winner of this auction' });
+        }
+        finalPrice = highestBid.amount;
+      }
+
+      // Create order in pending state
+      const result = db.prepare(`
+        INSERT INTO orders (listing_id, buyer_id, seller_id, amount, shipping_method, shipping_address)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(listingId, decoded.userId, listing.user_id, finalPrice, shippingMethod, shippingAddress);
+      
+      const orderId = result.lastInsertRowid;
+
+      const stripe = getStripe();
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'eur',
+              product_data: {
+                name: `Drošs pirkums: ${listing.title}`,
+                description: `Piegāde: ${shippingMethod}`,
+              },
+              unit_amount: Math.round(finalPrice * 100),
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${process.env.APP_URL}/profile?tab=orders&success=true&orderId=${orderId}`,
+        cancel_url: `${process.env.APP_URL}/listing/${listingId}?canceled=true`,
+        client_reference_id: decoded.userId.toString(),
+        metadata: {
+          type: 'escrow_purchase',
+          orderId: String(orderId)
+        }
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("Error creating escrow checkout session:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   app.post("/api/create-checkout-session", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });

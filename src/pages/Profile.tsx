@@ -111,6 +111,14 @@ export default function Profile() {
     end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
     category: ''
   });
+  const [boughtOrders, setBoughtOrders] = useState<any[]>([]);
+  const [soldOrders, setSoldOrders] = useState<any[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [reviewOrder, setReviewOrder] = useState<any>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -290,6 +298,24 @@ export default function Profile() {
       }
     };
 
+    const fetchOrders = async () => {
+      setIsLoadingOrders(true);
+      try {
+        const token = localStorage.getItem('auth_token');
+        const [boughtRes, soldRes] = await Promise.all([
+          fetch('/api/users/me/orders/bought', { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch('/api/users/me/orders/sold', { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+        
+        if (boughtRes.ok) setBoughtOrders(await boughtRes.json());
+        if (soldRes.ok) setSoldOrders(await soldRes.json());
+      } catch (err) {
+        console.error("Error fetching orders:", err);
+      } finally {
+        setIsLoadingOrders(false);
+      }
+    };
+
     if (user) {
       fetchMyListings();
       fetchFavorites();
@@ -300,6 +326,7 @@ export default function Profile() {
       fetchOffers();
       fetchSavedSearches();
       fetchNotifications();
+      fetchOrders();
       setCompanyForm({
         company_name: user.company_name || '',
         company_reg_number: user.company_reg_number || '',
@@ -565,6 +592,79 @@ export default function Profile() {
     }).format(date);
   };
 
+  const handleShipOrder = async (orderId: number) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/orders/${orderId}/ship`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Neizdevās atzīmēt kā nosūtītu');
+      
+      setSoldOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'shipped' } : o));
+      alert('Pasūtījums atzīmēts kā nosūtīts!');
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleConfirmReceipt = async (order: any) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/orders/${order.id}/confirm`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Neizdevās apstiprināt saņemšanu');
+      
+      setBoughtOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'completed' } : o));
+      alert('Preces saņemšana apstiprināta! Nauda pārskaitīta pārdevējam.');
+      
+      // Open review modal
+      setReviewOrder(order);
+      setReviewModalOpen(true);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewOrder) return;
+
+    setIsSubmittingReview(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/users/${reviewOrder.seller_id}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          rating: reviewRating,
+          comment: reviewComment,
+          orderId: reviewOrder.id
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Neizdevās pievienot atsauksmi');
+      }
+
+      alert('Atsauksme veiksmīgi pievienota!');
+      setReviewModalOpen(false);
+      setReviewOrder(null);
+      setReviewComment('');
+      setReviewRating(5);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
   if (loading || !user) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-slate-50">
@@ -657,6 +757,7 @@ export default function Profile() {
           {[
             { id: 'listings', label: t('profile.myListings'), icon: Package },
             { id: 'favorites', label: t('profile.favorites'), icon: Heart },
+            { id: 'orders', label: 'Mani pirkumi', icon: ShoppingBag },
             { id: 'saved-searches', label: t('profile.savedSearches'), icon: Eye },
             { id: 'offers', label: t('profile.offers'), icon: Handshake },
             { id: 'notifications', label: t('profile.notifications'), icon: Fingerprint },
@@ -1428,6 +1529,138 @@ export default function Profile() {
           </motion.div>
         )}
 
+        {/* Orders */}
+        {activeTab === 'orders' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-10"
+          >
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Mani pirkumi</h2>
+              {isLoadingOrders ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-24 w-full rounded-xl" />
+                  <Skeleton className="h-24 w-full rounded-xl" />
+                </div>
+              ) : boughtOrders.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-100 border-dashed p-12 text-center">
+                  <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">Tev vēl nav pirkumu</h3>
+                  <p className="text-slate-500 text-sm">Šeit parādīsies tavi drošie pirkumi.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {boughtOrders.map((order) => (
+                    <div key={order.id} className="bg-white rounded-2xl p-6 border border-slate-100 flex flex-col md:flex-row items-center gap-6">
+                      <div className="w-24 h-24 bg-slate-50 rounded-xl overflow-hidden flex-shrink-0">
+                        {order.listing_image ? (
+                          <img src={order.listing_image} alt={order.listing_title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-slate-300" /></div>
+                        )}
+                      </div>
+                      <div className="flex-grow text-center md:text-left">
+                        <h4 className="font-bold text-slate-900 text-lg mb-1">{order.listing_title}</h4>
+                        <div className="text-sm text-slate-500 mb-2">Pārdevējs: {order.seller_name}</div>
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                          <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+                            {order.shipping_method === 'pickup' ? 'Saņemt klātienē' : order.shipping_method === 'omniva' ? 'Omniva' : 'DPD'}
+                          </Badge>
+                          <Badge className={
+                            order.status === 'pending' ? 'bg-amber-100 text-amber-700 hover:bg-amber-100' :
+                            order.status === 'paid' ? 'bg-blue-100 text-blue-700 hover:bg-blue-100' :
+                            order.status === 'shipped' ? 'bg-purple-100 text-purple-700 hover:bg-purple-100' :
+                            'bg-emerald-100 text-emerald-700 hover:bg-emerald-100'
+                          }>
+                            {order.status === 'pending' ? 'Gaida apmaksu' :
+                             order.status === 'paid' ? 'Apmaksāts, gaida izsūtīšanu' :
+                             order.status === 'shipped' ? 'Izsūtīts' : 'Pabeigts'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="text-center md:text-right flex-shrink-0">
+                        <div className="text-2xl font-black text-slate-900 mb-3">€{order.amount.toLocaleString()}</div>
+                        {order.status === 'shipped' && (
+                          <Button 
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => handleConfirmReceipt(order)}
+                          >
+                            Apstiprināt saņemšanu
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Mani pārdevumi</h2>
+              {isLoadingOrders ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-24 w-full rounded-xl" />
+                  <Skeleton className="h-24 w-full rounded-xl" />
+                </div>
+              ) : soldOrders.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-100 border-dashed p-12 text-center">
+                  <Package className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">Tev vēl nav pārdevumu</h3>
+                  <p className="text-slate-500 text-sm">Šeit parādīsies tavi drošie pārdevumi.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {soldOrders.map((order) => (
+                    <div key={order.id} className="bg-white rounded-2xl p-6 border border-slate-100 flex flex-col md:flex-row items-center gap-6">
+                      <div className="w-24 h-24 bg-slate-50 rounded-xl overflow-hidden flex-shrink-0">
+                        {order.listing_image ? (
+                          <img src={order.listing_image} alt={order.listing_title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-slate-300" /></div>
+                        )}
+                      </div>
+                      <div className="flex-grow text-center md:text-left">
+                        <h4 className="font-bold text-slate-900 text-lg mb-1">{order.listing_title}</h4>
+                        <div className="text-sm text-slate-500 mb-2">Pircējs: {order.buyer_name}</div>
+                        <div className="text-sm text-slate-600 mb-2 font-medium">
+                          Adrese: {order.shipping_address}
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                          <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+                            {order.shipping_method === 'pickup' ? 'Saņemt klātienē' : order.shipping_method === 'omniva' ? 'Omniva' : 'DPD'}
+                          </Badge>
+                          <Badge className={
+                            order.status === 'pending' ? 'bg-amber-100 text-amber-700 hover:bg-amber-100' :
+                            order.status === 'paid' ? 'bg-blue-100 text-blue-700 hover:bg-blue-100' :
+                            order.status === 'shipped' ? 'bg-purple-100 text-purple-700 hover:bg-purple-100' :
+                            'bg-emerald-100 text-emerald-700 hover:bg-emerald-100'
+                          }>
+                            {order.status === 'pending' ? 'Gaida apmaksu' :
+                             order.status === 'paid' ? 'Apmaksāts, jāizsūta' :
+                             order.status === 'shipped' ? 'Izsūtīts, gaida saņemšanu' : 'Pabeigts'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="text-center md:text-right flex-shrink-0">
+                        <div className="text-2xl font-black text-slate-900 mb-3">€{order.amount.toLocaleString()}</div>
+                        {order.status === 'paid' && (
+                          <Button 
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => handleShipOrder(order.id)}
+                          >
+                            Atzīmēt kā izsūtītu
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
         {/* Favorīti */}
         {activeTab === 'favorites' && (
           <motion.div 
@@ -1813,6 +2046,73 @@ export default function Profile() {
                   Izveidot un apmaksāt
                 </Button>
               </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {reviewModalOpen && reviewOrder && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-[24px] shadow-xl w-full max-w-md overflow-hidden relative"
+          >
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-900 uppercase tracking-tight">Novērtēt pārdevēju</h3>
+              <Button 
+                onClick={() => setReviewModalOpen(false)}
+                variant="ghost"
+                size="icon"
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            
+            <form onSubmit={handleReviewSubmit} className="p-6 space-y-6">
+              <div className="text-center">
+                <div className="text-sm text-slate-500 mb-4">
+                  Kā jūs vērtējat sadarbību ar pārdevēju <b>{reviewOrder.seller_name}</b>?
+                </div>
+                <div className="flex justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewRating(star)}
+                      className="focus:outline-none transition-transform hover:scale-110"
+                    >
+                      <Star 
+                        className={`w-10 h-10 ${
+                          star <= reviewRating 
+                            ? 'text-amber-400 fill-amber-400' 
+                            : 'text-slate-200'
+                        }`} 
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">Komentārs (neobligāti)</label>
+                <textarea
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-4 text-sm font-medium focus:border-[#E64415] focus:ring-0 outline-none resize-none h-24"
+                  placeholder="Uzrakstiet savu atsauksmi par darījumu..."
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                />
+              </div>
+
+              <Button 
+                type="submit" 
+                className="w-full bg-[#E64415] hover:bg-[#d13d13] text-white font-bold py-6 rounded-xl"
+                disabled={isSubmittingReview}
+              >
+                {isSubmittingReview ? 'Saglabā...' : 'Iesniegt atsauksmi'}
+              </Button>
             </form>
           </motion.div>
         </div>

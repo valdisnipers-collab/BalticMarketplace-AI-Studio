@@ -95,6 +95,7 @@ export default function ListingDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isFavorite, setIsFavorite] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
 
   // Calculator states
   const [downPayment, setDownPayment] = useState(20);
@@ -105,6 +106,10 @@ export default function ListingDetails() {
   const [newReviewRating, setNewReviewRating] = useState(5);
   const [newReviewComment, setNewReviewComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isBuying, setIsBuying] = useState(false);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [shippingMethod, setShippingMethod] = useState('omniva');
+  const [shippingAddress, setShippingAddress] = useState('');
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -140,7 +145,7 @@ export default function ListingDetails() {
           }
         }
 
-        // Check if favorite
+        // Check if favorite and follow status
         if (user) {
           const token = localStorage.getItem('auth_token');
           const favsRes = await fetch('/api/users/me/favorites', {
@@ -149,6 +154,14 @@ export default function ListingDetails() {
           if (favsRes.ok) {
             const favsData: ListingDetails[] = await favsRes.json();
             setIsFavorite(favsData.some(f => f.id === data.id));
+          }
+
+          const followRes = await fetch(`/api/users/${data.user_id}/follow-status`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (followRes.ok) {
+            const followData = await followRes.json();
+            setIsFollowing(followData.isFollowing);
           }
         }
       } catch (err: any) {
@@ -184,6 +197,33 @@ export default function ListingDetails() {
       }
     } catch (error) {
       console.error("Error toggling favorite", error);
+    }
+  };
+
+  const handleFollow = async () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    if (!listing) return;
+
+    const token = localStorage.getItem('auth_token');
+    try {
+      if (isFollowing) {
+        await fetch(`/api/users/${listing.user_id}/follow`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        setIsFollowing(false);
+      } else {
+        await fetch(`/api/users/${listing.user_id}/follow`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        setIsFollowing(true);
+      }
+    } catch (error) {
+      console.error("Error toggling follow", error);
     }
   };
 
@@ -251,40 +291,44 @@ export default function ListingDetails() {
     }
   };
 
-  const handleReviewSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !listing) return;
-    
-    setIsSubmittingReview(true);
+  const handleBuyNow = async () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    if (!shippingAddress.trim()) {
+      alert('Lūdzu ievadiet piegādes adresi');
+      return;
+    }
+
+    setIsBuying(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/users/${listing.user_id}/reviews`, {
+      const res = await fetch('/api/checkout/escrow', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ rating: newReviewRating, comment: newReviewComment })
+        body: JSON.stringify({
+          listingId: listing?.id,
+          shippingMethod,
+          shippingAddress
+        })
       });
-      
+
       if (res.ok) {
-        alert('Atsauksme pievienota veiksmīgi!');
-        setNewReviewComment('');
-        setNewReviewRating(5);
-        // Refresh reviews
-        const reviewsRes = await fetch(`/api/users/${listing.user_id}/reviews`);
-        if (reviewsRes.ok) {
-          setReviews(await reviewsRes.json());
-        }
+        const { url } = await res.json();
+        window.location.href = url;
       } else {
-        const data = await res.json();
-        alert(data.error || 'Neizdevās pievienot atsauksmi.');
+        const err = await res.json();
+        alert(err.error || 'Kļūda izveidojot pirkumu');
       }
     } catch (error) {
-      console.error('Error submitting review:', error);
-      alert('Notika kļūda, mēģiniet vēlreiz.');
+      console.error("Error buying", error);
+      alert('Kļūda izveidojot pirkumu');
     } finally {
-      setIsSubmittingReview(false);
+      setIsBuying(false);
     }
   };
 
@@ -652,43 +696,6 @@ export default function ListingDetails() {
                 <Star className="w-6 h-6 mr-3 text-amber-400 fill-current" />
                 {t('listing.reviews')}
               </h2>
-              
-              {user && user.id !== listing.user_id && (
-                <form onSubmit={handleReviewSubmit} className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-8">
-                  <h3 className="font-bold text-slate-900 mb-4">{t('listing.addReview')}</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">{t('listing.rating')}</label>
-                      <div className="flex items-center space-x-2">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            key={star}
-                            type="button"
-                            onClick={() => setNewReviewRating(star)}
-                            className="focus:outline-none"
-                          >
-                            <Star className={`w-6 h-6 ${star <= newReviewRating ? 'text-amber-400 fill-current' : 'text-slate-300'}`} />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">{t('listing.comment')}</label>
-                      <textarea
-                        value={newReviewComment}
-                        onChange={(e) => setNewReviewComment(e.target.value)}
-                        className="w-full rounded-xl border-slate-200 focus:border-primary-500 focus:ring-primary-500"
-                        rows={3}
-                        placeholder="Kāda bija jūsu pieredze ar šo pārdevēju?"
-                        required
-                      />
-                    </div>
-                    <Button type="submit" disabled={isSubmittingReview}>
-                      {isSubmittingReview ? t('listing.submitting') : t('listing.submitReview')}
-                    </Button>
-                  </div>
-                </form>
-              )}
 
               {reviews.length === 0 ? (
                 <p className="text-slate-500 italic">{t('listing.noReviews')}</p>
@@ -808,6 +815,15 @@ export default function ListingDetails() {
                     <div className="space-y-3">
                       <Button 
                         size="lg" 
+                        className="w-full text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg shadow-emerald-200"
+                        onClick={() => setShowCheckoutModal(true)}
+                      >
+                        <ShieldCheck className="w-5 h-5 mr-2" />
+                        Pirkt droši
+                      </Button>
+                      <Button 
+                        size="lg" 
+                        variant="outline"
                         className="w-full text-sm"
                         onClick={() => navigate(`/chat?userId=${listing.user_id}&listingId=${listing.id}`)}
                       >
@@ -850,7 +866,7 @@ export default function ListingDetails() {
                     <History className="w-4 h-4 mr-3 text-primary-400" />
                     Biedrs kopš 2023. gada
                   </div>
-                  <div className="pt-2">
+                  <div className="pt-2 space-y-2">
                     <Button 
                       variant="outline" 
                       className="w-full border-primary-200 text-primary-700 hover:bg-primary-50 font-bold"
@@ -861,6 +877,15 @@ export default function ListingDetails() {
                     >
                       {t('listing.showPhone')}
                     </Button>
+                    {user?.id !== listing.user_id && (
+                      <Button 
+                        variant={isFollowing ? "secondary" : "default"}
+                        className="w-full font-bold"
+                        onClick={handleFollow}
+                      >
+                        {isFollowing ? 'Sekojat' : 'Sekot pārdevējam'}
+                      </Button>
+                    )}
                   </div>
                 </div>
                 
@@ -940,6 +965,73 @@ export default function ListingDetails() {
 
         </div>
       </div>
+
+      {/* Checkout Modal */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-2xl font-black text-slate-900 mb-6">Drošs pirkums</h3>
+            
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">Piegādes veids</label>
+                <select 
+                  className="w-full h-12 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 text-sm font-semibold focus:border-emerald-500 outline-none"
+                  value={shippingMethod}
+                  onChange={(e) => setShippingMethod(e.target.value)}
+                >
+                  <option value="omniva">Omniva pakomāts (+3.00 €)</option>
+                  <option value="dpd">DPD pakomāts (+3.00 €)</option>
+                  <option value="pickup">Saņemt klātienē (Bezmaksas)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">Piegādes adrese / Pakomāts</label>
+                <input 
+                  type="text"
+                  className="w-full h-12 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 text-sm font-semibold focus:border-emerald-500 outline-none"
+                  placeholder="Ievadiet adresi vai pakomāta nosaukumu"
+                  value={shippingAddress}
+                  onChange={(e) => setShippingAddress(e.target.value)}
+                />
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-xl space-y-2">
+                <div className="flex justify-between text-sm font-semibold text-slate-600">
+                  <span>Prece</span>
+                  <span>€{listing?.price.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm font-semibold text-slate-600">
+                  <span>Piegāde</span>
+                  <span>{shippingMethod === 'pickup' ? '€0.00' : '€3.00'}</span>
+                </div>
+                <div className="flex justify-between text-lg font-black text-slate-900 pt-2 border-t border-slate-200">
+                  <span>Kopā</span>
+                  <span>€{((listing?.price || 0) + (shippingMethod === 'pickup' ? 0 : 3)).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => setShowCheckoutModal(false)}
+                >
+                  Atcelt
+                </Button>
+                <Button 
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleBuyNow}
+                  disabled={isBuying || !shippingAddress.trim()}
+                >
+                  {isBuying ? 'Apstrādā...' : 'Maksāt droši'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
