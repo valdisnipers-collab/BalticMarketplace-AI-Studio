@@ -1001,6 +1001,79 @@ async function startServer() {
     }
   });
 
+  app.post("/api/ai/generate-listing", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
+      }
+
+      const { imageUrl } = req.body;
+      if (!imageUrl) {
+        return res.status(400).json({ error: 'No image URL provided' });
+      }
+
+      // Fetch the image from the local server or external URL
+      let imageBuffer: Buffer;
+      let mimeType = 'image/jpeg';
+      
+      if (imageUrl.startsWith('http')) {
+        const imageRes = await fetch(imageUrl);
+        if (!imageRes.ok) throw new Error('Failed to fetch image');
+        const arrayBuffer = await imageRes.arrayBuffer();
+        imageBuffer = Buffer.from(arrayBuffer);
+        mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
+      } else {
+        // Local file
+        const filename = imageUrl.split('/').pop();
+        const filePath = path.join(uploadsDir, filename);
+        if (!fs.existsSync(filePath)) {
+          return res.status(404).json({ error: 'Image not found' });
+        }
+        imageBuffer = fs.readFileSync(filePath);
+        mimeType = filename.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      }
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const imagePart = {
+        inlineData: {
+          data: imageBuffer.toString("base64"),
+          mimeType: mimeType
+        }
+      };
+
+      const prompt = `Analyze this image and generate a listing for a marketplace in Latvia.
+      Return a JSON object with the following fields:
+      - title: A catchy, descriptive title in Latvian.
+      - description: A detailed description in Latvian.
+      - category: One of the following categories: 'vehicles', 'real-estate', 'electronics', 'home', 'fashion', 'services', 'other'.
+      - price: A realistic estimated price in EUR (number only).
+      
+      Return ONLY valid JSON.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [prompt, imagePart],
+      });
+
+      let jsonText = response.text || "{}";
+      if (jsonText.startsWith('\`\`\`json')) {
+        jsonText = jsonText.replace(/\`\`\`json\n?/, '').replace(/\`\`\`$/, '');
+      } else if (jsonText.startsWith('\`\`\`')) {
+        jsonText = jsonText.replace(/\`\`\`\n?/, '').replace(/\`\`\`$/, '');
+      }
+
+      const listingData = JSON.parse(jsonText);
+      res.json(listingData);
+    } catch (error) {
+      console.error("Error generating listing from image:", error);
+      res.status(500).json({ error: 'Server error generating listing' });
+    }
+  });
+
   async function moderateListing(listingId: number | bigint, title: string, description: string, price: number) {
     try {
       if (!process.env.GEMINI_API_KEY) return;
@@ -1679,7 +1752,7 @@ async function startServer() {
       const { title, description, price, category, image_url, location } = req.body;
 
       // Verify ownership
-      const listing = db.prepare('SELECT user_id FROM listings WHERE id = ?').get(listingId) as { user_id: number } | undefined;
+      const listing = db.prepare('SELECT user_id, price, title FROM listings WHERE id = ?').get(listingId) as { user_id: number, price: number, title: string } | undefined;
       
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
       if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to edit this listing' });
@@ -1689,6 +1762,28 @@ async function startServer() {
         SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?
         WHERE id = ?
       `).run(title, description, price, category, image_url, location || null, listingId);
+
+      // Price Drop Alert Logic
+      if (price < listing.price) {
+        // Fetch users who favorited this listing
+        const favoritedUsers = db.prepare('SELECT user_id FROM favorites WHERE listing_id = ?').all(listingId) as { user_id: number }[];
+        
+        const insertNotification = db.prepare(`
+          INSERT INTO notifications (user_id, type, title, message, link)
+          VALUES (?, 'system', 'Price Drop Alert!', ?, ?)
+        `);
+
+        const message = `Great news! The price for "${listing.title}" has dropped from €${listing.price} to €${price}.`;
+        const link = `/listing/${listingId}`;
+
+        const notifyUsers = db.transaction((users: { user_id: number }[]) => {
+          for (const user of users) {
+            insertNotification.run(user.user_id, message, link);
+          }
+        });
+        
+        notifyUsers(favoritedUsers);
+      }
 
       res.json({ message: 'Listing updated successfully' });
     } catch (error) {
@@ -2394,18 +2489,6 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
-    
-    app.get('*', async (req, res, next) => {
-      const url = req.originalUrl;
-      try {
-        let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
-        template = await vite.transformIndexHtml(url, template);
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
-      } catch (e) {
-        vite.ssrFixStacktrace(e as Error);
-        next(e);
-      }
-    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -2414,7 +2497,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server is starting...`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Server running on http://localhost:${PORT}`);

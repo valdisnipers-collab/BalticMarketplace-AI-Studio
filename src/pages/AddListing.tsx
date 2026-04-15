@@ -127,6 +127,42 @@ export default function AddListing() {
     setAttributes(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleAIGenerateFromImage = async () => {
+    if (imageUrls.length === 0) return;
+    
+    setIsGenerating(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/ai/generate-listing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ imageUrl: imageUrls[0] })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās ģenerēt datus no attēla');
+      
+      if (data.title) setTitle(data.title);
+      if (data.description) setDescription(data.description);
+      if (data.price) setPrice(data.price.toString());
+      if (data.category && CATEGORY_NAMES.includes(data.category)) {
+        setCategory(data.category);
+      }
+      
+      // Move to step 3 if we are on step 1 or 2
+      if (step < 3) setStep(3);
+      
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleGenerateDescription = async () => {
     setIsGenerating(true);
     setError('');
@@ -454,43 +490,61 @@ export default function AddListing() {
 
                         {/* Preview Grid */}
                         {imageUrls.length > 0 && (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
-                            <AnimatePresence>
-                              {imageUrls.map((url, index) => (
-                                <motion.div 
-                                  key={`${url}-${index}`}
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="relative rounded-2xl overflow-hidden aspect-square bg-slate-100 border border-slate-200 shadow-sm group"
-                                >
-                                  <img 
-                                    src={url} 
-                                    alt={`Preview ${index + 1}`} 
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400?text=Invalid+Image';
-                                    }}
-                                  />
-                                  {index === 0 && (
-                                    <div className="absolute top-2 left-2">
-                                      <Badge className="bg-primary-600 hover:bg-primary-700 text-white border-none shadow-md text-[9px] uppercase tracking-wider px-2 py-0.5">
-                                        Galvenais
-                                      </Badge>
+                          <div className="space-y-4 mt-4">
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                onClick={handleAIGenerateFromImage}
+                                disabled={isGenerating}
+                                className="group bg-indigo-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-full shadow-lg hover:bg-indigo-800 transition-all"
+                                size="sm"
+                              >
+                                {isGenerating ? (
+                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-2"></div>
+                                ) : (
+                                  <Sparkles className="w-3 h-3 mr-2 text-amber-400 group-hover:rotate-12 transition-transform" />
+                                )}
+                                AUTO-FILL WITH AI
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                              <AnimatePresence>
+                                {imageUrls.map((url, index) => (
+                                  <motion.div 
+                                    key={`${url}-${index}`}
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    className="relative rounded-2xl overflow-hidden aspect-square bg-slate-100 border border-slate-200 shadow-sm group"
+                                  >
+                                    <img 
+                                      src={url} 
+                                      alt={`Preview ${index + 1}`} 
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400?text=Invalid+Image';
+                                      }}
+                                    />
+                                    {index === 0 && (
+                                      <div className="absolute top-2 left-2">
+                                        <Badge className="bg-primary-600 hover:bg-primary-700 text-white border-none shadow-md text-[9px] uppercase tracking-wider px-2 py-0.5">
+                                          Galvenais
+                                        </Badge>
+                                      </div>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                      <button 
+                                        type="button"
+                                        onClick={() => removeImage(index)}
+                                        className="p-2 bg-white/90 backdrop-blur-md rounded-full shadow-xl hover:bg-red-50 text-red-500 transition-all transform hover:scale-110"
+                                      >
+                                        <PlusCircle className="w-5 h-5 rotate-45" />
+                                      </button>
                                     </div>
-                                  )}
-                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <button 
-                                      type="button"
-                                      onClick={() => removeImage(index)}
-                                      className="p-2 bg-white/90 backdrop-blur-md rounded-full shadow-xl hover:bg-red-50 text-red-500 transition-all transform hover:scale-110"
-                                    >
-                                      <PlusCircle className="w-5 h-5 rotate-45" />
-                                    </button>
-                                  </div>
-                                </motion.div>
-                              ))}
-                            </AnimatePresence>
+                                  </motion.div>
+                                ))}
+                              </AnimatePresence>
+                            </div>
                           </div>
                         )}
                       </div>

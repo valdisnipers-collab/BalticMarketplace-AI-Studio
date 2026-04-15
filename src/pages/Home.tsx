@@ -119,9 +119,8 @@ export default function Home() {
         const currentContainerHeight = container.clientHeight;
         setContainerHeight(currentContainerHeight);
         
-        // If container height is 0, wait for next frame
+        // If container height is 0, just use a default or skip
         if (currentContainerHeight === 0) {
-          requestAnimationFrame(initScroll);
           return;
         }
 
