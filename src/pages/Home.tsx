@@ -712,8 +712,9 @@ export default function Home() {
         <motion.div
           className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center px-6 bg-slate-50"
           style={{ pointerEvents: heroVisible ? 'auto' : 'none' }}
-          animate={heroVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: -50 }}
-          transition={{ opacity: { duration: 0.5, ease: [0.32, 0.72, 0, 1] }, y: { duration: 0.6, ease: [0.32, 0.72, 0, 1] } }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={heroVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: -55 }}
+          transition={{ duration: 0.85, ease: [0.25, 0.1, 0.25, 1] }}
         >
           <motion.div
             initial={{ opacity: 0, y: -10 }}
