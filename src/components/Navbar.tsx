@@ -11,7 +11,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "../../components/ui/dropdown-menu";
 
 interface Notification {
@@ -44,6 +43,7 @@ export default function Navbar() {
   const [isInformOpen, setIsInformOpen] = useState(false);
   const [isUserOpen, setIsUserOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const unreadNotificationsCount = notifications.filter(n => !n.is_read).length;
 
@@ -51,6 +51,9 @@ export default function Navbar() {
     const handleClickOutside = (event: MouseEvent) => {
       if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -351,30 +354,61 @@ export default function Navbar() {
             </div>
 
             {user ? (
-              <div className="flex items-center space-x-2 ml-2">
-                <DropdownMenu onOpenChange={setIsUserOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="flex items-center space-x-2 p-1 pr-2 rounded-full hover:bg-slate-50 border border-transparent hover:border-slate-200">
-                      <div className="w-8 h-8 bg-[#2D1152] text-white rounded-full flex items-center justify-center font-bold text-sm">
-                        {user.name?.[0] || 'U'}
-                      </div>
-                      <span className="hidden lg:block text-sm font-semibold text-slate-900">{user.name || user.phone}</span>
-                      {isUserOpen ? <ChevronUp className="w-4 h-4 text-[#E64415]" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={12} className="w-56">
+              <div className="relative flex items-center ml-2" ref={userMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsUserOpen(v => !v)}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="w-8 h-8 bg-[#2D1152] text-white rounded-full flex items-center justify-center font-bold text-sm shrink-0">
+                    {user.name?.[0] || 'U'}
+                  </div>
+                  <span className="hidden lg:block text-sm font-semibold text-slate-900">{user.name || user.phone}</span>
+                  {isUserOpen ? <ChevronUp className="w-4 h-4 text-[#E64415]" /> : <ChevronDown className="w-4 h-4 opacity-50" />}
+                </button>
+
+                {isUserOpen && (
+                  <div className="absolute right-0 top-[calc(100%+12px)] w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-[1000] py-1">
                     {user.role === 'admin' && (
-                      <DropdownMenuItem onClick={() => navigate('/admin')} className="flex items-center text-primary-600 font-bold">
-                        <ShieldCheck className="w-4 h-4 mr-2" /> Admin Panelis
-                      </DropdownMenuItem>
+                      <button
+                        type="button"
+                        onClick={() => { navigate('/admin'); setIsUserOpen(false); }}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-primary-600 hover:bg-orange-50 hover:text-[#E64415] transition-colors"
+                      >
+                        <ShieldCheck className="w-4 h-4 shrink-0" /> Admin Panelis
+                      </button>
                     )}
-                    <DropdownMenuItem onClick={() => navigate('/profile')} className="flex items-center"><User className="w-4 h-4 mr-2" /> {t('nav.profile')}</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/chat')} className="flex items-center"><MessageSquare className="w-4 h-4 mr-2" /> {t('chat.title')}</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/profile?tab=wallet')} className="flex items-center"><Coins className="w-4 h-4 mr-2" /> {t('profile.wallet')}</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={signOut} className="text-red-600 focus:text-red-600"><LogOut className="w-4 h-4 mr-2" /> {t('nav.logout')}</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    <button
+                      type="button"
+                      onClick={() => { navigate('/profile'); setIsUserOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <User className="w-4 h-4 shrink-0" /> {t('nav.profile')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { navigate('/chat'); setIsUserOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <MessageSquare className="w-4 h-4 shrink-0" /> {t('chat.title')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { navigate('/profile?tab=wallet'); setIsUserOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Coins className="w-4 h-4 shrink-0" /> {t('profile.wallet')}
+                    </button>
+                    <div className="mx-3 my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      onClick={() => { signOut(); setIsUserOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4 shrink-0" /> {t('nav.logout')}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex items-center space-x-2 ml-2">

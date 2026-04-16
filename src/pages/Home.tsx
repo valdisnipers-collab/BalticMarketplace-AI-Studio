@@ -184,6 +184,12 @@ export default function Home() {
 
   const [searchFilters, setSearchFilters] = useState<Record<string, string>>({});
   const [feedType, setFeedType] = useState<'all' | 'following'>('all');
+  const [heroVisible, setHeroVisible] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setHeroVisible(false), 3000);
+    return () => clearTimeout(timer);
+  }, []);
   
   const activeCategory = mainCategories.find(c => c.id === activeCategoryId) || mainCategories[0];
 
@@ -695,38 +701,44 @@ export default function Home() {
         <meta name="description" content="Atrodiet labākos piedāvājumus Baltijā. Premium sludinājumi, pārbaudīti pārdevēji, droši darījumi." />
       </Helmet>
       {/* Hero & Search Section */}
-      <section className="bg-slate-50 pt-16 pb-12 md:pt-24 md:pb-20 overflow-hidden relative">
+      <section className="bg-slate-50 relative min-h-[calc(100vh-80px)] flex flex-col justify-center py-8">
         {/* Subtle background decorative elements */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none overflow-hidden">
           <div className="absolute -top-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
           <div className="absolute top-1/2 -right-24 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 relative">
-          <div className="text-center mb-16">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm mb-6"
-            >
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E64415]"></span>
-              </span>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Jaunums: AI meklēšana ir klāt</span>
-            </motion.div>
+        {/* Hero text — absolūts overlay virs meklēšanas bloka */}
+        <motion.div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center px-6 bg-slate-50"
+          style={{ pointerEvents: heroVisible ? 'auto' : 'none' }}
+          animate={heroVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: -50 }}
+          transition={{ opacity: { duration: 0.5, ease: [0.32, 0.72, 0, 1] }, y: { duration: 0.6, ease: [0.32, 0.72, 0, 1] } }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm mb-6"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E64415]"></span>
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Jaunums: AI meklēšana ir klāt</span>
+          </motion.div>
 
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-heading font-extrabold text-slate-900 mb-6 tracking-tight leading-[1.1]">
-              Atrodi visu nepieciešamo.<br />
-              <span className="bg-gradient-to-r from-[#E64415] to-[#FF8C00] bg-clip-text text-transparent">
-                Baltijas lielākais
-              </span> sludinājumu portāls.
-            </h1>
-            <p className="text-slate-500 font-medium text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
-              {t('home.hero.subtitle')}
-            </p>
-          </div>
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-heading font-extrabold text-slate-900 mb-6 tracking-tight leading-[1.1]">
+            Atrodi visu nepieciešamo.<br />
+            <span className="bg-gradient-to-r from-[#E64415] to-[#FF8C00] bg-clip-text text-transparent">
+              Baltijas lielākais
+            </span> sludinājumu portāls.
+          </h1>
+          <p className="text-slate-500 font-medium text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
+            {t('home.hero.subtitle')}
+          </p>
+        </motion.div>
 
+        <div className="max-w-7xl mx-auto px-6 w-full">
           <div className="bg-white rounded-[40px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col md:flex-row max-h-[600px]">
             {/* Sidebar Categories - Infinite Circular Scroll */}
             <div 
@@ -790,7 +802,7 @@ export default function Home() {
             </div>
 
             {/* Main Search Area - Compact */}
-            <div className="flex-grow p-6 md:p-10 flex flex-col overflow-y-auto">
+            <div className="flex-grow p-6 md:p-10 flex flex-col">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                   <motion.div 
