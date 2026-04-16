@@ -736,6 +736,43 @@ async function startServer() {
     }
   });
 
+  app.post("/api/orders/:id/dispute", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const orderId = req.params.id;
+      const { reason, description } = req.body;
+
+      if (!reason) return res.status(400).json({ error: 'Reason is required' });
+
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (order.buyer_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
+      
+      if (!['paid', 'shipped'].includes(order.status)) {
+        return res.status(400).json({ error: 'Order status does not allow dispute' });
+      }
+
+      db.transaction(() => {
+        db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('disputed', orderId);
+        db.prepare('INSERT INTO disputes (order_id, user_id, reason, description) VALUES (?, ?, ?, ?)').run(orderId, decoded.userId, reason, description);
+        
+        db.prepare(`
+          INSERT INTO notifications (user_id, type, title, message, link)
+          VALUES (?, 'system', 'Strīds pieteikts', ?, ?)
+        `).run(order.seller_id, `Pircējs ir pieteicis strīdu pasūtījumam #${orderId}.`, `/profile?tab=orders`);
+      })();
+
+      res.json({ message: 'Dispute opened successfully' });
+    } catch (error) {
+      console.error("Error opening dispute:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   app.get("/api/users/me/listings", (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
@@ -1014,7 +1051,7 @@ async function startServer() {
 
   app.get("/api/listings/search", (req, res) => {
     try {
-      const { q: query, category, subcategory, minPrice, maxPrice, sort, location, ...restQuery } = req.query;
+      const { q: query, category, subcategory, minPrice, maxPrice, sort, location, listingType, ...restQuery } = req.query;
       if (!query) {
         return res.json([]);
       }
@@ -1046,6 +1083,10 @@ async function startServer() {
       if (subcategory) {
         sql += ` AND json_extract(listings.attributes, '$.subcategory') = ?`;
         params.push(subcategory);
+      }
+      if (listingType && listingType !== 'all') {
+        sql += ` AND listings.listing_type = ?`;
+        params.push(listingType);
       }
       if (minPrice) {
         sql += ` AND listings.price >= ?`;
@@ -1087,7 +1128,7 @@ async function startServer() {
 
   app.get("/api/listings", (req, res) => {
     try {
-      const { category, subcategory, minPrice, maxPrice, sort, location, ...restQuery } = req.query;
+      const { category, subcategory, minPrice, maxPrice, sort, location, listingType, ...restQuery } = req.query;
       const { hasAccess, userId } = hasEarlyAccess(req);
 
       let query = `
@@ -1114,6 +1155,10 @@ async function startServer() {
       if (subcategory) {
         query += ` AND json_extract(attributes, '$.subcategory') = ?`;
         params.push(subcategory);
+      }
+      if (listingType && listingType !== 'all') {
+        query += ` AND listing_type = ?`;
+        params.push(listingType);
       }
       if (minPrice) {
         query += ` AND price >= ?`;
@@ -1412,14 +1457,14 @@ async function startServer() {
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date } = req.body;
+      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for } = req.body;
       
-      if (!title || !price || !category) {
+      if (!title || price === undefined || !category) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null);
+      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null);
       
       const listingId = info.lastInsertRowid;
       
@@ -1966,11 +2011,17 @@ async function startServer() {
       const info = stmt.run(listingId, decoded.userId, amount);
       
       const newBid = db.prepare(`
-        SELECT b.id, b.amount, b.created_at, u.name as bidder_name
+        SELECT b.id, b.user_id, b.amount, b.created_at, u.name as bidder_name
         FROM bids b
         JOIN users u ON b.user_id = u.id
         WHERE b.id = ?
       `).get(info.lastInsertRowid) as any;
+
+      // Emit real-time bid update
+      io.emit('new_bid', {
+        listingId: parseInt(listingId),
+        bid: newBid
+      });
 
       // Notify seller
       db.prepare(`
@@ -2015,7 +2066,7 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      const { title, description, price, category, image_url, location, is_auction, auction_end_date } = req.body;
+      const { title, description, price, category, image_url, location, is_auction, auction_end_date, listing_type, exchange_for } = req.body;
 
       // Verify ownership
       const listing = db.prepare('SELECT user_id, price, title FROM listings WHERE id = ?').get(listingId) as { user_id: number, price: number, title: string } | undefined;
@@ -2025,9 +2076,9 @@ async function startServer() {
 
       db.prepare(`
         UPDATE listings 
-        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?
+        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?, listing_type = ?, exchange_for = ?
         WHERE id = ?
-      `).run(title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listingId);
+      `).run(title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, listingId);
 
       // Price Drop Alert Logic
       if (price < listing.price) {
@@ -2360,6 +2411,64 @@ async function startServer() {
     } catch (error) {
       console.error("Error fetching reports:", error);
       res.status(500).json({ error: 'Server error fetching reports' });
+    }
+  });
+
+  app.get("/api/admin/disputes", isAdmin, (req, res) => {
+    try {
+      const disputes = db.prepare(`
+        SELECT d.*, o.amount, o.status as order_status, l.title as listing_title, u.name as buyer_name, s.name as seller_name
+        FROM disputes d
+        JOIN orders o ON d.order_id = o.id
+        JOIN listings l ON o.listing_id = l.id
+        JOIN users u ON o.buyer_id = u.id
+        JOIN users s ON o.seller_id = s.id
+        ORDER BY d.created_at DESC
+      `).all();
+      res.json(disputes);
+    } catch (error) {
+      console.error("Error fetching admin disputes:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post("/api/admin/disputes/:id/resolve", isAdmin, (req, res) => {
+    try {
+      const disputeId = req.params.id;
+      const { action, adminNotes } = req.body; // action: 'refund' or 'release'
+
+      const dispute = db.prepare('SELECT * FROM disputes WHERE id = ?').get(disputeId) as any;
+      if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+      if (dispute.status !== 'open') return res.status(400).json({ error: 'Dispute already resolved' });
+
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(dispute.order_id) as any;
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      db.transaction(() => {
+        if (action === 'refund') {
+          db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('refunded', order.id);
+          db.prepare('UPDATE disputes SET status = ?, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('resolved_refunded', adminNotes, disputeId);
+          
+          db.prepare(`
+            INSERT INTO notifications (user_id, type, title, message, link)
+            VALUES (?, 'system', 'Strīds atrisināts: Nauda atgriezta', ?, ?)
+          `).run(order.buyer_id, `Jūsu strīds par pasūtījumu #${order.id} ir atrisināts. Nauda tiks atgriezta.`, `/profile?tab=orders`);
+        } else if (action === 'release') {
+          db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('completed', order.id);
+          db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(order.amount, order.seller_id);
+          db.prepare('UPDATE disputes SET status = ?, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('resolved_released', adminNotes, disputeId);
+          
+          db.prepare(`
+            INSERT INTO notifications (user_id, type, title, message, link)
+            VALUES (?, 'system', 'Strīds atrisināts: Nauda izmaksāta', ?, ?)
+          `).run(order.seller_id, `Strīds par pasūtījumu #${order.id} ir atrisināts par labu jums. Nauda ir ieskaitīta jūsu kontā.`, `/profile?tab=orders`);
+        }
+      })();
+
+      res.json({ message: 'Dispute resolved successfully' });
+    } catch (error) {
+      console.error("Error resolving dispute:", error);
+      res.status(500).json({ error: 'Server error' });
     }
   });
 
@@ -2843,82 +2952,96 @@ async function startServer() {
     setInterval(checkEndedAuctions, 60 * 1000); // Check every minute
     checkEndedAuctions(); // Run once on startup
   });
-}
 
-function checkEndedAuctions() {
-  try {
-    // Find all active listings
-    const activeListings = db.prepare("SELECT id, user_id, title, attributes FROM listings WHERE status = 'active'").all() as any[];
-    
-    const now = new Date();
-    
-    for (const listing of activeListings) {
-      if (!listing.attributes) continue;
+  function checkEndedAuctions() {
+    try {
+      // Find all active listings
+      const activeListings = db.prepare("SELECT id, user_id, title, attributes FROM listings WHERE status = 'active'").all() as any[];
       
-      try {
-        const attributes = JSON.parse(listing.attributes);
-        if (attributes.saleType === 'auction' && attributes.auctionEndDate) {
-          const endDate = new Date(attributes.auctionEndDate);
-          
-          if (endDate <= now) {
-            // Auction has ended
-            console.log(`Auction ${listing.id} has ended. Processing...`);
+      const now = new Date();
+      
+      for (const listing of activeListings) {
+        if (!listing.attributes) continue;
+        
+        try {
+          const attributes = JSON.parse(listing.attributes);
+          if (attributes.saleType === 'auction' && attributes.auctionEndDate) {
+            const endDate = new Date(attributes.auctionEndDate);
             
-            // Get highest bid
-            const highestBid = db.prepare(`
-              SELECT b.id, b.user_id, b.amount, u.name as bidder_name 
-              FROM bids b
-              JOIN users u ON b.user_id = u.id
-              WHERE b.listing_id = ? 
-              ORDER BY b.amount DESC LIMIT 1
-            `).get(listing.id) as any;
-            
-            if (highestBid) {
-              // Update listing status to sold
-              db.prepare("UPDATE listings SET status = 'sold' WHERE id = ?").run(listing.id);
+            if (endDate <= now) {
+              // Auction has ended
+              console.log(`Auction ${listing.id} has ended. Processing...`);
               
-              // Notify winner
-              db.prepare(`
-                INSERT INTO notifications (user_id, type, title, message, link)
-                VALUES (?, 'auction_won', 'Apsveicam! Jūs uzvarējāt izsolē', ?, ?)
-              `).run(
-                highestBid.user_id, 
-                `Jūs uzvarējāt izsolē "${listing.title}" ar solījumu €${highestBid.amount}.`,
-                `/listing/${listing.id}`
-              );
+              // Get highest bid
+              const highestBid = db.prepare(`
+                SELECT b.id, b.user_id, b.amount, u.name as bidder_name 
+                FROM bids b
+                JOIN users u ON b.user_id = u.id
+                WHERE b.listing_id = ? 
+                ORDER BY b.amount DESC LIMIT 1
+              `).get(listing.id) as any;
               
-              // Notify seller
-              db.prepare(`
-                INSERT INTO notifications (user_id, type, title, message, link)
-                VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies', ?, ?)
-              `).run(
-                listing.user_id,
-                `Izsole "${listing.title}" ir noslēgusies. Uzvarētājs: ${highestBid.bidder_name} ar solījumu €${highestBid.amount}.`,
-                `/listing/${listing.id}`
-              );
-              
-            } else {
-              // Update listing status to expired
-              db.prepare("UPDATE listings SET status = 'expired' WHERE id = ?").run(listing.id);
-              
-              // Notify seller
-              db.prepare(`
-                INSERT INTO notifications (user_id, type, title, message, link)
-                VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies bez solījumiem', ?, ?)
-              `).run(
-                listing.user_id,
-                `Izsole "${listing.title}" ir noslēgusies, bet neviens neveica solījumus.`,
-                `/listing/${listing.id}`
-              );
+              if (highestBid) {
+                // Update listing status to sold
+                db.prepare("UPDATE listings SET status = 'sold' WHERE id = ?").run(listing.id);
+                
+                // Notify winner
+                db.prepare(`
+                  INSERT INTO notifications (user_id, type, title, message, link)
+                  VALUES (?, 'auction_won', 'Apsveicam! Jūs uzvarējāt izsolē', ?, ?)
+                `).run(
+                  highestBid.user_id, 
+                  `Jūs uzvarējāt izsolē "${listing.title}" ar solījumu €${highestBid.amount}.`,
+                  `/listing/${listing.id}`
+                );
+                
+                // Notify seller
+                db.prepare(`
+                  INSERT INTO notifications (user_id, type, title, message, link)
+                  VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies', ?, ?)
+                `).run(
+                  listing.user_id,
+                  `Izsole "${listing.title}" ir noslēgusies. Uzvarētājs: ${highestBid.bidder_name} ar solījumu €${highestBid.amount}.`,
+                  `/listing/${listing.id}`
+                );
+
+                // Emit real-time update
+                io.emit('auction_ended', {
+                  listingId: listing.id,
+                  winnerId: highestBid.user_id,
+                  amount: highestBid.amount
+                });
+                
+              } else {
+                // Update listing status to expired
+                db.prepare("UPDATE listings SET status = 'expired' WHERE id = ?").run(listing.id);
+                
+                // Notify seller
+                db.prepare(`
+                  INSERT INTO notifications (user_id, type, title, message, link)
+                  VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies bez solījumiem', ?, ?)
+                `).run(
+                  listing.user_id,
+                  `Izsole "${listing.title}" ir noslēgusies, bet neviens neveica solījumus.`,
+                  `/listing/${listing.id}`
+                );
+
+                // Emit real-time update
+                io.emit('auction_ended', {
+                  listingId: listing.id,
+                  winnerId: null,
+                  amount: null
+                });
+              }
             }
           }
+        } catch (e) {
+          // Ignore JSON parse errors
         }
-      } catch (e) {
-        // Ignore JSON parse errors
       }
+    } catch (error) {
+      console.error('Error checking ended auctions:', error);
     }
-  } catch (error) {
-    console.error('Error checking ended auctions:', error);
   }
 }
 

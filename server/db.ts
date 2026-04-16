@@ -26,6 +26,8 @@ db.exec(`
     attributes TEXT,
     is_auction INTEGER DEFAULT 0,
     auction_end_date DATETIME,
+    listing_type TEXT DEFAULT 'sale', -- 'sale', 'auction', 'giveaway', 'exchange'
+    exchange_for TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id)
   );
@@ -244,6 +246,20 @@ db.exec(`
     FOREIGN KEY (buyer_id) REFERENCES users (id) ON DELETE RESTRICT,
     FOREIGN KEY (seller_id) REFERENCES users (id) ON DELETE RESTRICT
   );
+
+  CREATE TABLE IF NOT EXISTS disputes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'open', -- 'open', 'resolved_refunded', 'resolved_released', 'dismissed'
+    admin_notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  );
 `);
 
 // Seed default settings if they don't exist
@@ -253,6 +269,13 @@ db.exec(`
   INSERT OR IGNORE INTO settings (key, value) VALUES ('points_price_eur_per_100', '1.00');
   INSERT OR IGNORE INTO settings (key, value) VALUES ('ad_price_points', '500');
 `);
+
+// Bootstrap admin rights for the owner
+try {
+  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'valdis.nipers@gmail.com'").run();
+} catch (e) {
+  console.error("Error bootstrapping admin:", e);
+}
 
 try {
   db.exec('ALTER TABLE ads ADD COLUMN category TEXT');
@@ -398,11 +421,30 @@ try {
   db.exec('ALTER TABLE listings ADD COLUMN auction_end_date DATETIME');
 } catch (e) {}
 
-// Bootstrap admin rights for the owner (must run after all ALTER TABLE migrations)
 try {
-  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'valdis.nipers@gmail.com'").run();
-} catch (e) {
-  // Silently ignore - user may not exist yet
-}
+  db.exec('ALTER TABLE listings ADD COLUMN listing_type TEXT DEFAULT "sale"');
+} catch (e) {}
+
+try {
+  db.exec('ALTER TABLE listings ADD COLUMN exchange_for TEXT');
+} catch (e) {}
+
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS disputes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      admin_notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+  `);
+} catch (e) {}
 
 export default db;

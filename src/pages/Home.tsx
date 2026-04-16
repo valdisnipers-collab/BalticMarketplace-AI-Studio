@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { Search, Car, CarFront, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight, Shirt, Baby, Trophy, PawPrint, Bike, Zap, Tent, ArrowRight, Calendar, Fuel, Settings, Truck, Bus, Tractor, Ship, Anchor, Monitor, Laptop, Gamepad2, Flower2, Hammer, Wrench, Watch, Target, Bone, HardHat, Construction, Building2, Warehouse, Trees, Cpu, Gamepad, Dumbbell, FishSymbol, Waves, ChevronDown } from 'lucide-react';
+import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight, Shirt, Baby, Trophy, PawPrint, Bike, Zap, Tent, ArrowRight, Calendar, Fuel, Settings, Truck, Bus, Tractor, Ship, Anchor, Monitor, Laptop, Gamepad2, Flower2, Hammer, Wrench, Watch, Target, Bone, HardHat, Construction, Building2, Warehouse, Trees, Cpu, Gamepad, Dumbbell, FishSymbol, Waves, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Helmet } from 'react-helmet-async';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SectionHeader } from '@/components/ui/section-header';
-import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
 import { cn } from '@/lib/utils';
+import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
 
 const mainCategories = [
   { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'text-[#E64415]', subcategories: [
@@ -22,7 +22,7 @@ const mainCategories = [
     { name: 'Garāžas', icon: Lock },
     { name: 'Mežs', icon: Trees }
   ]},
-  { id: 'auto', name: 'Transports', icon: CarFront, color: 'text-[#E64415]', subcategories: [
+  { id: 'auto', name: 'Transports', icon: Car, color: 'text-[#E64415]', subcategories: [
     { name: 'Vieglie auto', icon: Car },
     { name: 'Motocikli', icon: Bike },
     { name: 'Kravas auto', icon: Truck },
@@ -93,6 +93,8 @@ interface Listing {
   ai_trust_score?: number;
   ai_moderation_status?: string;
   attributes?: Record<string, any>;
+  listing_type?: 'sale' | 'auction' | 'giveaway' | 'exchange';
+  exchange_for?: string;
 }
 
 export default function Home() {
@@ -104,190 +106,280 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [locationQuery, setLocationQuery] = useState('');
-  const [activeCategoryId, setActiveCategoryId] = useState('auto');
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollPos, setScrollPos] = useState(0);
-  const [containerHeight, setContainerHeight] = useState(0);
-
-  const tripledCategories = [...mainCategories, ...mainCategories, ...mainCategories];
-
-  useEffect(() => {
-    // Initial scroll to the middle "Transports"
-    const initScroll = () => {
-      if (scrollRef.current) {
-        const itemHeight = 80; // h-20 = 80px
-        const container = scrollRef.current;
-        const currentContainerHeight = container.clientHeight;
-        setContainerHeight(currentContainerHeight);
-        
-        // If container height is 0, just use a default or skip
-        if (currentContainerHeight === 0) {
-          return;
-        }
-
-        const centerOffset = currentContainerHeight / 2;
-        const transportsIndex = mainCategories.findIndex(c => c.id === 'auto');
-        // Target the "Transports" in the middle set
-        const targetIndex = mainCategories.length + transportsIndex;
-        const targetScroll = (targetIndex * itemHeight) + (itemHeight / 2) - centerOffset;
-        
-        container.scrollTop = targetScroll;
-        
-        // Update state immediately
-        setScrollPos(targetScroll);
-        setActiveCategoryId('auto');
-      }
-    };
-
-    // Small delay to ensure layout is ready
-    const timer = setTimeout(initScroll, 150);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleSidebarScroll = () => {
-    if (!scrollRef.current) return;
-    const container = scrollRef.current;
-    const itemHeight = 80;
-    const scrollTop = container.scrollTop;
-    const currentContainerHeight = container.clientHeight;
-    
-    if (currentContainerHeight !== containerHeight) {
-      setContainerHeight(currentContainerHeight);
-    }
-
-    // Update scroll position for animations
-    setScrollPos(scrollTop);
-
-    // Calculate which item is at the center
-    const center = scrollTop + (currentContainerHeight / 2);
-    const index = Math.round((center - (itemHeight / 2)) / itemHeight);
-    
-    // Ensure index is within bounds of tripledCategories
-    if (index >= 0 && index < tripledCategories.length) {
-      const newActiveId = tripledCategories[index].id;
-      if (newActiveId !== activeCategoryId) {
-        setActiveCategoryId(newActiveId);
-      }
-    }
-
-    // Handle Infinite Loop - Keep scroll in the middle section
-    const totalHeight = mainCategories.length * itemHeight;
-    // Jump when we leave the middle set (mainCategories.length to 2*mainCategories.length)
-    if (scrollTop < totalHeight) {
-      container.scrollTop = scrollTop + totalHeight;
-      setScrollPos(container.scrollTop);
-    } else if (scrollTop >= totalHeight * 2) {
-      container.scrollTop = scrollTop - totalHeight;
-      setScrollPos(container.scrollTop);
-    }
-  };
+  const [activeCategoryId, setActiveCategoryId] = useState(''); // Empty means universal search is active
 
   const [searchFilters, setSearchFilters] = useState<Record<string, string>>({});
   const [feedType, setFeedType] = useState<'all' | 'following'>('all');
-  const [heroVisible, setHeroVisible] = useState(true);
+  const [showHeroText, setShowHeroText] = useState(true);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollIndex, setScrollIndex] = useState(1); // Visual center (Transports)
+
+  // Duplicate items for the endless scrolling effect without needing fake padding
+  // To keep exactly 7 visible, we'll repeat the array to ensure there's always items above and below
+  const extendedCategories = [...mainCategories, ...mainCategories, ...mainCategories];
+  const itemSize = window.innerWidth < 768 ? 96 : 80;
+  
+  const handleSidebarScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const isMobile = window.innerWidth < 768;
+    const scrollPos = isMobile ? el.scrollLeft : el.scrollTop;
+    
+    // Calculate index based on actual scrolled items
+    const rawIdx = Math.round(scrollPos / itemSize);
+    
+    // Map raw scroll index back to the real category index (modulo)
+    const realIdx = rawIdx % mainCategories.length;
+
+    if (rawIdx !== scrollIndex) {
+      setScrollIndex(rawIdx);
+      
+      // Auto-activate category purely based on center (only if not universal search)
+      if (activeCategoryId !== '') {
+        const newCat = mainCategories[realIdx];
+        if (newCat && newCat.id !== activeCategoryId) {
+          setActiveCategoryId(newCat.id);
+          setActiveSubcategoryName('');
+          updateFilter('subcategory', '');
+        }
+      }
+    }
+
+    // Infinite wrap logic (reset scroll seamlessly when reaching ends of the extended list)
+    const exactCenterStart = mainCategories.length * itemSize;
+    if (scrollPos < itemSize) {
+      // Scrolled too far up/left
+      if (isMobile) {
+        el.scrollLeft = scrollPos + exactCenterStart;
+      } else {
+        el.scrollTop = scrollPos + exactCenterStart;
+      }
+    } else if (scrollPos > exactCenterStart * 2) {
+      // Scrolled too far down/right
+      if (isMobile) {
+        el.scrollLeft = scrollPos - exactCenterStart;
+      } else {
+        el.scrollTop = scrollPos - exactCenterStart;
+      }
+    }
+  };
+
+  // Modern wheel interceptor: strict 1-item movement per wheel tick
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    let isScrolling = false;
+    let wheelTimeout: NodeJS.Timeout;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Determine if this is a large, discrete mouse wheel tick
+      // Trackpads send tiny deltaY values (<20 usually) and often deltaMode === 0.
+      // Physical mouse wheels send deltaMode=1 (lines) or deltaY=100+ (pixels).
+      const isDiscreteWheel = Math.abs(e.deltaY) >= 30 || e.deltaMode > 0;
+
+      if (isDiscreteWheel) {
+        e.preventDefault(); // Stop native scrolling bypassing multiple items
+
+        if (isScrolling) return;
+        isScrolling = true;
+
+        const isMobile = window.innerWidth < 768;
+        const itemSize = isMobile ? 96 : 80;
+        const currentScroll = isMobile ? el.scrollLeft : el.scrollTop;
+        
+        // Exact closest snapped idx
+        const currentIdx = Math.round(currentScroll / itemSize);
+        const direction = Math.sign(e.deltaY);
+        
+        // Move exactly 1 index
+        const targetScroll = (currentIdx + direction) * itemSize;
+
+        el.scrollTo({
+          [isMobile ? 'left' : 'top']: targetScroll,
+          behavior: 'smooth'
+        });
+
+        // Release lock
+        clearTimeout(wheelTimeout);
+        wheelTimeout = setTimeout(() => {
+          isScrolling = false;
+        }, 300); // 300ms matches smooth scrolling duration well
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      clearTimeout(wheelTimeout);
+    };
+  }, []);
+
+  // Initial scroll positioning - center on Transports (idx 1) in the middle block
+  useEffect(() => {
+    if (scrollRef.current) {
+      const isMobile = window.innerWidth < 768;
+      // Start at the middle block (mainCategories.length items down) + Transports (index 1)
+      const initialScrollTarget = (mainCategories.length + 1) * itemSize;
+      
+      if (isMobile) {
+        scrollRef.current.scrollTo({ left: initialScrollTarget, behavior: 'instant' });
+      } else {
+        scrollRef.current.scrollTo({ top: initialScrollTarget, behavior: 'instant' });
+      }
+      setScrollIndex(mainCategories.length + 1);
+    }
+  }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setHeroVisible(false), 3000);
+    const timer = setTimeout(() => {
+      setShowHeroText(false);
+    }, 3000);
     return () => clearTimeout(timer);
   }, []);
   
   const activeCategory = mainCategories.find(c => c.id === activeCategoryId) || mainCategories[0];
-
-  const AI_PLACEHOLDERS: Record<string, string[]> = {
-    'auto': [
-      "Meklēju ekonomisku pilsētas auto sievietei līdz 10 000 €...",
-      "Meklēju jaudīgu SUV ģimenei ar zemu nobraukumu...",
-      "Meklēju elektroauto ar vismaz 300 km gājienu...",
-      "Meklēju sportisku kupeja automašīnu līdz 20 000 €...",
-    ],
-    'nekustamais-ipasums': [
-      "Meklēju saulainu 3-istabu dzīvokli jaunajā projektā Teikā...",
-      "Meklēju māju ar dārzu Pierīgā līdz 150 000 €...",
-      "Meklēju 1-istabu dzīvokli īrei studentam līdz 400 € mēnesī...",
-      "Meklēju biroja telpas Rīgas centrā līdz 100 m²...",
-    ],
-    'elektronika': [
-      "Meklēju jaudīgu klēpjdatoru video montāžai un spēlēm...",
-      "Meklēju lētu Android telefonu ar labu kameru līdz 200 €...",
-      "Meklēju 4K televizoru līdz 55 collām par pieņemamu cenu...",
-      "Meklēju bezvadu austiņas ar trokšņu slāpēšanu...",
-    ],
-    'darbs': [
-      "Meklēju attālinātu darbu mārketingā ar elastīgu grafiku...",
-      "Meklēju grāmatveža darbu uz nepilnu slodzi Rīgā...",
-      "Meklēju IT programmētāja vakanci ar konkurētspējīgu algu...",
-      "Meklēju vasaras darbu studentam noliktavā vai restorānā...",
-    ],
-    'majai': [
-      "Meklēju stūra dīvānu pelēkā krāsā mazai viesistabai...",
-      "Meklēju virtuves komplektu 3 metru garumā baltā krāsā...",
-      "Meklēju gultu 160×200 cm ar matraci līdz 500 €...",
-      "Meklēju retro stila galda lampu dzīvojamai istabai...",
-    ],
-    'mode': [
-      "Meklēju elegantu vakarkleitu vasaras kāzām, izmērs M...",
-      "Meklēju ādas jaku vīriešiem izmērs XL līdz 100 €...",
-      "Meklēju Levi's džinsus taisnā griezumā izmērs 32/32...",
-      "Meklēju bērnu ziemas apģērbu komplektu izmērs 110...",
-    ],
-    'berniem': [
-      "Meklēju drošu autokrēsliņu zīdainim līdz 13 kg...",
-      "Meklēju bērnu velosipēdu 5–7 gadus vecam bērnam...",
-      "Meklēju saliekamos ratiņus kompaktus ceļošanai...",
-      "Meklēju LEGO komplektu bērnam dzimšanas dienā līdz 50 €...",
-    ],
-    'sports': [
-      "Meklēju kalnu velosipēdu ar alumīnija rāmi un disku bremzēm...",
-      "Meklēju skrejceļu ar motoru mājas trenažieru zālei...",
-      "Meklēju kajaku divietu ūdens tūrismam par saprātīgu cenu...",
-      "Meklēju svarcelt spēka sporta komplektu mājām...",
-    ],
-    'dzivnieki': [
-      "Meklēju draudzīgu Labradora kucēnu no sertificētas audzētavas...",
-      "Meklēju mājas kaķi šķirnes British Shorthair...",
-      "Meklēju akvāriju ar aprīkojumu sākumam zivtiņkopībā...",
-      "Meklēju trusi vai jūrascūciņu bērniem kā pirmo mājdzīvnieku...",
-    ],
-  };
-
-  const [typedPlaceholder, setTypedPlaceholder] = useState('');
+  const subcategories = activeCategory.subcategories || [];
+  
+  const [activeSubcategoryName, setActiveSubcategoryName] = useState('');
 
   useEffect(() => {
-    const examples = AI_PLACEHOLDERS[activeCategoryId] ?? ["Ko jūs meklējat? Aprakstiet savu vēlmi šeit..."];
-    let exampleIndex = 0;
-    let charIndex = 0;
-    let timeoutId: ReturnType<typeof setTimeout>;
-
-    setTypedPlaceholder('');
-
-    function typeChar() {
-      const current = examples[exampleIndex];
-      if (charIndex <= current.length) {
-        setTypedPlaceholder(current.slice(0, charIndex));
-        charIndex++;
-        timeoutId = setTimeout(typeChar, 50);
-      } else {
-        // Pauze pirms dzēšanas
-        timeoutId = setTimeout(eraseChar, 2000);
-      }
-    }
-
-    function eraseChar() {
-      const current = examples[exampleIndex];
-      if (charIndex > 0) {
-        charIndex--;
-        setTypedPlaceholder(current.slice(0, charIndex));
-        timeoutId = setTimeout(eraseChar, 28);
-      } else {
-        // Pauze pirms nākamā teksta
-        exampleIndex = (exampleIndex + 1) % examples.length;
-        timeoutId = setTimeout(typeChar, 400);
-      }
-    }
-
-    timeoutId = setTimeout(typeChar, 300);
-    return () => clearTimeout(timeoutId);
+    setActiveSubcategoryName('');
+    updateFilter('subcategory', '');
   }, [activeCategoryId]);
+
+  const placeholderExamples: Record<string, string[]> = {
+    'universal': [
+      "Meklēju ekonomisku pilsētas auto līdz 10 000 €",
+      "Pārdod 3-istabu dzīvokli Rīgas centrā",
+      "Meklēju portatīvo datoru videospēlēm",
+      "Vēlos attālinātu darbu mārketingā",
+      "Pērku stūra dīvānu pelēkā krāsā"
+    ],
+    'auto': [
+      "Piem. 'Meklēju ekonomisku pilsētas auto sievietei līdz 10 000 €'...",
+      "Piem. 'Vēlos iegādāties lietotu krosa motociklu'...",
+      "Piem. 'Pārdodu labi koptu Volvo XC60 apvidus auto'...",
+      "Piem. 'Nepieciešama piekabe laivas pārvadāšanai'...",
+      "Piem. 'Iegādāšos traktoru lauksaimniecības darbiem'..."
+    ],
+    'nekustamais-ipasums': [
+      "Piem. 'Meklēju saulainu 3-istabu dzīvokli jaunajā projektā Teikā'...",
+      "Piem. 'Vēlos īrēt nelielu biroja telpu centrā'...",
+      "Piem. 'Pērku lauksaimniecības zemi Zemgalē'...",
+      "Piem. 'Meklēju vasarnīcu pie jūras Saulkrastos'...",
+      "Piem. 'Izīrēju izremontētu 1-istabas dzīvokli studentam'..."
+    ],
+    'elektronika': [
+      "Piem. 'Meklēju jaudīgu klēpjdatoru video montāžai un spēlēm'...",
+      "Piem. 'Pārdodu lietotu iPhone 13 Pro labā stāvoklī'...",
+      "Piem. 'Vēlos iegādāties skaņu izolējošas bezvadu austiņas'...",
+      "Piem. 'Meklēju spoguļkameru iesācējam ar objektīviem'...",
+      "Piem. 'Pērku PlayStation 5 konsoli ar spēlēm'..."
+    ],
+    'darbs': [
+      "Piem. 'Meklēju attālinātu darbu mārketingā ar elastīgu grafiku'...",
+      "Piem. 'Piedāvāju darbu pieredzējušam celtniekam'...",
+      "Piem. 'Vēlos strādāt par kurjeru nedēļas nogalēs'...",
+      "Piem. 'Meklēju auklītes darbu Rīgas centrā'...",
+      "Piem. 'Uzņēmums meklē PHP programmētāju pilnas slodzes darbam'..."
+    ],
+    'majai': [
+      "Piem. 'Meklēju stūra dīvānu pelēkā krāsā mazai viesistabai'...",
+      "Piem. 'Pārdodu ozolkoka pusdienu galdu ar 6 krēsliem'...",
+      "Piem. 'Vēlos iegādāties lietotu, bet labu veļas mašīnu'...",
+      "Piem. 'Meklēju dārza mēbeļu komplektu terasei'...",
+      "Piem. 'Pērku lielu drēbju skapi ar bīdāmām durvīm'..."
+    ],
+    'mode': [
+      "Piem. 'Meklēju elegantu vakarkleitu vasaras kāzām, izmērs M'...",
+      "Piem. 'Pārdodu vīriešu ziemas mēteli tumši zilā krāsā'...",
+      "Piem. 'Vēlos nopirkt oriģinālus sporta apavus izmērs 43'...",
+      "Piem. 'Meklēju ādas pleca somu ikdienai'...",
+      "Piem. 'Pērku zelta gredzenu ar iestrādātu akmentiņu'..."
+    ],
+    'berniem': [
+      "Piem. 'Meklēju drošu autokrēsliņu zīdainim līdz 13 kg'...",
+      "Piem. 'Pārdodu ratiņus 3 in 1 labā stāvoklī'...",
+      "Piem. 'Vēlos iegādāties koka attīstošās rotaļlietas'...",
+      "Piem. 'Meklēju ziemas kombinezonu zēnam, izmērs 98'...",
+      "Piem. 'Pērku Lego komplektus no Star Wars sērijas'..."
+    ],
+    'sports': [
+      "Piem. 'Meklēju kalnu velosipēdu ar alumīnija rāmi un disku bremzēm'...",
+      "Piem. 'Pārdodu mazlietotas slēpes ar zābakiem'...",
+      "Piem. 'Vēlos nopirkt telti 4 personām kempingam'...",
+      "Piem. 'Meklēju hanteles treniņiem mājās, 2x10kg'...",
+      "Piem. 'Pērku akustisko ģitāru iesācējam'..."
+    ],
+    'dzivnieki': [
+      "Piem. 'Meklēju draudzīgu Labradora kucēnu no sertificētas audzētavas'...",
+      "Piem. 'Pārdodu lielu būri papagailim'...",
+      "Piem. 'Vēlos iegādāties akvāriju ar aprīkojumu, 100 litri'...",
+      "Piem. 'Meklēju kaķu nagu asināmo torni'...",
+      "Piem. 'Dāvinu jauktas šķirnes kaķēnus labās rokās'..."
+    ]
+  };
+
+  const useTypewriter = (categoryId: string) => {
+    const [displayText, setDisplayText] = useState('');
+    const [exampleIndex, setExampleIndex] = useState(0);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    // Get the right array, fallback to universal if empty string or not found
+    const key = categoryId === '' ? 'universal' : (placeholderExamples[categoryId] ? categoryId : 'universal');
+    const examples = placeholderExamples[key];
+
+    // Reset when category changes
+    useEffect(() => {
+      setDisplayText('');
+      setExampleIndex(0);
+      setIsDeleting(false);
+    }, [categoryId]);
+
+    useEffect(() => {
+      if (!examples || examples.length === 0) return;
+
+      const currentText = examples[exampleIndex % examples.length];
+      let timeoutId: NodeJS.Timeout;
+
+      if (!isDeleting) {
+        // Typing phase
+        if (displayText !== currentText) {
+          const nextChar = currentText.substring(0, displayText.length + 1);
+          // Human-like typing delay: base 40ms + random up to 60ms
+          const typingDelay = Math.random() * 60 + 40;
+          timeoutId = setTimeout(() => {
+            setDisplayText(nextChar);
+          }, typingDelay);
+        } else {
+          // Pause when word is complete
+          timeoutId = setTimeout(() => {
+            setIsDeleting(true);
+          }, 2000);
+        }
+      } else {
+        // Deleting phase
+        if (displayText === '') {
+          setIsDeleting(false);
+          setExampleIndex(prev => prev + 1);
+        } else {
+          const nextChar = currentText.substring(0, displayText.length - 1);
+          // Fast deleting: ~15ms per character
+          const deleteDelay = 15;
+          timeoutId = setTimeout(() => {
+            setDisplayText(nextChar);
+          }, deleteDelay);
+        }
+      }
+
+      return () => clearTimeout(timeoutId);
+    }, [displayText, isDeleting, exampleIndex, examples]);
+
+    return displayText;
+  };
+
+  const currentPlaceholder = useTypewriter(activeCategoryId);
 
   const updateFilter = (key: string, value: string) => {
     setSearchFilters(prev => ({ ...prev, [key]: value }));
@@ -653,16 +745,39 @@ export default function Home() {
             </h3>
             <div className="flex items-baseline gap-1 mb-1">
               <span className="text-slate-900 font-black text-xl">
-                {listing.price.toLocaleString()} €
+                {listing.listing_type === 'giveaway' ? 'BEZ MAKSAS' : 
+                 listing.listing_type === 'exchange' ? 'MAIŅA' : 
+                 `${listing.price.toLocaleString()} €`}
               </span>
-              <span className="text-slate-500 text-xs font-medium">mtl. incl. VAT.</span>
+              {listing.listing_type !== 'giveaway' && listing.listing_type !== 'exchange' && (
+                <span className="text-slate-500 text-xs font-medium">mtl. incl. VAT.</span>
+              )}
             </div>
-            <p className="text-slate-500 text-xs mb-3">36 months, 5.000 km per year</p>
+            {listing.listing_type === 'exchange' && listing.exchange_for && (
+              <p className="text-indigo-600 text-[10px] font-bold uppercase truncate mb-3">Pret: {listing.exchange_for}</p>
+            )}
+            {listing.listing_type !== 'exchange' && (
+              <p className="text-slate-500 text-xs mb-3">36 months, 5.000 km per year</p>
+            )}
             
             <div className="flex flex-wrap gap-2 mb-4">
-              <Badge variant="secondary" className="bg-orange-100 text-[#E64415] border-none font-bold text-[10px] px-2 py-0.5 uppercase">
-                DEAL
-              </Badge>
+              {listing.listing_type === 'giveaway' ? (
+                <Badge variant="secondary" className="bg-emerald-100 text-emerald-600 border-none font-bold text-[10px] px-2 py-0.5 uppercase">
+                  ATDOD
+                </Badge>
+              ) : listing.listing_type === 'exchange' ? (
+                <Badge variant="secondary" className="bg-indigo-100 text-indigo-600 border-none font-bold text-[10px] px-2 py-0.5 uppercase">
+                  MAIŅA
+                </Badge>
+              ) : listing.listing_type === 'auction' ? (
+                <Badge variant="secondary" className="bg-amber-100 text-amber-600 border-none font-bold text-[10px] px-2 py-0.5 uppercase">
+                  IZSOLE
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="bg-orange-100 text-[#E64415] border-none font-bold text-[10px] px-2 py-0.5 uppercase">
+                  DEAL
+                </Badge>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2 mb-4">
@@ -701,191 +816,299 @@ export default function Home() {
         <meta name="description" content="Atrodiet labākos piedāvājumus Baltijā. Premium sludinājumi, pārbaudīti pārdevēji, droši darījumi." />
       </Helmet>
       {/* Hero & Search Section */}
-      <section className="bg-slate-50 relative min-h-[calc(100vh-80px)] flex flex-col justify-center py-8">
+      <section className="bg-slate-50 pt-16 pb-12 md:pt-24 md:pb-20 overflow-hidden relative">
         {/* Subtle background decorative elements */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none overflow-hidden">
           <div className="absolute -top-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
           <div className="absolute top-1/2 -right-24 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
         </div>
 
-        {/* Hero text — absolūts overlay virs meklēšanas bloka */}
-        <motion.div
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center px-6 bg-slate-50"
-          style={{ pointerEvents: heroVisible ? 'auto' : 'none' }}
-          initial={{ opacity: 0, y: 14 }}
-          animate={heroVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: -55 }}
-          transition={{ duration: 0.85, ease: [0.25, 0.1, 0.25, 1] }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm mb-6"
+        <div className="max-w-7xl mx-auto px-6 relative">
+          <motion.div 
+            className="text-center mb-16"
+            initial={{ height: 'auto', opacity: 1, marginBottom: '4rem' }}
+            animate={{ 
+              height: showHeroText ? 'auto' : 0, 
+              opacity: showHeroText ? 1 : 0,
+              marginBottom: showHeroText ? '4rem' : 0,
+              overflow: 'hidden'
+            }}
+            transition={{ duration: 0.8, ease: "easeInOut" }}
           >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E64415]"></span>
-            </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Jaunums: AI meklēšana ir klāt</span>
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm mb-6"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E64415]"></span>
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Jaunums: AI meklēšana ir klāt</span>
+            </motion.div>
+
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-heading font-extrabold text-slate-900 mb-6 tracking-tight leading-[1.1]">
+              Atrodi visu nepieciešamo.<br />
+              <span className="bg-gradient-to-r from-[#E64415] to-[#FF8C00] bg-clip-text text-transparent">
+                Baltijas lielākais
+              </span> sludinājumu portāls.
+            </h1>
+            <p className="text-slate-500 font-medium text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
+              {t('home.hero.subtitle')}
+            </p>
           </motion.div>
 
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-heading font-extrabold text-slate-900 mb-6 tracking-tight leading-[1.1]">
-            Atrodi visu nepieciešamo.<br />
-            <span className="bg-gradient-to-r from-[#E64415] to-[#FF8C00] bg-clip-text text-transparent">
-              Baltijas lielākais
-            </span> sludinājumu portāls.
-          </h1>
-          <p className="text-slate-500 font-medium text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
-            {t('home.hero.subtitle')}
-          </p>
-        </motion.div>
-
-        <div className="max-w-7xl mx-auto px-6 w-full">
-          <div className="bg-white rounded-[40px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col md:flex-row max-h-[600px]">
-            {/* Sidebar Categories - Infinite Circular Scroll */}
+          <motion.div 
+            layout
+            className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-100 overflow-hidden flex flex-col md:flex-row h-auto md:h-[560px]"
+          >
+            {/* Left Sidebar - Main Categories (Carousel) */}
             <div 
               ref={scrollRef}
               onScroll={handleSidebarScroll}
-              className="w-full md:w-32 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col items-center justify-start py-4 px-2 gap-0 overflow-x-auto md:overflow-y-auto scrollbar-hide snap-y snap-mandatory h-[400px] md:h-auto relative"
+              className="w-full md:w-28 bg-[#f8fafc] border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col overflow-x-auto md:overflow-y-auto scrollbar-hide shrink-0 snap-x snap-mandatory md:snap-y relative"
+              style={{ overflowBehavior: 'contain' } as any}
             >
-              {tripledCategories.map((cat, idx) => {
-                const itemHeight = 80;
-                const itemCenter = (idx * itemHeight) + (itemHeight / 2);
-                const containerCenter = scrollPos + (containerHeight / 2);
-                const distanceFromCenter = Math.abs(itemCenter - containerCenter);
+              <div className="hidden md:block shrink-0 h-[240px] w-full"></div>
+              <div className="block md:hidden shrink-0 w-[calc(50vw-48px)] h-full"></div>
+
+              {extendedCategories.map((cat, rawIndex) => {
+                const distance = Math.abs(rawIndex - scrollIndex);
                 
-                // Calculate opacity based on distance from center
-                // 1.0 for center, 0.6 for neighbors, 0.3 for next neighbors
-                let opacity = 0.2;
+                // Opacity fading for 7 visible items (center + 3 above + 3 below)
+                const opacity = distance === 0 ? 1 : distance === 1 ? 0.6 : distance === 2 ? 0.3 : distance === 3 ? 0.1 : 0;
+                const scale = distance === 0 ? 1 : distance === 1 ? 0.9 : distance === 2 ? 0.8 : 0.7;
 
-                if (distanceFromCenter <= itemHeight * 0.5) {
-                  opacity = 1;
-                } else if (distanceFromCenter <= itemHeight * 1.5) {
-                  opacity = 0.6;
-                } else if (distanceFromCenter <= itemHeight * 2.5) {
-                  opacity = 0.3;
-                }
-
-                const isActive = activeCategoryId === cat.id && distanceFromCenter <= itemHeight * 0.5;
+                // For universal search mode, the central item (distance === 0) looks active, 
+                // but we check activeCategoryId for actual category specific states.
+                const isCenterVisuallyActive = distance === 0 && !activeCategoryId;
+                const isCategoryActive = activeCategoryId === cat.id && distance === 0;
+                const isVisuallyBold = isCenterVisuallyActive || isCategoryActive;
 
                 return (
-                  <motion.button 
-                    key={`${cat.id}-${idx}`} 
-                    animate={{ opacity }}
-                    transition={{ type: 'spring', stiffness: 200, damping: 25 }}
+                  <button
+                    key={`${cat.id}-${rawIndex}`}
                     onClick={() => {
+                      setActiveCategoryId(cat.id);
+                      setActiveSubcategoryName('');
+                      updateFilter('subcategory', '');
+                      
                       if (scrollRef.current) {
-                        const currentContainerHeight = scrollRef.current.clientHeight;
-                        const targetScroll = (idx * itemHeight) - (currentContainerHeight / 2) + (itemHeight / 2);
-                        scrollRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+                        const isMobile = window.innerWidth < 768;
+                        const size = isMobile ? 96 : 80;
+                        if (isMobile) {
+                          scrollRef.current.scrollTo({ left: rawIndex * size, behavior: 'smooth' });
+                        } else {
+                          scrollRef.current.scrollTo({ top: rawIndex * size, behavior: 'smooth' });
+                        }
                       }
                     }}
                     className={cn(
-                      "px-2 py-2 rounded-2xl transition-all group shrink-0 relative flex flex-col items-center justify-center gap-0.5 w-full h-20 snap-center",
-                      isActive ? "bg-white shadow-md z-10" : "z-0"
+                      "relative flex flex-col items-center justify-center shrink-0 transition-all duration-300 snap-center snap-always w-24 h-24 md:w-full md:h-20",
+                      isCategoryActive ? "bg-white border-y border-slate-200 shadow-sm z-10" : ""
                     )}
+                    style={{ opacity, transform: `scale(${scale})` }}
                     title={cat.name}
                   >
-                    <div className="flex-none w-8 h-8 flex items-center justify-center">
-                      <cat.icon className={cn(
-                        "w-full h-full transition-all",
-                        isActive ? "text-[#E64415]" : "text-slate-400"
-                      )} />
-                    </div>
+                    {isCategoryActive && (
+                      <div className="absolute bottom-0 md:bottom-auto md:left-0 md:top-0 w-full md:w-1 h-1 md:h-full bg-[#E64415]" />
+                    )}
+                    <cat.icon className={cn(
+                      "w-6 h-6 mb-1 transition-colors",
+                      isVisuallyBold ? "text-[#E64415]" : "text-slate-500"
+                    )} />
                     <span className={cn(
-                      "text-[8px] font-bold uppercase tracking-tight text-center leading-tight w-full px-0.5 line-clamp-2",
-                      isActive ? "text-[#E64415]" : "text-slate-400"
+                      "text-[9px] font-bold uppercase tracking-tight text-center leading-tight px-1",
+                      isVisuallyBold ? "text-[#E64415]" : "text-slate-500"
                     )}>
                       {cat.name}
                     </span>
-                  </motion.button>
+                  </button>
                 );
               })}
+
+              <div className="hidden md:block shrink-0 h-[240px] w-full"></div>
+              <div className="block md:hidden shrink-0 w-[calc(50vw-48px)] h-full"></div>
             </div>
 
-            {/* Main Search Area - Compact */}
-            <div className="flex-grow p-6 md:p-10 flex flex-col">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
+            {/* Right Area - Dynamic Content */}
+            <div className="flex-grow flex flex-col bg-white overflow-y-auto w-full">
+              {!activeCategoryId ? (
+                // State 0: No main category selected -> Show Universal Search
+                <div className="p-6 md:p-12 flex flex-col items-center justify-center h-full min-h-[500px]">
+                  <div className="max-w-2xl w-full text-center mb-10 -mt-8">
+                    <h2 className="text-3xl md:text-[2.75rem] font-black tracking-tight mb-4 text-slate-800 leading-tight">
+                      Meklē gudrāk. Atrodi ātrāk.
+                    </h2>
+                    <p className="text-slate-500 text-lg">
+                      Vienkārši ieraksti, ko meklē, un mēs parādīsim atbilstošākos piedāvājumus visās kategorijās.
+                    </p>
+                  </div>
+                  
+                  <div className="w-full max-w-3xl flex flex-col items-center">
+                    <form 
+                      onSubmit={handleSearch}
+                      className="w-full relative flex items-center bg-white rounded-full border-2 border-slate-100 p-2 focus-within:border-[#E64415] focus-within:shadow-[0_8px_30px_rgb(230,68,21,0.1)] transition-all shadow-md"
+                    >
+                      <div className="bg-[#E64415] w-12 h-12 rounded-full flex items-center justify-center shrink-0 ml-1">
+                        <Search className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="flex-grow flex items-center px-4">
+                        <Input 
+                          type="text"
+                          placeholder={currentPlaceholder}
+                          className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base md:text-lg h-12 md:h-14 bg-transparent font-medium text-slate-700 placeholder:text-slate-400 italic"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                      </div>
+                      <Button 
+                        type="submit"
+                        className="bg-[#E64415] hover:bg-[#d13d13] text-white rounded-full px-6 md:px-8 h-12 font-bold text-sm md:text-base transition-transform hover:scale-105 shrink-0 mr-1"
+                      >
+                        Atrast piedāvājumus
+                      </Button>
+                    </form>
+
+                    <div className="mt-8 flex items-center justify-center gap-4 w-full max-w-lg px-4 hidden sm:flex">
+                      <div className="h-[2px] bg-slate-100 flex-grow"></div>
+                      <div className="text-slate-500 font-semibold text-sm tracking-wide">
+                        Auto <span className="text-slate-300 mx-1">•</span> Īpašumi <span className="text-slate-300 mx-1">•</span> Elektronika <span className="text-slate-300 mx-1">•</span> Darbs <span className="text-slate-300 mx-1">•</span> Mājai
+                      </div>
+                      <div className="h-[2px] bg-slate-100 flex-grow"></div>
+                    </div>
+                  </div>
+                </div>
+              ) : !activeSubcategoryName ? (
+                // State 1: Main category selected, no subcategory -> Show AI Search + Subcategory Grid
+                <div className="p-6 md:p-8 flex flex-col h-full">
+                  {/* AI Search Bar - Category Specific */}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
+                        {activeCategory.name}
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('home.hero.ai_search')}</span>
+                        <Badge className="bg-[#E64415] text-white hover:bg-[#E64415] border-none font-bold text-[9px] px-2 py-0.5 italic">POWERED</Badge>
+                      </div>
+                    </div>
+                    <form 
+                      onSubmit={handleSearch}
+                      className="relative flex items-center bg-slate-50 rounded-2xl border-2 border-slate-100 p-1.5 focus-within:border-[#E64415] focus-within:bg-white transition-all shadow-sm"
+                    >
+                      <div className="flex-grow flex items-center px-4">
+                        <Sparkles className="w-5 h-5 text-[#E64415] mr-3 shrink-0 animate-pulse" />
+                        <Input 
+                          type="text"
+                          placeholder={currentPlaceholder}
+                          className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-sm md:text-base h-10 md:h-12 bg-transparent font-semibold text-slate-900 placeholder:text-slate-400 italic"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Subcategories Grid */}
+                  {subcategories.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-1">
+                      {subcategories.map((subcat) => (
+                        <button
+                          key={subcat.name}
+                          onClick={() => {
+                            setActiveSubcategoryName(subcat.name);
+                            updateFilter('subcategory', subcat.name);
+                          }}
+                          className="flex flex-col items-center justify-center p-4 transition-all text-center gap-2.5 border border-slate-100 rounded-2xl hover:border-[#E64415] hover:bg-orange-50/30 group bg-white shadow-sm hover:shadow-md h-[90px] md:h-[100px]"
+                        >
+                          <subcat.icon className="w-7 h-7 md:w-8 md:h-8 text-[#E64415] group-hover:scale-110 transition-transform" />
+                          <span className="text-xs font-bold text-slate-700 leading-tight">
+                            {subcat.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // State 2: Subcategory selected -> Show Specific Filters
+                <div className="p-6 md:p-8 flex flex-col h-full">
+                  <div className="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => {
+                          setActiveSubcategoryName('');
+                          updateFilter('subcategory', '');
+                        }}
+                        className="p-2 hover:bg-slate-100 rounded-full transition-colors flex items-center justify-center"
+                      >
+                        <ChevronDown className="w-6 h-6 text-slate-500 rotate-90" />
+                      </button>
+                      <div className="flex items-center gap-4">
+                        {(() => {
+                          const subcat = subcategories.find(s => s.name === activeSubcategoryName);
+                          const Icon = subcat?.icon || activeCategory.icon;
+                          return (
+                            <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center border border-orange-100">
+                              <Icon className="w-8 h-8 text-[#E64415]" />
+                            </div>
+                          );
+                        })()}
+                        <div>
+                          <h3 className="text-3xl font-black text-slate-900 tracking-tight">{activeSubcategoryName}</h3>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Category Filters - Compact */}
                   <motion.div 
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    key={activeCategoryId}
-                    className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center"
+                    key={activeSubcategoryName}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex-grow"
                   >
-                    <activeCategory.icon className="w-6 h-6 text-[#E64415]" />
+                    {renderCategoryFilters()}
+                    
+                    {activeCategoryId === 'auto' && (
+                      <div className="mt-6 flex items-center gap-2">
+                        <input type="checkbox" id="electric" className="w-4 h-4 accent-[#E64415] rounded" />
+                        <label htmlFor="electric" className="text-sm font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer">
+                          Tikai elektroauto <Zap className="w-4 h-4 text-[#E64415]" />
+                        </label>
+                      </div>
+                    )}
                   </motion.div>
-                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{activeCategory.name}</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('home.hero.ai_search')}</span>
-                  <Badge className="bg-[#E64415] text-white hover:bg-[#E64415] border-none font-bold text-[9px] px-2 py-0.5 italic">POWERED</Badge>
-                </div>
-              </div>
 
-              {/* AI Search Bar - Core Engine */}
-              <div className="mb-8">
-                <form 
-                  onSubmit={handleSearch}
-                  className="relative flex items-center bg-slate-50 rounded-2xl border-2 border-slate-100 p-1.5 focus-within:border-[#E64415] focus-within:bg-white transition-all shadow-sm"
-                >
-                  <div className="flex-grow flex items-center px-4">
-                    <Sparkles className="w-5 h-5 text-[#E64415] mr-3 shrink-0 animate-pulse" />
-                    <Input 
-                      type="text"
-                      placeholder={typedPlaceholder}
-                      className="w-full border-0 focus-visible:ring-0 shadow-none px-0 text-base h-12 bg-transparent font-semibold text-slate-900 placeholder:text-slate-400 italic"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                  {/* Action Buttons - Compact */}
+                  <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={resetFilters}
+                        className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                        Notīrīt
+                      </button>
+                      <button className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors">
+                        <MoreHorizontal className="w-4 h-4" />
+                        Vairāk filtru
+                      </button>
+                    </div>
+                    
+                    <Button 
+                      onClick={handleSearch}
+                      className="bg-[#E64415] hover:bg-[#d13d13] text-white font-black text-base px-8 py-6 rounded-2xl shadow-lg shadow-orange-200 flex items-center gap-2 w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <Search className="w-5 h-5" />
+                      ATRAST PIEDĀVĀJUMUS
+                    </Button>
                   </div>
-                </form>
-              </div>
-
-              {/* Category Filters - Compact */}
-              <motion.div 
-                key={activeCategoryId}
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="flex-grow"
-              >
-                {renderCategoryFilters()}
-                
-                {activeCategoryId === 'auto' && (
-                  <div className="mt-4 flex items-center gap-2">
-                    <input type="checkbox" id="electric" className="w-4 h-4 accent-[#E64415] rounded" />
-                    <label htmlFor="electric" className="text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer">
-                      Tikai elektroauto <Zap className="w-3.5 h-3.5 text-[#E64415]" />
-                    </label>
-                  </div>
-                )}
-              </motion.div>
-
-              {/* Action Buttons - Compact */}
-              <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <button 
-                    onClick={resetFilters}
-                    className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors"
-                  >
-                    <Settings className="w-3.5 h-3.5" />
-                    Notīrīt
-                  </button>
-                  <button className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">
-                    <MoreHorizontal className="w-3.5 h-3.5" />
-                    Vairāk
-                  </button>
                 </div>
-                
-                <Button 
-                  onClick={handleSearch}
-                  className="bg-[#E64415] hover:bg-[#d13d13] text-white font-black text-base px-8 py-6 rounded-2xl shadow-lg shadow-orange-200 flex items-center gap-2 w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  <Search className="w-5 h-5" />
-                  ATRAST PIEDĀVĀJUMUS
-                </Button>
-              </div>
+              )}
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
