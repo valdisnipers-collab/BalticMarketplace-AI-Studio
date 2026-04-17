@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,61 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import CarListingWizard from '../components/CarListingWizard';
+import { Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, Shirt, Baby, Trophy, PawPrint, Wrench, Hammer, ShoppingBasket } from 'lucide-react';
+import {
+  CarIcon,
+  MotorcycleIcon,
+  EBikeIcon,
+  CamperIcon,
+  TruckLargeIcon,
+  TrailerBoxIcon,
+  VanIcon,
+  SemiTractorIcon,
+  SemiTrailerIcon,
+  BusIcon,
+  TractorIcon,
+  ExcavatorIcon,
+  ForkliftIcon,
+  BoatIcon,
+  PartsIcon,
+} from '../components/icons/CategoryIcons';
+import type { CategoryIconProps } from '../components/icons/CategoryIcons';
+
+const TRANSPORT_SUBCAT_ICONS: Record<string, React.ComponentType<CategoryIconProps>> = {
+  'Vieglie auto':                         CarIcon,
+  'Motocikli un kvadricikli':             MotorcycleIcon,
+  'Velosipēdi un skrejriteņi':            EBikeIcon,
+  'Kempeļi un dzīvojamās mašīnas':        CamperIcon,
+  'Kravas auto un tehnika':               TruckLargeIcon,
+  'Puspiekabes un piekabes':              TrailerBoxIcon,
+  'Mikroautobusi un vani':                VanIcon,
+  'Vilcēji (Toņas)':                      SemiTractorIcon,
+  'Autobusi':                             BusIcon,
+  'Traktori un lauksaimniecības tehnika': TractorIcon,
+  'Ekskavatori un darba tehnika':         ExcavatorIcon,
+  'Iekrāvēji un loģistikas tehnika':      ForkliftIcon,
+  'Ūdens transports':                     BoatIcon,
+  'Rezerves daļas un piederumi':          PartsIcon,
+};
+
+const CAR_SUBCATEGORY = 'Vieglie auto';
+const CAR_CATEGORY = 'Transports';
+
+const CATEGORY_ICONS: Record<string, React.ElementType> = {
+  'Transports':                    Car,
+  'Nekustamais īpašums':           HomeIcon,
+  'Elektronika':                   Smartphone,
+  'Darbs un pakalpojumi':          Briefcase,
+  'Pakalpojumi':                   Hammer,
+  'Mājai un dārzam':               Sofa,
+  'Mode un stils':                 Shirt,
+  'Bērniem':                       Baby,
+  'Sports un hobiji':              Trophy,
+  'Dzīvnieki':                     PawPrint,
+  'Pārtika un lauksaimniecība':    ShoppingBasket,
+  'Cits':                          Wrench,
+};
 
 export default function AddListing() {
   const { t } = useI18n();
@@ -111,6 +166,68 @@ export default function AddListing() {
     });
     setAttributes(defaultAttrs);
   }, [subcategory, category]);
+
+  const handleCarSubmit = async (carData: any) => {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/listings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          title: carData.title,
+          description: carData.description,
+          price: parseFloat(carData.price),
+          location: carData.location,
+          category: CAR_CATEGORY,
+          image_url: JSON.stringify(carData.imageUrls),
+          attributes: {
+            subcategory: CAR_SUBCATEGORY,
+            brand: carData.make,
+            model: carData.model,
+            year: carData.year,
+            version: carData.version,
+            bodyType: carData.bodyType,
+            fuelType: carData.fuelType,
+            engineCc: carData.engineCc,
+            powerKw: carData.powerKw,
+            powerPs: carData.powerPs,
+            transmission: carData.transmission,
+            drive: carData.drive,
+            mileage: carData.mileage,
+            doors: carData.doors,
+            seats: carData.seats,
+            condition: carData.condition,
+            firstRegistration: carData.firstRegistration,
+            technicalInspection: carData.technicalInspection,
+            previousOwners: carData.previousOwners,
+            serviceBook: carData.serviceBook,
+            accidentFree: carData.accidentFree,
+            color: carData.color,
+            colorMetallic: carData.colorMetallic,
+            interiorColor: carData.interiorColor,
+            interiorMaterial: carData.interiorMaterial,
+            vin: carData.vin,
+            equipment: carData.equipment,
+            saleType: carData.saleType,
+            priceNegotiable: carData.priceNegotiable,
+            vatDeductible: carData.vatDeductible,
+            ...(carData.saleType === 'auction' && carData.auctionEndDate ? { auctionEndDate: carData.auctionEndDate } : {}),
+            ...(carData.saleType === 'auction' && carData.reservePrice ? { reservePrice: parseFloat(carData.reservePrice) } : {}),
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Neizdevās pievienot sludinājumu');
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message);
+      setIsSubmitting(false);
+    }
+  };
+
+  const isCarListing = category === CAR_CATEGORY && subcategory === CAR_SUBCATEGORY;
 
   if (loading || !user) {
     return (
@@ -261,52 +378,54 @@ export default function AddListing() {
   const subcategories = Object.keys(CATEGORY_SCHEMAS[category]?.subcategories || {});
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-16 px-6 lg:px-8 selection:bg-primary-100 selection:text-primary-900">
+    <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-10 px-4 lg:px-8">
       <div className="max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="mb-16 text-center">
-          <Badge variant="secondary" className="mb-6 uppercase tracking-wider text-[10px] px-4 py-2">
-            <PlusCircle className="w-3 h-3 mr-2" />
-            {t('add.title')}
-          </Badge>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 tracking-tight mb-4">
-            List your <span className="text-primary-600">Masterpiece</span>.
-          </h1>
-          <p className="text-slate-500 font-medium max-w-lg mx-auto">
-            Our curated marketplace ensures your items reach the right audience. Follow the steps to get started.
-          </p>
-        </div>
 
-        {/* Progress Bar */}
-        <div className="mb-16">
-          <div className="flex items-center justify-between relative">
-            <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-full h-0.5 bg-slate-100 rounded-full z-0"></div>
-            <div 
-              className="absolute left-0 top-1/2 transform -translate-y-1/2 h-0.5 bg-primary-600 rounded-full z-0 transition-all duration-700 ease-in-out"
-              style={{ width: `${((step - 1) / 3) * 100}%` }}
-            ></div>
-            
-            {[1, 2, 3, 4].map((i) => (
-              <div 
-                key={i} 
-                className={`relative z-10 flex items-center justify-center w-12 h-12 rounded-2xl border-2 font-bold transition-all duration-500 shadow-xl
-                  ${step >= i ? 'bg-primary-900 border-primary-900 text-white scale-110' : 'bg-white border-slate-100 text-slate-300'}
-                `}
-              >
-                {step > i ? <CheckCircle2 className="w-6 h-6 text-amber-400" /> : i}
-              </div>
-            ))}
+        {/* Header — redzams tikai soļos 1–2 */}
+        {step <= 2 && (
+          <div className="mb-8 text-center">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+              Pievienot <span className="text-[#E64415]">sludinājumu</span>
+            </h1>
+            <p className="text-sm text-slate-400 mt-2">Izvēlieties kategoriju un pievienojiet informāciju</p>
           </div>
-          <div className="flex justify-between mt-6 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            <span className={step >= 1 ? 'text-primary-900' : ''}>{t('add.step1')}</span>
-            <span className={step >= 2 ? 'text-primary-900' : ''}>{t('add.step2')}</span>
-            <span className={step >= 3 ? 'text-primary-900' : ''}>{t('add.step3')}</span>
-            <span className={step >= 4 ? 'text-primary-900' : ''}>{t('add.step4')}</span>
-          </div>
-        </div>
+        )}
 
-        <div className="bg-white rounded-3xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] border border-slate-100 overflow-hidden">
-          <div className="p-8 md:p-12">
+        {/* 2-soļu progress — tikai soļiem 1–2, pirms auto formas */}
+        {step <= 2 && (
+          <div className="mb-8">
+            <div className="flex items-center gap-3">
+              {[
+                { n: 1, label: 'Kategorija' },
+                { n: 2, label: 'Apakškategorija' },
+              ].map(({ n, label }, idx) => (
+                <React.Fragment key={n}>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-all
+                      ${step >= n ? 'bg-[#E64415] text-white' : 'bg-slate-100 text-slate-400'}`}>
+                      {step > n ? <CheckCircle2 className="w-4 h-4" /> : n}
+                    </div>
+                    <span className={`text-xs font-semibold hidden sm:block ${step >= n ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
+                  </div>
+                  {idx < 1 && <div className="flex-1 h-px bg-slate-200" />}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Car listing wizard — activates after step 2 when Vieglie auto selected */}
+        {isCarListing && step > 2 && (
+          <div className="bg-white rounded-3xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] border border-slate-100 overflow-hidden">
+            <div className="p-8 md:p-12">
+              <CarListingWizard onSubmit={handleCarSubmit} isSubmitting={isSubmitting} error={error} />
+            </div>
+          </div>
+        )}
+
+        {(!isCarListing || step <= 2) && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="p-6 md:p-8">
             {error && (
               <motion.div 
                 initial={{ opacity: 0, y: -10 }}
@@ -321,60 +440,139 @@ export default function AddListing() {
             <form onSubmit={handleSubmit}>
               <AnimatePresence mode="wait">
                 {step === 1 && (
-                  <motion.div 
+                  <motion.div
                     key="step1"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
-                    className="space-y-6"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="space-y-4"
                   >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {CATEGORY_NAMES.map(cat => (
-                        <div 
-                          key={cat}
-                          onClick={() => setCategory(cat)}
-                          className={`group p-6 rounded-2xl border-2 cursor-pointer transition-all duration-300
-                            ${category === cat ? 'border-primary-900 bg-primary-50 shadow-inner' : 'border-slate-50 hover:border-primary-200 hover:bg-slate-50'}
-                          `}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className={`font-bold uppercase tracking-tight ${category === cat ? 'text-primary-900' : 'text-slate-600'}`}>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Izvēlieties kategoriju</p>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1">
+                      {CATEGORY_NAMES.map(cat => {
+                        const Icon = CATEGORY_ICONS[cat];
+                        const selected = category === cat;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setCategory(cat)}
+                            className={`relative flex flex-col items-center justify-center gap-1.5 py-4 px-2 rounded-xl transition-all duration-200 select-none
+                              ${selected ? 'bg-white shadow-sm' : 'hover:bg-slate-50'}`}
+                          >
+                            {Icon && (
+                              <Icon className={`w-6 h-6 mb-0.5 transition-colors duration-200
+                                ${selected ? 'text-[#E64415]' : 'text-slate-500'}`}
+                              />
+                            )}
+                            <span className={`text-[9px] font-bold uppercase tracking-tight text-center leading-tight px-1 transition-colors duration-200
+                              ${selected ? 'text-[#E64415]' : 'text-slate-500'}`}>
                               {cat}
                             </span>
-                            {category === cat && <CheckCircle2 className="w-5 h-5 text-primary-600" />}
-                          </div>
-                        </div>
-                      ))}
+                          </button>
+                        );
+                      })}
                     </div>
                   </motion.div>
                 )}
 
                 {step === 2 && (
-                  <motion.div 
+                  <motion.div
                     key="step2"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
-                    className="space-y-6"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="space-y-4"
                   >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {subcategories.map(subcat => (
-                        <div 
-                          key={subcat}
-                          onClick={() => setSubcategory(subcat)}
-                          className={`group p-6 rounded-2xl border-2 cursor-pointer transition-all duration-300
-                            ${subcategory === subcat ? 'border-primary-900 bg-primary-50 shadow-inner' : 'border-slate-50 hover:border-primary-200 hover:bg-slate-50'}
-                          `}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className={`font-bold uppercase tracking-tight ${subcategory === subcat ? 'text-primary-900' : 'text-slate-600'}`}>
-                              {subcat}
-                            </span>
-                            {subcategory === subcat && <CheckCircle2 className="w-5 h-5 text-primary-600" />}
-                          </div>
-                        </div>
-                      ))}
+                    {/* Breadcrumb */}
+                    <div className="flex items-center gap-2">
+                      <button onClick={prevStep} className="text-xs font-bold text-slate-400 hover:text-[#E64415] transition-colors">
+                        {category}
+                      </button>
+                      <ChevronRight className="w-3 h-3 text-slate-300" />
+                      <span className="text-xs font-bold text-[#E64415]">Apakškategorija</span>
                     </div>
+                    {category === CAR_CATEGORY ? (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1">
+                        {subcategories.map(subcat => {
+                          const selected = subcategory === subcat;
+                          const SubIcon = TRANSPORT_SUBCAT_ICONS[subcat];
+                          return (
+                            <button
+                              key={subcat}
+                              type="button"
+                              onClick={() => setSubcategory(subcat)}
+                              className={`relative flex flex-col items-center justify-center gap-1.5 py-4 px-2 rounded-xl transition-all duration-200 select-none
+                                ${selected ? 'bg-white shadow-sm' : 'hover:bg-slate-50'}`}
+                            >
+                              {SubIcon ? (
+                                <SubIcon className={`w-8 h-8 mb-0.5 transition-colors duration-200 ${selected ? 'text-[#E64415]' : 'text-slate-500'}`} />
+                              ) : (
+                                <CarIcon className={`w-8 h-8 mb-0.5 transition-colors duration-200 ${selected ? 'text-[#E64415]' : 'text-slate-500'}`} />
+                              )}
+                              <span className={`text-[9px] font-bold uppercase tracking-tight text-center leading-tight px-1 transition-colors duration-200
+                                ${selected ? 'text-[#E64415]' : 'text-slate-500'}`}>
+                                {subcat}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      (() => {
+                        const schema = CATEGORY_SCHEMAS[category]?.subcategories || {};
+                        const hasGroups = subcategories.some(s => schema[s]?.group);
+                        if (hasGroups) {
+                          const grouped: Record<string, string[]> = {};
+                          subcategories.forEach(s => {
+                            const g = schema[s]?.group || 'Cits';
+                            if (!grouped[g]) grouped[g] = [];
+                            grouped[g].push(s);
+                          });
+                          return (
+                            <div className="space-y-5">
+                              {Object.entries(grouped).map(([group, items]) => (
+                                <div key={group}>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{group}</p>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {items.map(subcat => {
+                                      const selected = subcategory === subcat;
+                                      return (
+                                        <div key={subcat} onClick={() => setSubcategory(subcat)}
+                                          className={`flex items-center justify-between gap-2 px-3 py-3 rounded-xl border-2 cursor-pointer transition-all duration-200 select-none
+                                            ${selected ? 'border-[#E64415] bg-[#E64415]/5' : 'border-slate-100 bg-white hover:border-[#E64415]/30 hover:bg-slate-50'}`}>
+                                          <span className={`text-sm font-semibold leading-tight ${selected ? 'text-[#E64415]' : 'text-slate-700'}`}>
+                                            {schema[subcat]?.name ?? subcat}
+                                          </span>
+                                          {selected && <CheckCircle2 className="w-4 h-4 text-[#E64415] shrink-0" />}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {subcategories.map(subcat => {
+                              const selected = subcategory === subcat;
+                              return (
+                                <div key={subcat} onClick={() => setSubcategory(subcat)}
+                                  className={`flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 select-none
+                                    ${selected ? 'border-[#E64415] bg-[#E64415]/5' : 'border-slate-100 bg-white hover:border-[#E64415]/30 hover:bg-slate-50'}`}>
+                                  <span className={`text-sm font-semibold leading-tight ${selected ? 'text-[#E64415]' : 'text-slate-700'}`}>
+                                    {subcat}
+                                  </span>
+                                  {selected && <CheckCircle2 className="w-4 h-4 text-[#E64415] shrink-0" />}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()
+                    )}
                   </motion.div>
                 )}
 
@@ -701,29 +899,29 @@ export default function AddListing() {
                 )}
               </AnimatePresence>
 
-              <div className="pt-12 mt-12 border-t border-slate-100 flex justify-between gap-6">
+              <div className="pt-6 mt-6 border-t border-slate-100 flex justify-between gap-4">
                 {step > 1 ? (
                   <Button
                     type="button"
                     onClick={prevStep}
                     variant="outline"
-                    className="flex-1 px-8 py-6 text-xs font-bold uppercase tracking-widest rounded-2xl"
+                    className="px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-xl border-slate-200"
                   >
-                    <ArrowLeft className="w-4 h-4 mr-3" />
+                    <ArrowLeft className="w-4 h-4 mr-2" />
                     {t('add.back')}
                   </Button>
                 ) : (
-                  <div className="flex-1"></div>
+                  <div />
                 )}
 
                 {step < 4 ? (
                   <Button
                     type="button"
                     onClick={nextStep}
-                    className="flex-1 px-8 py-6 text-xs font-bold uppercase tracking-widest rounded-2xl shadow-xl shadow-primary-900/20"
+                    className="flex-1 max-w-xs ml-auto px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-xl bg-[#E64415] hover:bg-[#c93a10] shadow-lg shadow-[#E64415]/20"
                   >
                     {t('add.next')}
-                    <ArrowRight className="w-4 h-4 ml-3" />
+                    <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 ) : (
                   <Button
@@ -745,7 +943,8 @@ export default function AddListing() {
             </form>
           </div>
         </div>
-        
+        )}
+
         <div className="mt-12 text-center">
           <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
             Nordic Horizon Curator System v2.6
