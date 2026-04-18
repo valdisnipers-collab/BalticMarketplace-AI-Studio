@@ -16,6 +16,39 @@ import http from "http";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-dev-key-change-in-production";
 
+const BADGE_DEFINITIONS: Record<string, { label: string; description: string; icon: string; color: string }> = {
+  verified_seller:  { label: 'Verificēts',        description: 'Smart-ID identitāte apstiprināta',  icon: '🛡️', color: 'blue' },
+  trusted_seller:   { label: 'Uzticams pārdevējs', description: '10+ pārdošanas, vērtējums ≥ 4.5',   icon: '⭐', color: 'amber' },
+  fast_responder:   { label: 'Ātrs atbildētājs',   description: 'Vidēji atbild < 2 stundās',          icon: '⚡', color: 'yellow' },
+  top_seller_2026:  { label: 'Top pārdevējs',      description: '50+ veiksmīgi darījumi',              icon: '🏆', color: 'gold' },
+  eco_warrior:      { label: 'Eko pārdevējs',       description: '20+ bezmaksas sludinājumi',           icon: '🌱', color: 'green' },
+  auction_master:   { label: 'Izsoles meistars',    description: '10+ veiksmīgas izsoles',              icon: '🔨', color: 'purple' },
+};
+
+function awardBadgeIfEarned(userId: number, badgeId: string) {
+  try {
+    db.prepare('INSERT OR IGNORE INTO user_achievements (user_id, badge_id) VALUES (?, ?)').run(userId, badgeId);
+  } catch (e) {}
+}
+
+function checkAndAwardBadges(userId: number) {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+  if (!user) return;
+
+  if (user.is_verified) awardBadgeIfEarned(userId, 'verified_seller');
+
+  const orderCount = (db.prepare('SELECT COUNT(*) as c FROM orders WHERE seller_id = ? AND status = "completed"').get(userId) as any)?.c ?? 0;
+  const avgRating = (db.prepare('SELECT AVG(rating) as r FROM reviews WHERE seller_id = ?').get(userId) as any)?.r ?? 0;
+  if (orderCount >= 10 && avgRating >= 4.5) awardBadgeIfEarned(userId, 'trusted_seller');
+  if (orderCount >= 50) awardBadgeIfEarned(userId, 'top_seller_2026');
+
+  const giveawayCount = (db.prepare('SELECT COUNT(*) as c FROM listings WHERE user_id = ? AND listing_type = "giveaway" AND status = "sold"').get(userId) as any)?.c ?? 0;
+  if (giveawayCount >= 20) awardBadgeIfEarned(userId, 'eco_warrior');
+
+  const auctionCount = (db.prepare(`SELECT COUNT(*) as c FROM orders WHERE seller_id = ? AND status = "completed" AND listing_id IN (SELECT id FROM listings WHERE is_auction = 1)`).get(userId) as any)?.c ?? 0;
+  if (auctionCount >= 10) awardBadgeIfEarned(userId, 'auction_master');
+}
+
 let stripeClient: Stripe | null = null;
 function getStripe(): Stripe {
   if (!stripeClient) {
@@ -350,6 +383,7 @@ async function startServer() {
       }
 
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+      checkAndAwardBadges(user.id as number);
       res.json({ status: 'OK', token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone, user_type: user.user_type, role: user.role, points: user.points, early_access_until: user.early_access_until, company_name: user.company_name, company_reg_number: user.company_reg_number, company_vat: user.company_vat, is_verified: user.is_verified } });
     } catch (error) {
       console.error("Smart-ID register error:", error);
@@ -729,6 +763,7 @@ async function startServer() {
         amount: order.amount
       });
 
+      checkAndAwardBadges(order.seller_id);
       res.json({ message: 'Order confirmed and funds transferred' });
     } catch (error) {
       console.error("Error confirming order:", error);
@@ -1382,6 +1417,66 @@ async function startServer() {
     } catch (error) {
       console.error("Error generating listing from image:", error);
       res.status(500).json({ error: 'Server error generating listing' });
+    }
+  });
+
+  app.post("/api/ai/decode-vin", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
+      }
+
+      const { vin } = req.body;
+      if (!vin || vin.length !== 17) {
+        return res.status(400).json({ error: 'Nepareizs VIN numurs (jābūt 17 simboliem)' });
+      }
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+      const prompt = `You are an automotive expert. Decode this VIN number: ${vin}
+
+Return ONLY a valid JSON object with these fields:
+{
+  "make": "car brand",
+  "model": "car model",
+  "year": 2020,
+  "bodyType": "Sedans|Universāls|Apvidus (SUV)|Hečbeks|Kupeja|Minivens|Pikaps|Cits",
+  "engine": "e.g. 2.0 TDI",
+  "engineCc": 1968,
+  "powerKw": 110,
+  "fuelType": "Dīzelis|Benzīns|Elektriskais|Hibrīds (PHEV)|Hibrīds (HEV)|Gāze (LPG)|Gāze (CNG)",
+  "transmission": "Automāts|Manuāla|Robots (DSG/CVT)",
+  "drive": "Priekšas (FWD)|Aizmugures (RWD)|Pilnpiedziņa (4x4/AWD)",
+  "doors": 4,
+  "seats": 5,
+  "equipment": ["list of standard and common optional equipment for this specific model/trim"],
+  "confidence": "high|medium|low"
+}
+
+For equipment array, include all standard and typical optional features for this specific variant in Latvian. Use these exact names where applicable:
+Safety: "ABS", "ESP (stabilitātes kontrole)", "Priekšējais gaisa spilvens", "Sānu gaisa spilveni", "Galvas gaisa spilveni", "Joslu maiņas brīdinājums", "Akls punkts (BSD)", "Aizmugures satiksmes brīdinājums", "Avārijas bremzēšana (AEB)", "Adaptīvais kruīza kontrols", "Joslas turēšanas asistents", "Noguruma brīdinājums", "Naktsvīzija", "Imobilaizers", "Centrālā slēdzene"
+Comfort: "Gaisa kondicionēšana", "Klimata kontrole (1 zona)", "Klimata kontrole (2 zonas)", "Sēdekļu apsilde priekšā", "Sēdekļu apsilde aizmugurē", "Sēdekļu ventilācija", "Elektriski regulējami sēdekļi", "Masāžas sēdekļi", "Ādas sēdekļi", "Panorāmas jumts", "Elektrisks aizmugures bagāžnieks", "Bezkontakta atslēga (Keyless)", "Start/Stop sistēma", "Apkures apsilde (Webasto)", "Stūres apsilde", "Vējstikla apsilde", "Parkošanās sensori priekšā", "Parkošanās sensori aizmugurē", "Atpakaļgaitas kamera", "360° kamera", "Automātiskā stāvvieta", "Kruīza kontrols", "Adaptīvais kruīza kontrols", "Elektriski regulējami spoguļi", "Elektriski salocāmi spoguļi", "Augstuma regulēšana (pnevmatiskā)", "Pievares kontrole"
+Multimedia: "AM/FM Radio", "CD/DVD atskaņotājs", "Iebūvētā navigācija", "Apple CarPlay", "Android Auto", "Bluetooth", "Brīvroku komplekts", "USB ports", "Induktīvā uzlāde", "Heads-Up displejs (HUD)", "Premium skaļruņu sistēma", "Digitālais radio (DAB+)", "Wi-Fi hotspot", "Aizmugures izklaides sistēma"
+Exterior: "Leģēta riteņu diski", "17\" diski", "18\" diski", "19\"+ diski", "Panorāmas jumts", "Jumta stieņi", "Piekabes āķis", "LED priekšējie lukturi", "Matrix LED lukturi", "Adaptīvie lukturi", "Xenon lukturi", "Miglas lukturi", "Tonēti stikli", "Rezerves ritenis", "Riepu spiediena kontrole (TPMS)", "Ziemas riepu komplekts"
+
+Return ONLY valid JSON, no markdown.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+
+      let jsonText = response.text || "{}";
+      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+      const vinData = JSON.parse(jsonText);
+      res.json(vinData);
+    } catch (error) {
+      console.error("VIN decode error:", error);
+      res.status(500).json({ error: 'Neizdevās atšifrēt VIN numuru' });
     }
   });
 
@@ -2265,6 +2360,19 @@ async function startServer() {
   });
 
   // Admin API
+  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      (req as any).userId = decoded.userId;
+      next();
+    } catch {
+      res.status(401).json({ error: 'Invalid token' });
+    }
+  };
+
   const isAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
@@ -2468,6 +2576,70 @@ async function startServer() {
       res.json({ message: 'Dispute resolved successfully' });
     } catch (error) {
       console.error("Error resolving dispute:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Badges Endpoints
+  app.get('/api/users/:id/badges', (req, res) => {
+    try {
+      const badges = db.prepare('SELECT badge_id, earned_at FROM user_achievements WHERE user_id = ? ORDER BY earned_at DESC').all(req.params.id) as any[];
+      res.json(badges.map(b => ({ ...b, ...(BADGE_DEFINITIONS[b.badge_id] || {}) })));
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // B2B Stores Endpoints
+  app.get('/api/stores/my', requireAuth, (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const store = db.prepare('SELECT * FROM stores WHERE user_id = ?').get(userId);
+      res.json(store || null);
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get('/api/stores/:slug', (req, res) => {
+    try {
+      const store = db.prepare(`
+        SELECT s.*, u.name, u.company_name, u.company_reg_number, u.company_vat,
+               (SELECT AVG(r.rating) FROM reviews r WHERE r.seller_id = u.id) as avg_rating,
+               (SELECT COUNT(*) FROM reviews r WHERE r.seller_id = u.id) as review_count,
+               (SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id AND l.status = 'active') as active_listings_count
+        FROM stores s JOIN users u ON s.user_id = u.id
+        WHERE s.slug = ?
+      `).get(req.params.slug) as any;
+      if (!store) return res.status(404).json({ error: 'Veikals nav atrasts' });
+      const listings = db.prepare(`SELECT * FROM listings WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 50`).all(store.user_id);
+      res.json({ ...store, listings });
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post('/api/stores', requireAuth, (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+      if (user.user_type !== 'b2b') return res.status(403).json({ error: 'Tikai B2B konti var izveidot veikalu' });
+      const { slug, banner_url, logo_url, tagline, description, website, phone, working_hours } = req.body;
+      if (!slug || !/^[a-z0-9-]{3,50}$/.test(slug)) {
+        return res.status(400).json({ error: 'Slug: 3-50 simboli, tikai mazie burti, cipari un defises' });
+      }
+      const existing = db.prepare('SELECT id FROM stores WHERE user_id = ?').get(userId);
+      if (existing) {
+        db.prepare(`UPDATE stores SET slug=?, banner_url=?, logo_url=?, tagline=?, description=?, website=?, phone=?, working_hours=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?`)
+          .run(slug, banner_url || null, logo_url || null, tagline || null, description || null, website || null, phone || null, working_hours || null, userId);
+      } else {
+        db.prepare(`INSERT INTO stores (user_id, slug, banner_url, logo_url, tagline, description, website, phone, working_hours) VALUES (?,?,?,?,?,?,?,?,?)`)
+          .run(userId, slug, banner_url || null, logo_url || null, tagline || null, description || null, website || null, phone || null, working_hours || null);
+      }
+      const store = db.prepare('SELECT * FROM stores WHERE user_id = ?').get(userId);
+      res.json(store);
+    } catch (error: any) {
+      if (error.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Šis slug jau ir aizņemts' });
       res.status(500).json({ error: 'Server error' });
     }
   });

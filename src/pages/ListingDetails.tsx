@@ -90,6 +90,7 @@ export default function ListingDetails() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [listing, setListing] = useState<ListingDetails | null>(null);
+  const [sellerBadges, setSellerBadges] = useState<any[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [bids, setBids] = useState<Bid[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,6 +136,11 @@ export default function ListingDetails() {
           const reviewsData = await reviewsRes.json();
           setReviews(reviewsData);
         }
+
+        fetch(`/api/users/${data.user_id}/badges`)
+          .then(r => r.json())
+          .then(setSellerBadges)
+          .catch(() => {});
 
         const parsedAttributes = data.attributes ? JSON.parse(data.attributes) : null;
         if (parsedAttributes?.saleType === 'auction') {
@@ -854,6 +860,16 @@ export default function ListingDetails() {
                       <Star className="w-3.5 h-3.5 text-amber-400 fill-current mr-1" />
                       {averageRating} Reitings
                     </div>
+                    {sellerBadges.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {sellerBadges.map(b => (
+                          <span key={b.badge_id} title={b.description}
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 cursor-default">
+                            {b.icon} {b.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 

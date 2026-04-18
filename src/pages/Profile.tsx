@@ -70,6 +70,7 @@ export default function Profile() {
   const { t } = useI18n();
   const { user, loading, updateUser } = useAuth();
   const navigate = useNavigate();
+  const [badges, setBadges] = useState<any[]>([]);
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [favorites, setFavorites] = useState<Listing[]>([]);
   const [balance, setBalance] = useState<number>(0);
@@ -144,6 +145,13 @@ export default function Profile() {
     if (params.get('canceled') === 'true') {
       alert('Maksājums tika atcelts.');
       window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (user) {
+      fetch(`/api/users/${user.id}/badges`)
+        .then(r => r.json())
+        .then(setBadges)
+        .catch(() => {});
     }
 
     const fetchMyListings = async () => {
@@ -712,6 +720,16 @@ export default function Profile() {
                   {user.points} Punkti
                 </Badge>
               </div>
+              {badges.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {badges.map(badge => (
+                    <span key={badge.badge_id} title={badge.description}
+                      className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 cursor-default">
+                      {badge.icon} {badge.label}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

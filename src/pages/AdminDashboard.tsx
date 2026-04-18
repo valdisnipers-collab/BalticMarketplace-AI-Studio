@@ -80,11 +80,12 @@ interface AdData {
 export default function AdminDashboard() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'listings' | 'reports' | 'settings' | 'ads'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'listings' | 'reports' | 'settings' | 'ads' | 'disputes'>('users');
   const [users, setUsers] = useState<UserData[]>([]);
   const [listings, setListings] = useState<ListingData[]>([]);
   const [reports, setReports] = useState<ReportData[]>([]);
   const [ads, setAds] = useState<AdData[]>([]);
+  const [disputes, setDisputes] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [stats, setStats] = useState<{totalUsers: number, totalListings: number, pendingReports: number, totalRevenue: number} | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -182,7 +183,15 @@ export default function AdminDashboard() {
         const settingsData = await settingsRes.json();
         setSettings(settingsData);
       }
-      
+
+      const disputesRes = await fetch('/api/admin/disputes', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (disputesRes.ok) {
+        const disputesData = await disputesRes.json();
+        setDisputes(disputesData);
+      }
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -222,6 +231,21 @@ export default function AdminDashboard() {
     } catch (err: any) {
       alert(err.message);
       return false;
+    }
+  };
+
+  const resolveDispute = async (id: number, resolution: 'refund' | 'release', notes: string) => {
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`/api/admin/disputes/${id}/resolve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ resolution, adminNotes: notes })
+    });
+    if (res.ok) {
+      setDisputes(prev => prev.map(d => d.id === id ? { ...d, status: 'resolved' } : d));
     }
   };
 
@@ -544,6 +568,23 @@ export default function AdminDashboard() {
           >
             <Megaphone className="w-4 h-4 mr-2" />
             Reklāmas ({ads.length})
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setActiveTab('disputes')}
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 rounded-none transition-colors whitespace-nowrap h-auto ${
+              activeTab === 'disputes'
+                ? 'border-primary-600 text-primary-600 bg-transparent hover:bg-transparent'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 bg-transparent hover:bg-transparent'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4 mr-2" />
+            Strīdi
+            {disputes.filter(d => d.status === 'open').length > 0 && (
+              <span className="ml-1.5 bg-red-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {disputes.filter(d => d.status === 'open').length}
+              </span>
+            )}
           </Button>
         </div>
 
@@ -1206,6 +1247,26 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
+        {/* Disputes Tab */}
+        {activeTab === 'disputes' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
+            <h2 className="text-xl font-bold text-slate-900">
+              Strīdi ({disputes.filter(d => d.status === 'open').length} atvērti)
+            </h2>
+            {disputes.length === 0 ? (
+              <p className="text-slate-500 text-sm">Nav atvērtu strīdu.</p>
+            ) : (
+              disputes.map(dispute => (
+                <DisputeCard key={dispute.id} dispute={dispute} onResolve={resolveDispute} />
+              ))
+            )}
+          </motion.div>
+        )}
+
       </div>
 
       {/* Ad Modal */}
@@ -1426,6 +1487,60 @@ export default function AdminDashboard() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+function DisputeCard({ dispute, onResolve }: { dispute: any; onResolve: (id: number, resolution: 'refund' | 'release', notes: string) => void }) {
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handle = async (resolution: 'refund' | 'release') => {
+    if (!notes.trim()) return;
+    setLoading(true);
+    await onResolve(dispute.id, resolution, notes);
+    setLoading(false);
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="font-semibold text-slate-800">Strīds #{dispute.id} — Pasūtījums #{dispute.order_id}</p>
+          <p className="text-sm text-slate-500">Iemesls: {dispute.reason}</p>
+          {dispute.description && <p className="text-sm text-slate-600 mt-1">{dispute.description}</p>}
+        </div>
+        <span className={`text-xs font-bold px-2 py-1 rounded-full ${dispute.status === 'open' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+          {dispute.status}
+        </span>
+      </div>
+      {dispute.status === 'open' && (
+        <div className="space-y-2">
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Administratora piezīmes (obligāti)..."
+            className="w-full border border-slate-200 rounded-lg p-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
+            rows={2}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => handle('refund')}
+              disabled={loading || !notes.trim()}
+              className="flex-1 bg-red-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              Atmaksāt pircējam
+            </button>
+            <button
+              onClick={() => handle('release')}
+              disabled={loading || !notes.trim()}
+              className="flex-1 bg-green-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              Pārskaitīt pārdevējam
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
