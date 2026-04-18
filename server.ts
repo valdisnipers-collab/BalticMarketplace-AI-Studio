@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import db from "./server/db";
+import db from "./server/pg";
 import { GoogleGenAI } from "@google/genai";
 import twilio from "twilio";
 import multer from "multer";
