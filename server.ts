@@ -12,6 +12,7 @@ import multer from "multer";
 import fs from "fs";
 import Stripe from "stripe";
 import { uploadImage, uploadVideo, uploadChatImage } from './server/services/cloudinary';
+import { cached, invalidate, invalidatePattern, TTL, checkRateLimit } from './server/services/redis';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -222,6 +223,34 @@ async function startServer() {
     }
 
     res.json({received: true});
+  });
+
+  // Rate limiting middleware
+  app.use(async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.path === '/api/health' || !req.path.startsWith('/api/')) return next();
+
+    const identifier = req.ip ?? 'unknown';
+    const isAuthEndpoint = req.path.startsWith('/api/auth/');
+    const limit = isAuthEndpoint ? 10 : 200;
+    const window = 60;
+
+    const { allowed, remaining, resetIn } = await checkRateLimit(
+      `${identifier}:${isAuthEndpoint ? 'auth' : 'api'}`,
+      limit,
+      window
+    );
+
+    res.setHeader('X-RateLimit-Limit', limit);
+    res.setHeader('X-RateLimit-Remaining', remaining);
+    res.setHeader('X-RateLimit-Reset', resetIn);
+
+    if (!allowed) {
+      return res.status(429).json({
+        error: 'Pārāk daudz pieprasījumu. Mēģiniet vēlāk.',
+        resetIn,
+      });
+    }
+    next();
   });
 
   // Middleware to parse JSON bodies
@@ -1633,6 +1662,7 @@ Return ONLY valid JSON, no markdown.`;
         }).catch(e => console.error('[geocode]', e));
       }
 
+      invalidatePattern('listings:home:*').catch(e => console.error('Cache invalidation error:', e));
       res.json({ id: listingId, message: 'Listing created successfully' });
     } catch (error) {
       console.error("Error creating listing:", error);
@@ -1746,6 +1776,8 @@ Return ONLY valid JSON, no markdown.`;
       if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to delete this listing' });
 
       await db.run('DELETE FROM listings WHERE id = ?', [listingId]);
+      invalidatePattern('listings:home:*').catch(e => console.error('Cache invalidation error:', e));
+      invalidate(`listing:${listingId}`).catch(e => console.error('Cache invalidation error:', e));
       res.json({ message: 'Listing deleted successfully' });
     } catch (error) {
       console.error("Error deleting listing:", error);
@@ -2625,16 +2657,15 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Omniva Shipping
-  let omnivaLocationsCache: any[] | null = null;
-  let omnivaLastFetch = 0;
-
   app.get('/api/shipping/omniva-locations', async (req, res) => {
-    const now = Date.now();
-    if (!omnivaLocationsCache || now - omnivaLastFetch > 24 * 60 * 60 * 1000) {
-      try {
+    try {
+      const city = req.query.city as string | undefined;
+      const cacheKey = city ? `omniva:city:${city.toLowerCase()}` : 'omniva:all';
+
+      const locations = await cached(cacheKey, TTL.omnivaLocations, async () => {
         const response = await fetch('https://omniva.lv/locations.json');
         const data = await response.json() as any[];
-        omnivaLocationsCache = data
+        const latvian = data
           .filter((loc: any) => loc.A0_NAME === 'LV')
           .map((loc: any) => ({
             id: loc.ZIP,
@@ -2642,16 +2673,15 @@ Return ONLY valid JSON, no markdown.`;
             address: loc.A2_NAME + (loc.A3_NAME ? ', ' + loc.A3_NAME : '') + ', ' + loc.A1_NAME,
             city: loc.A1_NAME,
           }));
-        omnivaLastFetch = now;
-      } catch (e) {
-        return res.status(503).json({ error: 'Nevar ielādēt Omniva lokācijas' });
-      }
+        return city
+          ? latvian.filter((l: any) => l.city.toLowerCase().includes(city.toLowerCase()))
+          : latvian.slice(0, 100);
+      });
+
+      res.json(locations);
+    } catch (e) {
+      res.status(503).json({ error: 'Nevar ielādēt Omniva lokācijas' });
     }
-    const city = req.query.city as string;
-    const locations = city
-      ? omnivaLocationsCache!.filter(l => l.city.toLowerCase().includes(city.toLowerCase()))
-      : omnivaLocationsCache!.slice(0, 100);
-    res.json(locations);
   });
 
   // Badges Endpoints
