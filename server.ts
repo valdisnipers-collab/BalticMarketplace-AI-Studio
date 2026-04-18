@@ -1944,11 +1944,13 @@ Return ONLY valid JSON, no markdown.`;
         sender: 'other' // from the receiver's perspective, the sender is 'other'
       });
 
-      sendPushToUser(receiverId, {
-        title: 'Jauna ziņa',
-        body: content.length > 60 ? content.slice(0, 60) + '...' : content,
-        url: `/chat`,
-      }).catch(e => console.error('Push error:', e));
+      if (content) {
+        sendPushToUser(receiverId, {
+          title: 'Jauna ziņa',
+          body: content.length > 60 ? content.slice(0, 60) + '...' : content,
+          url: `/chat`,
+        }).catch(e => console.error('Push error:', e));
+      }
 
       res.json(message);
     } catch (error) {
