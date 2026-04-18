@@ -17,6 +17,8 @@ import { sendPushToUser, vapidPublicKey } from './server/services/push';
 import { initSearchIndex, syncListing, removeListing, searchListings } from './server/services/search';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
+import { corsMiddleware, helmetMiddleware, generalLimiter, authLimiter, uploadLimiter } from './server/middleware/security';
+import { validateBody, registerSchema, loginSchema, listingSchema } from './server/middleware/validate';
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-dev-key-change-in-production";
 
@@ -116,10 +118,15 @@ async function startServer() {
   const PORT = 3000;
   const httpServer = http.createServer(app);
   
+  const SOCKET_ORIGINS = process.env.NODE_ENV === 'production'
+    ? ['https://balticmarket.lv', 'https://www.balticmarket.lv']
+    : ['http://localhost:5173', 'http://localhost:3000'];
+
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
+      origin: SOCKET_ORIGINS,
+      methods: ["GET", "POST"],
+      credentials: true,
     }
   });
 
@@ -241,11 +248,16 @@ async function startServer() {
     next();
   });
 
+  // Security middleware
+  app.use(helmetMiddleware);
+  app.use(corsMiddleware);
+  app.use(generalLimiter);
+
   // Middleware to parse JSON bodies
   app.use(express.json());
 
   // File Upload Route
-  app.post('/api/upload', upload.single('image'), async (req, res) => {
+  app.post('/api/upload', uploadLimiter, upload.single('image'), async (req, res) => {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'No token' });
@@ -306,7 +318,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/upload/video', videoUpload.single('video'), async (req, res) => {
+  app.post('/api/upload/video', uploadLimiter, videoUpload.single('video'), async (req, res) => {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'No token' });
@@ -512,7 +524,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", authLimiter, validateBody(registerSchema), async (req, res) => {
     const { email, password, name, phone, user_type, company_name, company_reg_number, company_vat } = req.body;
     try {
       const hash = await bcrypt.hash(password, 10);
@@ -534,7 +546,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, validateBody(loginSchema), async (req, res) => {
     const { email, password } = req.body;
     try {
       const user = await db.get('SELECT * FROM users WHERE email = ?', [email]) as any;
@@ -1577,7 +1589,7 @@ Return ONLY valid JSON, no markdown.`;
     }
   }
 
-  app.post("/api/listings", async (req, res) => {
+  app.post("/api/listings", validateBody(listingSchema), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
