@@ -13,6 +13,7 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 const FROM = process.env.RESEND_FROM_EMAIL ?? 'BalticMarket <noreply@balticmarket.lv>';
+const APP_URL = process.env.APP_URL ?? 'https://balticmarket.lv';
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
   if (!resend) {
@@ -35,7 +36,7 @@ export const emailTemplates = {
         <p>Sveiks, <strong>${esc(userName)}</strong>!</p>
         <p>Ir pievienots jauns sludinājums <strong>"${esc(listingTitle)}"</strong>
            par <strong>€${esc(String(listingPrice))}</strong>, kas atbilst jūsu saglabātajam meklējumam.</p>
-        <a href="${process.env.APP_URL}/listing/${listingId}"
+        <a href="${APP_URL}/listing/${listingId}"
            style="display: inline-block; background: #E64415; color: white;
                   padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
           Skatīt sludinājumu
@@ -54,7 +55,7 @@ export const emailTemplates = {
         <h2 style="color: #E64415;">Pasūtījums nosūtīts!</h2>
         <p>Sveiks, <strong>${esc(buyerName)}</strong>!</p>
         <p>Jūsu pasūtījums <strong>"${esc(listingTitle)}"</strong> ir nodots piegādei.</p>
-        <a href="${process.env.APP_URL}/profile?tab=orders"
+        <a href="${APP_URL}/profile?tab=orders"
            style="display: inline-block; background: #E64415; color: white;
                   padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
           Skatīt pasūtījumu #${orderId}
@@ -71,7 +72,7 @@ export const emailTemplates = {
         <p>Sveiks, <strong>${esc(sellerName)}</strong>!</p>
         <p>Pircējs apstiprinājis saņemšanu. <strong>€${esc(String(amount))}</strong>
            par "${esc(listingTitle)}" ir ieskaitīti jūsu kontā.</p>
-        <a href="${process.env.APP_URL}/profile?tab=wallet"
+        <a href="${APP_URL}/profile?tab=wallet"
            style="display: inline-block; background: #22c55e; color: white;
                   padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
           Skatīt maku
@@ -90,7 +91,7 @@ export const emailTemplates = {
           ? 'Lēmums pieņemts jūsu labā — nauda tiek atmaksāta.'
           : 'Lēmums pieņemts pārdevēja labā — nauda pārskaitīta.'}
         </p>
-        <a href="${process.env.APP_URL}/profile?tab=orders"
+        <a href="${APP_URL}/profile?tab=orders"
            style="display: inline-block; background: #E64415; color: white;
                   padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
           Skatīt pasūtījumu #${orderId}

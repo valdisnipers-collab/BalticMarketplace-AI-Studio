@@ -762,7 +762,7 @@ async function startServer() {
       const buyer = await db.get('SELECT email, name FROM users WHERE id = ?', [order.buyer_id]) as any;
       if (buyer?.email) {
         const tmpl = emailTemplates.orderShipped(buyer.name || buyer.username, listing?.title ?? 'Prece', Number(orderId));
-        sendEmail(buyer.email, tmpl.subject, tmpl.html);
+        sendEmail(buyer.email, tmpl.subject, tmpl.html).catch(e => console.error('Email error:', e));
       }
 
       res.json({ message: 'Order marked as shipped' });
@@ -813,7 +813,7 @@ async function startServer() {
       const completedListing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;
       if (seller?.email) {
         const tmpl = emailTemplates.orderCompleted(seller.name || seller.username, completedListing?.title ?? 'Prece', order.amount);
-        sendEmail(seller.email, tmpl.subject, tmpl.html);
+        sendEmail(seller.email, tmpl.subject, tmpl.html).catch(e => console.error('Email error:', e));
       }
 
       res.json({ message: 'Order confirmed and funds transferred' });
@@ -1697,7 +1697,7 @@ Return ONLY valid JSON, no markdown.`;
           const user = await db.get('SELECT email, name FROM users WHERE id = ?', [search.user_id]) as any;
           if (user?.email) {
             const tmpl = emailTemplates.newListingMatch(user.name || user.username, listingData.title, Number(listingData.price), Number(listingId));
-            sendEmail(user.email, tmpl.subject, tmpl.html);
+            sendEmail(user.email, tmpl.subject, tmpl.html).catch(e => console.error('Email error:', e));
           }
         }
       }
@@ -2692,7 +2692,7 @@ Return ONLY valid JSON, no markdown.`;
           action === 'refund' ? 'refund' : 'release',
           order.id
         );
-        sendEmail(affectedUser.email, tmpl.subject, tmpl.html);
+        sendEmail(affectedUser.email, tmpl.subject, tmpl.html).catch(e => console.error('Email error:', e));
       }
 
       res.json({ message: 'Dispute resolved successfully' });
