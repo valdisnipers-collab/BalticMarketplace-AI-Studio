@@ -130,6 +130,7 @@ const twilioClient = TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? twilio(TWILIO_ACC
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
   const PORT = 3000;
   const httpServer = http.createServer(app);
   
@@ -2660,12 +2661,11 @@ Return ONLY valid JSON, no markdown.`;
   app.get('/api/shipping/omniva-locations', async (req, res) => {
     try {
       const city = req.query.city as string | undefined;
-      const cacheKey = city ? `omniva:city:${city.toLowerCase()}` : 'omniva:all';
 
-      const locations = await cached(cacheKey, TTL.omnivaLocations, async () => {
+      const allLocations = await cached('omniva:all', TTL.omnivaLocations, async () => {
         const response = await fetch('https://omniva.lv/locations.json');
         const data = await response.json() as any[];
-        const latvian = data
+        return data
           .filter((loc: any) => loc.A0_NAME === 'LV')
           .map((loc: any) => ({
             id: loc.ZIP,
@@ -2673,10 +2673,11 @@ Return ONLY valid JSON, no markdown.`;
             address: loc.A2_NAME + (loc.A3_NAME ? ', ' + loc.A3_NAME : '') + ', ' + loc.A1_NAME,
             city: loc.A1_NAME,
           }));
-        return city
-          ? latvian.filter((l: any) => l.city.toLowerCase().includes(city.toLowerCase()))
-          : latvian.slice(0, 100);
       });
+
+      const locations = city
+        ? allLocations.filter((l: any) => l.city.toLowerCase().includes(city.toLowerCase()))
+        : allLocations.slice(0, 100);
 
       res.json(locations);
     } catch (e) {

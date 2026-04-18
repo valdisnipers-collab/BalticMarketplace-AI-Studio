@@ -34,7 +34,7 @@ export async function cached<T>(
   if (hit !== null) return hit;
 
   const result = await fn();
-  await redis.setex(key, ttl, JSON.stringify(result));
+  await redis.setex(key, ttl, result as any);
   return result;
 }
 
@@ -46,7 +46,10 @@ export async function invalidate(key: string) {
 export async function invalidatePattern(pattern: string) {
   if (!redis) return;
   const keys = await redis.keys(pattern);
-  if (keys.length > 0) await redis.del(...keys);
+  const BATCH = 50;
+  for (let i = 0; i < keys.length; i += BATCH) {
+    await redis.del(...keys.slice(i, i + BATCH));
+  }
 }
 
 export async function checkRateLimit(
@@ -57,14 +60,18 @@ export async function checkRateLimit(
   if (!redis) return { allowed: true, remaining: limit, resetIn: windowSeconds };
 
   const key = `rl:${identifier}`;
-  const current = await redis.incr(key);
-  if (current === 1) await redis.expire(key, windowSeconds);
-
-  const ttl = await redis.ttl(key);
+  const pipeline = redis.pipeline();
+  pipeline.incr(key);
+  pipeline.expire(key, windowSeconds, 'NX');
+  pipeline.ttl(key);
+  const results = await pipeline.exec();
+  const current = results[0] as number;
+  const rawTtl = results[2] as number;
+  const resetIn = rawTtl > 0 ? rawTtl : windowSeconds;
   const remaining = Math.max(0, limit - current);
   return {
     allowed: current <= limit,
     remaining,
-    resetIn: ttl,
+    resetIn,
   };
 }
