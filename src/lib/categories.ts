@@ -187,7 +187,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
     name: 'Nekustamais īpašums',
     subcategories: {
       'Dzīvokļi (pārdošana)': {
-        name: 'Dzīvokļi (pārdošana)',
+        name: 'Dzīvokļi',
         group: 'Pārdošana',
         fields: [
           { name: 'city', label: 'Pilsēta', type: 'select', options: CITIES },
@@ -206,7 +206,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Mājas un vasarnīcas (pārdošana)': {
-        name: 'Mājas un vasarnīcas (pārdošana)',
+        name: 'Mājas un vasarnīcas',
         group: 'Pārdošana',
         fields: [
           { name: 'city', label: 'Pilsēta/Novads', type: 'select', options: CITIES },
@@ -233,7 +233,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Komerctelpas (pārdošana)': {
-        name: 'Komerctelpas (pārdošana)',
+        name: 'Komerctelpas',
         group: 'Pārdošana',
         fields: [
           { name: 'city', label: 'Pilsēta', type: 'select', options: CITIES },
@@ -244,7 +244,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Garāžas un stāvvietas (pārdošana)': {
-        name: 'Garāžas un stāvvietas (pārdošana)',
+        name: 'Garāžas un stāvvietas',
         group: 'Pārdošana',
         fields: [
           { name: 'city', label: 'Pilsēta', type: 'select', options: CITIES },
@@ -255,7 +255,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Dzīvokļi (īre)': {
-        name: 'Dzīvokļi (īre)',
+        name: 'Dzīvokļi',
         group: 'Īre',
         fields: [
           { name: 'city', label: 'Pilsēta', type: 'select', options: CITIES },
@@ -274,7 +274,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Mājas (īre)': {
-        name: 'Mājas (īre)',
+        name: 'Mājas',
         group: 'Īre',
         fields: [
           { name: 'city', label: 'Pilsēta/Novads', type: 'select', options: CITIES },
@@ -286,7 +286,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Istabas (īre)': {
-        name: 'Istabas (īre)',
+        name: 'Istabas',
         group: 'Īre',
         fields: [
           { name: 'city', label: 'Pilsēta', type: 'select', options: CITIES },
@@ -297,7 +297,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Komerctelpas (īre)': {
-        name: 'Komerctelpas (īre)',
+        name: 'Komerctelpas',
         group: 'Īre',
         fields: [
           { name: 'city', label: 'Pilsēta', type: 'select', options: CITIES },
@@ -307,7 +307,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
         ]
       },
       'Garāžas un stāvvietas (īre)': {
-        name: 'Garāžas un stāvvietas (īre)',
+        name: 'Garāžas un stāvvietas',
         group: 'Īre',
         fields: [
           { name: 'city', label: 'Pilsēta', type: 'select', options: CITIES },
@@ -679,6 +679,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
       },
       'Santehnika un apkure': {
         name: 'Santehnika un apkure',
+        group: 'Būvmateriāli un instrumenti',
         fields: [
           { name: 'type', label: 'Tips', type: 'select', options: ['Vannas un dušas kabīnes', 'Sanitārtehniskās ierīces', 'Apkures katli', 'Radiatori', 'Silta grīda', 'Caurules un armatūra', 'Cits'] },
           { name: 'brand', label: 'Ražotājs', type: 'text' },

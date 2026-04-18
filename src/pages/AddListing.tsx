@@ -26,7 +26,6 @@ import {
   TrailerBoxIcon,
   VanIcon,
   SemiTractorIcon,
-  SemiTrailerIcon,
   BusIcon,
   TractorIcon,
   ExcavatorIcon,

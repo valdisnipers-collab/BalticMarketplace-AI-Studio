@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake, UserPlus, PlusCircle } from 'lucide-react';
+import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake, UserPlus, PlusCircle, ShoppingBag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
@@ -86,7 +86,7 @@ export default function Profile() {
   const [isLoadingSavedSearches, setIsLoadingSavedSearches] = useState(true);
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet' | 'ads' | 'offers' | 'company' | 'settings' | 'saved-searches' | 'notifications'>('listings');
+  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet' | 'ads' | 'offers' | 'company' | 'settings' | 'saved-searches' | 'notifications' | 'orders'>('listings');
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
