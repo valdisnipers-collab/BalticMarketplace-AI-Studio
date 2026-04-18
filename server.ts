@@ -14,6 +14,7 @@ import { uploadImage, uploadVideo, uploadChatImage } from './server/services/clo
 import { sendEmail, emailTemplates } from './server/services/email';
 import { cached, invalidate, invalidatePattern, TTL, checkRateLimit } from './server/services/redis';
 import { sendPushToUser, vapidPublicKey } from './server/services/push';
+import { initSearchIndex, syncListing, removeListing, searchListings } from './server/services/search';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -135,6 +136,11 @@ async function startServer() {
       console.log("User disconnected:", socket.id);
     });
   });
+
+  // Initialize Meilisearch
+  if (process.env.MEILISEARCH_HOST) {
+    initSearchIndex().catch(e => console.error('[SEARCH INIT ERROR]', e));
+  }
 
   // Stripe Webhook (must be before express.json())
   app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req: any, res: any) => {
@@ -1137,76 +1143,41 @@ async function startServer() {
 
   app.get("/api/listings/search", async (req, res) => {
     try {
-      const { q: query, category, subcategory, minPrice, maxPrice, sort, location, listingType, ...restQuery } = req.query;
-      if (!query) {
-        return res.json([]);
-      }
-      
+      const { q: query, category, subcategory, minPrice, maxPrice, sort, location, listingType } = req.query;
+      if (!query) return res.json([]);
+
       const { hasAccess, userId } = await hasEarlyAccess(req);
 
-      let sql = `
-        SELECT listings.*, users.name as author_name
-        FROM listings
-        JOIN users ON listings.user_id = users.id
-        WHERE listings.status = 'active'
-        AND to_tsvector('simple', coalesce(listings.title,'') || ' ' || coalesce(listings.description,'') || ' ' || coalesce(listings.category,''))
-            @@ plainto_tsquery('simple', ?)
-      `;
-      const params: any[] = [query];
+      const filter: string[] = ['status = "active"'];
+      if (category) filter.push(`category = "${(category as string).replace(/"/g, '\\"')}"`);
+      if (subcategory) filter.push(`subcategory = "${(subcategory as string).replace(/"/g, '\\"')}"`);
+      if (listingType && listingType !== 'all') filter.push(`listing_type = "${listingType}"`);
+      if (minPrice) filter.push(`price >= ${Number(minPrice)}`);
+      if (maxPrice) filter.push(`price <= ${Number(maxPrice)}`);
 
+      const sortArr: string[] = [];
+      if (sort === 'price_asc') sortArr.push('price:asc');
+      else if (sort === 'price_desc') sortArr.push('price:desc');
+      else sortArr.push('created_at:desc');
+
+      let hits = await searchListings({ q: query as string, filter, sort: sortArr });
+
+      // Early access filter: hide listings < 15 min old (except user's own)
       if (!hasAccess) {
-        if (userId) {
-          sql += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
-          params.push(userId);
-        } else {
-          sql += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
-        }
+        const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        hits = hits.filter(h => {
+          if (userId && h.user_id === userId) return true;
+          return h.created_at <= fifteenMinAgo;
+        });
       }
 
-      if (category) {
-        sql += ` AND listings.category = ?`;
-        params.push(category);
-      }
-      if (subcategory) {
-        sql += ` AND (listings.attributes::json)->>'subcategory' = ?`;
-        params.push(subcategory);
-      }
-      if (listingType && listingType !== 'all') {
-        sql += ` AND listings.listing_type = ?`;
-        params.push(listingType);
-      }
-      if (minPrice) {
-        sql += ` AND listings.price >= ?`;
-        params.push(Number(minPrice));
-      }
-      if (maxPrice) {
-        sql += ` AND listings.price <= ?`;
-        params.push(Number(maxPrice));
-      }
+      // Location partial match (post-filter)
       if (location) {
-        sql += ` AND listings.location ILIKE ?`;
-        params.push(`%${location}%`);
+        const loc = (location as string).toLowerCase();
+        hits = hits.filter(h => h.location?.toLowerCase().includes(loc));
       }
 
-      // Handle dynamic attribute filters
-      for (const [key, value] of Object.entries(restQuery)) {
-        if (key.startsWith('attr_') && value) {
-          const attrName = key.replace('attr_', '');
-          sql += ` AND (listings.attributes::json)->>? = ?`;
-          params.push(attrName, value);
-        }
-      }
-
-      if (sort === 'price_asc') {
-        sql += ` ORDER BY listings.is_highlighted DESC, listings.price ASC`;
-      } else if (sort === 'price_desc') {
-        sql += ` ORDER BY listings.is_highlighted DESC, listings.price DESC`;
-      } else {
-        sql += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
-      }
-
-      const listings = await db.all(sql, params);
-      res.json(listings);
+      res.json(hits);
     } catch (error) {
       console.error("Error searching listings:", error);
       res.status(500).json({ error: 'Server error searching listings' });
@@ -1650,6 +1621,30 @@ Return ONLY valid JSON, no markdown.`;
         }).catch(e => console.error('[geocode]', e));
       }
 
+      // Sync to Meilisearch
+      if (process.env.MEILISEARCH_HOST) {
+        const author = await db.get<{ name: string; username: string }>(
+          'SELECT name, username FROM users WHERE id = ?', [decoded.userId]
+        );
+        syncListing({
+          id: Number(info.lastInsertRowid),
+          user_id: decoded.userId,
+          title,
+          description: description || '',
+          price: Number(price),
+          category,
+          subcategory: (attributes && typeof attributes === 'object' ? (attributes as any).subcategory : null) || null,
+          listing_type: listing_type || 'sale',
+          status: 'active',
+          location: location || null,
+          image_url: image_url || null,
+          author_name: author?.name || author?.username || '',
+          created_at: new Date().toISOString(),
+          lat: null,
+          lng: null,
+        }).catch(e => console.error('[SEARCH SYNC CREATE]', e));
+      }
+
       invalidatePattern('listings:home:*').catch(e => console.error('Cache invalidation error:', e));
       res.json({ id: listingId, message: 'Listing created successfully' });
     } catch (error) {
@@ -1761,6 +1756,9 @@ Return ONLY valid JSON, no markdown.`;
       if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to delete this listing' });
 
       await db.run('DELETE FROM listings WHERE id = ?', [listingId]);
+      if (process.env.MEILISEARCH_HOST) {
+        removeListing(Number(listingId)).catch(e => console.error('[SEARCH SYNC DELETE]', e));
+      }
       invalidatePattern('listings:home:*').catch(e => console.error('Cache invalidation error:', e));
       invalidate(`listing:${listingId}`).catch(e => console.error('Cache invalidation error:', e));
       res.json({ message: 'Listing deleted successfully' });
@@ -2266,6 +2264,35 @@ Return ONLY valid JSON, no markdown.`;
             `, [user.user_id, message, link]);
           }
         });
+      }
+
+      if (process.env.MEILISEARCH_HOST) {
+        db.get<any>(
+          'SELECT l.*, u.name as author_name, u.username FROM listings l JOIN users u ON l.user_id = u.id WHERE l.id = ?',
+          [listingId]
+        ).then(updatedDoc => {
+          if (!updatedDoc) return;
+          const attrs = updatedDoc.attributes
+            ? (typeof updatedDoc.attributes === 'string' ? JSON.parse(updatedDoc.attributes) : updatedDoc.attributes)
+            : {};
+          syncListing({
+            id: Number(listingId),
+            user_id: updatedDoc.user_id,
+            title: updatedDoc.title,
+            description: updatedDoc.description || '',
+            price: Number(updatedDoc.price),
+            category: updatedDoc.category,
+            subcategory: attrs.subcategory || null,
+            listing_type: updatedDoc.listing_type,
+            status: updatedDoc.status || 'active',
+            location: updatedDoc.location || null,
+            image_url: updatedDoc.image_url || null,
+            author_name: updatedDoc.author_name || updatedDoc.username || '',
+            created_at: updatedDoc.created_at,
+            lat: updatedDoc.lat || null,
+            lng: updatedDoc.lng || null,
+          }).catch(e => console.error('[SEARCH SYNC UPDATE]', e));
+        }).catch(e => console.error('[SEARCH SYNC UPDATE FETCH]', e));
       }
 
       res.json({ message: 'Listing updated successfully' });
