@@ -12,6 +12,8 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+# Server runs as TypeScript — compiled frontend served as static files from dist/
+# tsconfig has noEmit:true and build script is Vite-only, so tsx is required at runtime
 RUN npm install -g tsx@4.21.0
 
 COPY --from=builder /app/node_modules ./node_modules

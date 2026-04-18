@@ -41,7 +41,7 @@ export const listingSchema = z.object({
   location: z.string().max(100).optional().nullable(),
   is_auction: z.boolean().optional(),
   auction_end_date: z.string().datetime({ offset: true }).optional().nullable(),
-  listing_type: z.enum(['sale', 'rent', 'auction', 'free', 'exchange']).optional(),
+  listing_type: z.enum(['sale', 'rent', 'auction', 'free', 'exchange', 'giveaway']).optional(),
   exchange_for: z.string().max(200).optional().nullable(),
   video_url: z.string().url().optional().nullable(),
 });

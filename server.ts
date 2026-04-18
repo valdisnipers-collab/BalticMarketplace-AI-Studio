@@ -115,6 +115,26 @@ const twilioClient = TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? twilio(TWILIO_ACC
 async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
+
+  // Security middleware — applied first so every request is protected
+  app.use(helmetMiddleware);
+  app.use(corsMiddleware);
+  app.use(generalLimiter);
+
+  // Auth guard — defined early so all routes below can reference it
+  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      (req as any).userId = decoded.userId;
+      next();
+    } catch {
+      res.status(401).json({ error: 'Invalid token' });
+    }
+  };
+
   const PORT = 3000;
   const httpServer = http.createServer(app);
   
@@ -248,11 +268,6 @@ async function startServer() {
     next();
   });
 
-  // Security middleware
-  app.use(helmetMiddleware);
-  app.use(corsMiddleware);
-  app.use(generalLimiter);
-
   // Middleware to parse JSON bodies
   app.use(express.json());
 
@@ -340,7 +355,7 @@ async function startServer() {
   });
 
   // Auth Routes
-  app.post("/api/auth/request-otp", async (req, res) => {
+  app.post("/api/auth/request-otp", authLimiter, async (req, res) => {
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone number is required' });
 
@@ -359,7 +374,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/verify-otp", async (req, res) => {
+  app.post("/api/auth/verify-otp", authLimiter, async (req, res) => {
     const { phone, code, name, user_type } = req.body;
     if (!phone || !code) return res.status(400).json({ error: 'Phone and code are required' });
 
@@ -401,7 +416,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/smart-id/register/init", async (req, res) => {
+  app.post("/api/auth/smart-id/register/init", authLimiter, async (req, res) => {
     const { personalCode, country, name, user_type, company_name, company_reg_number, company_vat } = req.body;
     if (!personalCode || !country || !name) return res.status(400).json({ error: 'Personal code, country and name required' });
 
@@ -413,7 +428,7 @@ async function startServer() {
     res.json({ sessionId, verificationCode, message: 'Registration initiated' });
   });
 
-  app.post("/api/auth/smart-id/register/status", async (req, res) => {
+  app.post("/api/auth/smart-id/register/status", authLimiter, async (req, res) => {
     const { sessionId, personalCode, name, user_type, company_name, company_reg_number, company_vat } = req.body;
     if (!sessionId || !personalCode) return res.status(400).json({ error: 'Session ID and personal code required' });
 
@@ -439,7 +454,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/smart-id/login/init", async (req, res) => {
+  app.post("/api/auth/smart-id/login/init", authLimiter, async (req, res) => {
     const { personalCode, country } = req.body;
     if (!personalCode || !country) return res.status(400).json({ error: 'Personal code and country required' });
 
@@ -450,7 +465,7 @@ async function startServer() {
     res.json({ sessionId, verificationCode, message: 'Login initiated' });
   });
 
-  app.post("/api/auth/smart-id/login/status", async (req, res) => {
+  app.post("/api/auth/smart-id/login/status", authLimiter, async (req, res) => {
     const { sessionId, personalCode } = req.body;
     if (!sessionId || !personalCode) return res.status(400).json({ error: 'Session ID and personal code required' });
 
@@ -1589,7 +1604,7 @@ Return ONLY valid JSON, no markdown.`;
     }
   }
 
-  app.post("/api/listings", validateBody(listingSchema), async (req, res) => {
+  app.post("/api/listings", requireAuth, validateBody(listingSchema), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -2469,18 +2484,6 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Admin API
-  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      (req as any).userId = decoded.userId;
-      next();
-    } catch {
-      res.status(401).json({ error: 'Invalid token' });
-    }
-  };
 
   // Push notification endpoints
   app.get('/api/push/vapid-public-key', (req, res) => {
