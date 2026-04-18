@@ -371,7 +371,7 @@ async function startServer() {
     if (!phone || !code) return res.status(400).json({ error: 'Phone and code are required' });
 
     let isValid = false;
-    
+
     if (!twilioClient || !TWILIO_VERIFY_SERVICE_SID) {
       // Development fallback
       isValid = code === '123456';
@@ -389,15 +389,14 @@ async function startServer() {
     if (!isValid) return res.status(400).json({ error: 'Invalid OTP code' });
 
     try {
-      let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone) as any;
-      
+      let user = await db.get('SELECT * FROM users WHERE phone = ?', [phone]) as any;
+
       if (!user) {
         // Create new user via phone
         const email = `${phone.replace(/\+/g, '')}@phone.local`; // Dummy email for schema
         const hash = await bcrypt.hash(Math.random().toString(36), 10); // Dummy password
         const role = (phone === '29469877' || phone === '+37129469877') ? 'admin' : 'user';
-        const stmt = db.prepare('INSERT INTO users (email, password_hash, name, phone, user_type, role) VALUES (?, ?, ?, ?, ?, ?)');
-        const info = stmt.run(email, hash, name || 'User', phone, user_type || 'c2c', role);
+        const info = await db.run('INSERT INTO users (email, password_hash, name, phone, user_type, role) VALUES (?, ?, ?, ?, ?, ?)', [email, hash, name || 'User', phone, user_type || 'c2c', role]);
         user = { id: info.lastInsertRowid, email, name: name || 'User', phone, role, user_type: user_type || 'c2c', is_verified: 0, points: 0 };
       }
 
@@ -427,13 +426,12 @@ async function startServer() {
 
     try {
       const email = `${personalCode}@smartid.local`;
-      let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+      let user = await db.get('SELECT * FROM users WHERE email = ?', [email]) as any;
 
       if (!user) {
         const hash = await bcrypt.hash(Math.random().toString(36), 10);
         const uType = user_type === 'b2b' ? 'b2b' : 'c2c';
-        const stmt = db.prepare('INSERT INTO users (email, password_hash, name, user_type, role, is_verified, company_name, company_reg_number, company_vat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        const info = stmt.run(email, hash, name, uType, 'user', 1, company_name || null, company_reg_number || null, company_vat || null);
+        const info = await db.run('INSERT INTO users (email, password_hash, name, user_type, role, is_verified, company_name, company_reg_number, company_vat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [email, hash, name, uType, 'user', 1, company_name || null, company_reg_number || null, company_vat || null]);
         user = { id: info.lastInsertRowid, email, name, user_type: uType, role: 'user', is_verified: 1, points: 0, company_name, company_reg_number, company_vat };
       } else {
         // If user already exists, just log them in
@@ -467,12 +465,11 @@ async function startServer() {
     try {
       // Create a dummy email based on personal code if user doesn't exist
       const email = `${personalCode}@smartid.local`;
-      let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+      let user = await db.get('SELECT * FROM users WHERE email = ?', [email]) as any;
 
       if (!user) {
         const hash = await bcrypt.hash(Math.random().toString(36), 10);
-        const stmt = db.prepare('INSERT INTO users (email, password_hash, name, user_type, role, is_verified) VALUES (?, ?, ?, ?, ?, ?)');
-        const info = stmt.run(email, hash, `User ${personalCode}`, 'c2c', 'user', 1);
+        const info = await db.run('INSERT INTO users (email, password_hash, name, user_type, role, is_verified) VALUES (?, ?, ?, ?, ?, ?)', [email, hash, `User ${personalCode}`, 'c2c', 'user', 1]);
         user = { id: info.lastInsertRowid, email, name: `User ${personalCode}`, user_type: 'c2c', role: 'user', is_verified: 1, points: 0 };
       }
 
@@ -521,11 +518,11 @@ async function startServer() {
       // We'll just approve it immediately for the MVP demo.
       
       // Update user as verified and add 300 points
-      const user = db.prepare('SELECT is_verified FROM users WHERE id = ?').get(decoded.userId) as any;
-      
+      const user = await db.get('SELECT is_verified FROM users WHERE id = ?', [decoded.userId]) as any;
+
       if (!user.is_verified) {
-        db.prepare('UPDATE users SET is_verified = 1, points = points + 300 WHERE id = ?').run(decoded.userId);
-        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(decoded.userId, 300, 'Smart-ID Verification');
+        await db.run('UPDATE users SET is_verified = 1, points = points + 300 WHERE id = ?', [decoded.userId]);
+        await db.run('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, 300, 'Smart-ID Verification']);
       }
 
       res.json({ status: 'OK', message: 'Successfully verified' });
@@ -540,16 +537,15 @@ async function startServer() {
       const hash = await bcrypt.hash(password, 10);
       const role = email === 'valdis.nipers@gmail.com' ? 'admin' : 'user';
       const uType = user_type === 'b2b' ? 'b2b' : 'c2c';
-      const stmt = db.prepare('INSERT INTO users (email, password_hash, name, phone, user_type, role, company_name, company_reg_number, company_vat, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(email, hash, name, phone || null, uType, role, company_name || null, company_reg_number || null, company_vat || null, 50);
-      
+      const info = await db.run('INSERT INTO users (email, password_hash, name, phone, user_type, role, company_name, company_reg_number, company_vat, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [email, hash, name, phone || null, uType, role, company_name || null, company_reg_number || null, company_vat || null, 50]);
+
       const userId = info.lastInsertRowid;
-      db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(userId, 50, 'Reģistrācijas bonuss');
-      
+      await db.run('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [userId, 50, 'Reģistrācijas bonuss']);
+
       const token = jwt.sign({ userId: info.lastInsertRowid }, JWT_SECRET, { expiresIn: '7d' });
       res.json({ token, user: { id: info.lastInsertRowid, email, name, phone, user_type: uType, role, points: 50, early_access_until: null, company_name, company_reg_number, company_vat, is_verified: 0 } });
     } catch (error: any) {
-      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (error.code === '23505') {
         res.status(400).json({ error: 'Email already exists' });
       } else {
         res.status(500).json({ error: 'Server error' });
@@ -560,7 +556,7 @@ async function startServer() {
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
     try {
-      const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+      const user = await db.get('SELECT * FROM users WHERE email = ?', [email]) as any;
       if (!user) return res.status(400).json({ error: 'Invalid credentials' });
 
       const valid = await bcrypt.compare(password, user.password_hash);
@@ -573,14 +569,14 @@ async function startServer() {
     }
   });
 
-  app.get("/api/auth/me", (req, res) => {
+  app.get("/api/auth/me", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const user = db.prepare('SELECT id, email, name, role, phone, is_verified, user_type, points, early_access_until, company_name, company_reg_number, company_vat FROM users WHERE id = ?').get(decoded.userId);
+      const user = await db.get('SELECT id, email, name, role, phone, is_verified, user_type, points, early_access_until, company_name, company_reg_number, company_vat FROM users WHERE id = ?', [decoded.userId]);
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json({ user });
     } catch (error) {
@@ -681,17 +677,17 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/me/following/listings", (req, res) => {
+  app.get("/api/users/me/following/listings", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { hasAccess, userId } = hasEarlyAccess(req);
+      const { hasAccess, userId } = await hasEarlyAccess(req);
 
       let sql = `
-        SELECT listings.*, users.name as author_name 
+        SELECT listings.*, users.name as author_name
         FROM listings
         JOIN users ON listings.user_id = users.id
         JOIN followers ON followers.following_id = users.id
@@ -797,7 +793,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/orders/:id/confirm", (req, res) => {
+  app.post("/api/orders/:id/confirm", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -806,23 +802,21 @@ async function startServer() {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const orderId = req.params.id;
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+      const order = await db.get('SELECT * FROM orders WHERE id = ?', [orderId]) as any;
       if (!order) return res.status(404).json({ error: 'Order not found' });
       if (order.buyer_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
       if (order.status !== 'shipped') return res.status(400).json({ error: 'Order is not shipped yet' });
 
       // Begin transaction
-      const tx = db.transaction(() => {
+      await db.transaction(async (client) => {
         // Mark order as completed
-        db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('completed', orderId);
-        
-        // Transfer funds to seller
-        db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(order.amount, order.seller_id);
-      });
-      
-      tx();
+        await db.clientRun(client, 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', orderId]);
 
-      const listing = db.prepare('SELECT title FROM listings WHERE id = ?').get(order.listing_id) as any;
+        // Transfer funds to seller
+        await db.clientRun(client, 'UPDATE users SET balance = balance + ? WHERE id = ?', [order.amount, order.seller_id]);
+      });
+
+      const listing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;
       io.to(`user_${order.seller_id}`).emit('order_completed', {
         id: orderId,
         listing_title: listing?.title || 'Prece',
@@ -831,8 +825,8 @@ async function startServer() {
 
       checkAndAwardBadges(order.seller_id);
 
-      const seller = db.prepare('SELECT email, name FROM users WHERE id = ?').get(order.seller_id) as any;
-      const completedListing = db.prepare('SELECT title FROM listings WHERE id = ?').get(order.listing_id) as any;
+      const seller = await db.get('SELECT email, name FROM users WHERE id = ?', [order.seller_id]) as any;
+      const completedListing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;
       if (seller?.email) {
         sendEmail(
           seller.email,
@@ -848,7 +842,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/orders/:id/dispute", (req, res) => {
+  app.post("/api/orders/:id/dispute", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -860,23 +854,23 @@ async function startServer() {
 
       if (!reason) return res.status(400).json({ error: 'Reason is required' });
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+      const order = await db.get('SELECT * FROM orders WHERE id = ?', [orderId]) as any;
       if (!order) return res.status(404).json({ error: 'Order not found' });
       if (order.buyer_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
-      
+
       if (!['paid', 'shipped'].includes(order.status)) {
         return res.status(400).json({ error: 'Order status does not allow dispute' });
       }
 
-      db.transaction(() => {
-        db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('disputed', orderId);
-        db.prepare('INSERT INTO disputes (order_id, user_id, reason, description) VALUES (?, ?, ?, ?)').run(orderId, decoded.userId, reason, description);
-        
-        db.prepare(`
+      await db.transaction(async (client) => {
+        await db.clientRun(client, 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['disputed', orderId]);
+        await db.clientRun(client, 'INSERT INTO disputes (order_id, user_id, reason, description) VALUES (?, ?, ?, ?)', [orderId, decoded.userId, reason, description]);
+
+        await db.clientRun(client, `
           INSERT INTO notifications (user_id, type, title, message, link)
           VALUES (?, 'system', 'Strīds pieteikts', ?, ?)
-        `).run(order.seller_id, `Pircējs ir pieteicis strīdu pasūtījumam #${orderId}.`, `/profile?tab=orders`);
-      })();
+        `, [order.seller_id, `Pircējs ir pieteicis strīdu pasūtījumam #${orderId}.`, `/profile?tab=orders`]);
+      });
 
       res.json({ message: 'Dispute opened successfully' });
     } catch (error) {
@@ -904,17 +898,17 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/me/favorites", (req, res) => {
+  app.get("/api/users/me/favorites", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { hasAccess, userId } = hasEarlyAccess(req);
+      const { hasAccess, userId } = await hasEarlyAccess(req);
 
       let sql = `
-        SELECT listings.*, users.name as author_name 
+        SELECT listings.*, users.name as author_name
         FROM favorites
         JOIN listings ON favorites.listing_id = listings.id
         JOIN users ON listings.user_id = users.id
@@ -1142,13 +1136,13 @@ async function startServer() {
   });
 
   // Listings Routes
-  function hasEarlyAccess(req: any): { hasAccess: boolean, userId: number | null } {
+  async function hasEarlyAccess(req: any): Promise<{ hasAccess: boolean, userId: number | null }> {
     const authHeader = req.headers.authorization;
     if (!authHeader) return { hasAccess: false, userId: null };
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const user = db.prepare('SELECT early_access_until FROM users WHERE id = ?').get(decoded.userId) as any;
+      const user = await db.get('SELECT early_access_until FROM users WHERE id = ?', [decoded.userId]) as any;
       if (user && user.early_access_until) {
         const earlyAccessUntil = new Date(user.early_access_until);
         if (earlyAccessUntil > new Date()) {
@@ -1161,17 +1155,17 @@ async function startServer() {
     }
   }
 
-  app.get("/api/listings/search", (req, res) => {
+  app.get("/api/listings/search", async (req, res) => {
     try {
       const { q: query, category, subcategory, minPrice, maxPrice, sort, location, listingType, ...restQuery } = req.query;
       if (!query) {
         return res.json([]);
       }
       
-      const { hasAccess, userId } = hasEarlyAccess(req);
-      
+      const { hasAccess, userId } = await hasEarlyAccess(req);
+
       let sql = `
-        SELECT listings.*, users.name as author_name 
+        SELECT listings.*, users.name as author_name
         FROM listings_fts 
         JOIN listings ON listings_fts.id = listings.id
         JOIN users ON listings.user_id = users.id 
@@ -1238,10 +1232,10 @@ async function startServer() {
     }
   });
 
-  app.get("/api/listings", (req, res) => {
+  app.get("/api/listings", async (req, res) => {
     try {
       const { category, subcategory, minPrice, maxPrice, sort, location, listingType, lat, lng, radius, ...restQuery } = req.query;
-      const { hasAccess, userId } = hasEarlyAccess(req);
+      const { hasAccess, userId } = await hasEarlyAccess(req);
 
       let query = `
         SELECT listings.*, users.name as author_name 
@@ -1319,9 +1313,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/listings/:id", (req, res) => {
+  app.get("/api/listings/:id", async (req, res) => {
     try {
-      const { hasAccess, userId } = hasEarlyAccess(req);
+      const { hasAccess, userId } = await hasEarlyAccess(req);
       
       let sql = `
         SELECT listings.*, users.name as author_name, users.email as author_email 
@@ -2471,15 +2465,15 @@ Return ONLY valid JSON, no markdown.`;
     }
   };
 
-  const isAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const isAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const user = db.prepare('SELECT role FROM users WHERE id = ?').get(decoded.userId) as { role: string } | undefined;
-      
+      const user = await db.get('SELECT role FROM users WHERE id = ?', [decoded.userId]) as { role: string } | null;
+
       if (!user || user.role !== 'admin') {
         return res.status(403).json({ error: 'Forbidden: Admins only' });
       }
