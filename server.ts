@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import nodemailer from 'nodemailer';
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -12,32 +11,13 @@ import multer from "multer";
 import fs from "fs";
 import Stripe from "stripe";
 import { uploadImage, uploadVideo, uploadChatImage } from './server/services/cloudinary';
+import { sendEmail, emailTemplates } from './server/services/email';
 import { cached, invalidate, invalidatePattern, TTL, checkRateLimit } from './server/services/redis';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-dev-key-change-in-production";
 
-const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-}) : null;
-
-async function sendEmail(to: string, subject: string, html: string) {
-  if (!emailTransporter) {
-    console.log(`[EMAIL SIMULATED] To: ${to} | Subject: ${subject}`);
-    return;
-  }
-  try {
-    await emailTransporter.sendMail({
-      from: process.env.SMTP_FROM || 'BalticMarket <noreply@balticmarket.lv>',
-      to, subject, html
-    });
-  } catch (e) {
-    console.error('[EMAIL ERROR]', e);
-  }
-}
 
 async function geocodeLocation(location: string): Promise<{ lat: number; lng: number } | null> {
   if (!location) return null;
@@ -774,11 +754,8 @@ async function startServer() {
 
       const buyer = await db.get('SELECT email, name FROM users WHERE id = ?', [order.buyer_id]) as any;
       if (buyer?.email) {
-        sendEmail(
-          buyer.email,
-          `Jūsu pasūtījums ir nosūtīts | BalticMarket`,
-          `<h2>Sveiks, ${buyer.name}!</h2><p>Jūsu pasūtījums <strong>"${listing?.title}"</strong> ir nodots piegādei.</p><p><a href="https://balticmarket.lv/profile?tab=orders">Skatīt pasūtījumu</a></p>`
-        );
+        const tmpl = emailTemplates.orderShipped(buyer.name || buyer.username, listing?.title ?? 'Prece', Number(orderId));
+        sendEmail(buyer.email, tmpl.subject, tmpl.html);
       }
 
       res.json({ message: 'Order marked as shipped' });
@@ -822,11 +799,8 @@ async function startServer() {
       const seller = await db.get('SELECT email, name FROM users WHERE id = ?', [order.seller_id]) as any;
       const completedListing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;
       if (seller?.email) {
-        sendEmail(
-          seller.email,
-          `Pārdevums pabeigts — nauda ieskaitīta | BalticMarket`,
-          `<h2>Sveiks, ${seller.name}!</h2><p>Pircējs apstiprinājis saņemšanu. Nauda par <strong>"${completedListing?.title}"</strong> (€${order.amount}) ir ieskaitīta jūsu kontā.</p><p><a href="https://balticmarket.lv/profile?tab=wallet">Skatīt maku</a></p>`
-        );
+        const tmpl = emailTemplates.orderCompleted(seller.name || seller.username, completedListing?.title ?? 'Prece', order.amount);
+        sendEmail(seller.email, tmpl.subject, tmpl.html);
       }
 
       res.json({ message: 'Order confirmed and funds transferred' });
@@ -1709,11 +1683,8 @@ Return ONLY valid JSON, no markdown.`;
 
           const user = await db.get('SELECT email, name FROM users WHERE id = ?', [search.user_id]) as any;
           if (user?.email) {
-            sendEmail(
-              user.email,
-              `Jauns sludinājums atbilst jūsu meklēšanai | BalticMarket`,
-              `<h2>Sveiks, ${user.name}!</h2><p>Ir pievienots jauns sludinājums <strong>"${listingData.title}"</strong> par <strong>€${listingData.price}</strong>, kas atbilst jūsu saglabātajam meklējumam.</p><p><a href="https://balticmarket.lv/listing/${listingId}">Skatīt sludinājumu</a></p>`
-            );
+            const tmpl = emailTemplates.newListingMatch(user.name || user.username, listingData.title, Number(listingData.price), Number(listingId));
+            sendEmail(user.email, tmpl.subject, tmpl.html);
           }
         }
       }
