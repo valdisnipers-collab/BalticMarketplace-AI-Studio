@@ -58,28 +58,35 @@ const BADGE_DEFINITIONS: Record<string, { label: string; description: string; ic
   auction_master:   { label: 'Izsoles meistars',    description: '10+ veiksmīgas izsoles',              icon: '🔨', color: 'purple' },
 };
 
-function awardBadgeIfEarned(userId: number, badgeId: string) {
+async function awardBadgeIfEarned(userId: number, badgeId: string) {
   try {
-    db.prepare('INSERT OR IGNORE INTO user_achievements (user_id, badge_id) VALUES (?, ?)').run(userId, badgeId);
+    await db.run(
+      'INSERT INTO user_achievements (user_id, badge_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [userId, badgeId]
+    );
   } catch (e) {}
 }
 
-function checkAndAwardBadges(userId: number) {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+async function checkAndAwardBadges(userId: number) {
+  const user = await db.get('SELECT * FROM users WHERE id = $1', [userId]) as any;
   if (!user) return;
 
-  if (user.is_verified) awardBadgeIfEarned(userId, 'verified_seller');
+  if (user.is_verified) await awardBadgeIfEarned(userId, 'verified_seller');
 
-  const orderCount = (db.prepare('SELECT COUNT(*) as c FROM orders WHERE seller_id = ? AND status = "completed"').get(userId) as any)?.c ?? 0;
-  const avgRating = (db.prepare('SELECT AVG(rating) as r FROM reviews WHERE seller_id = ?').get(userId) as any)?.r ?? 0;
-  if (orderCount >= 10 && avgRating >= 4.5) awardBadgeIfEarned(userId, 'trusted_seller');
-  if (orderCount >= 50) awardBadgeIfEarned(userId, 'top_seller_2026');
+  const orderRow = await db.get("SELECT COUNT(*) as c FROM orders WHERE seller_id = $1 AND status = 'completed'", [userId]) as any;
+  const orderCount = Number(orderRow?.c ?? 0);
+  const ratingRow = await db.get('SELECT AVG(rating) as r FROM reviews WHERE seller_id = $1', [userId]) as any;
+  const avgRating = Number(ratingRow?.r ?? 0);
+  if (orderCount >= 10 && avgRating >= 4.5) await awardBadgeIfEarned(userId, 'trusted_seller');
+  if (orderCount >= 50) await awardBadgeIfEarned(userId, 'top_seller_2026');
 
-  const giveawayCount = (db.prepare('SELECT COUNT(*) as c FROM listings WHERE user_id = ? AND listing_type = "giveaway" AND status = "sold"').get(userId) as any)?.c ?? 0;
-  if (giveawayCount >= 20) awardBadgeIfEarned(userId, 'eco_warrior');
+  const giveawayRow = await db.get("SELECT COUNT(*) as c FROM listings WHERE user_id = $1 AND listing_type = 'giveaway' AND status = 'sold'", [userId]) as any;
+  const giveawayCount = Number(giveawayRow?.c ?? 0);
+  if (giveawayCount >= 20) await awardBadgeIfEarned(userId, 'eco_warrior');
 
-  const auctionCount = (db.prepare(`SELECT COUNT(*) as c FROM orders WHERE seller_id = ? AND status = "completed" AND listing_id IN (SELECT id FROM listings WHERE is_auction = 1)`).get(userId) as any)?.c ?? 0;
-  if (auctionCount >= 10) awardBadgeIfEarned(userId, 'auction_master');
+  const auctionRow = await db.get("SELECT COUNT(*) as c FROM orders WHERE seller_id = $1 AND status = 'completed' AND listing_id IN (SELECT id FROM listings WHERE is_auction = true)", [userId]) as any;
+  const auctionCount = Number(auctionRow?.c ?? 0);
+  if (auctionCount >= 10) await awardBadgeIfEarned(userId, 'auction_master');
 }
 
 let stripeClient: Stripe | null = null;
@@ -438,7 +445,7 @@ async function startServer() {
       }
 
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      checkAndAwardBadges(user.id as number);
+      checkAndAwardBadges(user.id as number).catch(e => console.error('[badges]', e));
       res.json({ status: 'OK', token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone, user_type: user.user_type, role: user.role, points: user.points, early_access_until: user.early_access_until, company_name: user.company_name, company_reg_number: user.company_reg_number, company_vat: user.company_vat, is_verified: user.is_verified } });
     } catch (error) {
       console.error("Smart-ID register error:", error);
@@ -823,7 +830,7 @@ async function startServer() {
         amount: order.amount
       });
 
-      checkAndAwardBadges(order.seller_id);
+      await checkAndAwardBadges(order.seller_id);
 
       const seller = await db.get('SELECT email, name FROM users WHERE id = ?', [order.seller_id]) as any;
       const completedListing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;
