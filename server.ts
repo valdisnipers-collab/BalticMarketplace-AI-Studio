@@ -11,7 +11,7 @@ import twilio from "twilio";
 import multer from "multer";
 import fs from "fs";
 import Stripe from "stripe";
-import sharp from "sharp";
+import { uploadImage, uploadVideo, uploadChatImage } from './server/services/cloudinary';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -227,66 +227,32 @@ async function startServer() {
   // Middleware to parse JSON bodies
   app.use(express.json());
 
-  // Serve uploaded files
-  app.use('/uploads', express.static(uploadsDir));
-
   // File Upload Route
   app.post('/api/upload', upload.single('image'), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
-
     try {
-      const token = authHeader.split(' ')[1];
-      jwt.verify(token, JWT_SECRET); // Just verify token exists and is valid
-      
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
+      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      const filename = `${uniqueSuffix}.webp`;
-      const filepath = path.join(uploadsDir, filename);
-
-      await sharp(req.file.buffer)
-        .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toFile(filepath);
-
-      // Return the URL to access the uploaded file
-      const fileUrl = `/uploads/${filename}`;
-      res.json({ url: fileUrl });
+      const result = await uploadImage(req.file.buffer, { folder: 'listings' });
+      res.json({ url: result.url });
     } catch (error) {
-      console.error("Upload error:", error);
-      res.status(401).json({ error: 'Invalid token or upload failed' });
+      console.error('Upload error:', error);
+      res.status(500).json({ error: 'Upload failed' });
     }
   });
 
-  // Multiple Files Upload Route
   app.post('/api/upload/chat-image', upload.single('image'), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
-
     try {
-      const token = authHeader.split(' ')[1];
-      jwt.verify(token, JWT_SECRET);
-      
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
+      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      const filename = `${uniqueSuffix}.webp`;
-      const filepath = path.join(uploadsDir, filename);
-
-      await sharp(req.file.buffer)
-        .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toFile(filepath);
-
-      const fileUrl = `/uploads/${filename}`;
-      res.json({ imageUrl: fileUrl });
+      const result = await uploadChatImage(req.file.buffer);
+      res.json({ url: result.url });
     } catch (error) {
-      console.error("Chat image upload error:", error);
       res.status(500).json({ error: 'Upload failed' });
     }
   });
@@ -294,33 +260,19 @@ async function startServer() {
   app.post('/api/upload/multiple', upload.array('images', 10), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
-
     try {
-      const token = authHeader.split(' ')[1];
-      jwt.verify(token, JWT_SECRET);
-      
+      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         return res.status(400).json({ error: 'No files uploaded' });
       }
 
-      const fileUrls = [];
-      for (const file of req.files) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const filename = `${uniqueSuffix}.webp`;
-        const filepath = path.join(uploadsDir, filename);
-
-        await sharp(file.buffer)
-          .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-          .webp({ quality: 80 })
-          .toFile(filepath);
-
-        fileUrls.push(`/uploads/${filename}`);
-      }
-
-      res.json({ urls: fileUrls });
+      const uploads = await Promise.all(
+        req.files.map(file => uploadImage(file.buffer, { folder: 'listings' }))
+      );
+      res.json({ urls: uploads.map(u => u.url) });
     } catch (error) {
-      console.error("Multiple upload error:", error);
-      res.status(401).json({ error: 'Invalid token or upload failed' });
+      console.error('Multiple upload error:', error);
+      res.status(500).json({ error: 'Upload failed' });
     }
   });
 
@@ -339,11 +291,11 @@ async function startServer() {
     try {
       jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-      const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}.mp4`;
-      const filepath = path.join(uploadsDir, filename);
-      fs.writeFileSync(filepath, req.file.buffer);
-      res.json({ videoUrl: `/uploads/${filename}` });
+
+      const result = await uploadVideo(req.file.buffer, { folder: 'videos' });
+      res.json({ videoUrl: result.url });
     } catch (error) {
+      console.error('Video upload error:', error);
       res.status(500).json({ error: 'Upload failed' });
     }
   });
