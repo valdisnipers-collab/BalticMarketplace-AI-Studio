@@ -33,7 +33,9 @@ export const db = {
   },
 
   async run(sql: string, params: any[] = []): Promise<{ lastInsertRowid: number; changes: number }> {
-    const returningSQL = sql.trim().toUpperCase().startsWith('INSERT')
+    const upper = sql.trim().toUpperCase();
+    const needsReturning = upper.startsWith('INSERT') && !upper.includes('RETURNING');
+    const returningSQL = needsReturning
       ? parameterize(sql) + ' RETURNING id'
       : parameterize(sql);
     const result = await pool.query(returningSQL, params);
@@ -51,7 +53,7 @@ export const db = {
       await client.query('COMMIT');
       return result;
     } catch (e) {
-      await client.query('ROLLBACK');
+      try { await client.query('ROLLBACK'); } catch (_) { /* ignore rollback error */ }
       throw e;
     } finally {
       client.release();
@@ -68,7 +70,9 @@ export const db = {
   },
 
   clientRun: async (client: PoolClient, sql: string, params: any[] = []) => {
-    const returningSQL = sql.trim().toUpperCase().startsWith('INSERT')
+    const upper = sql.trim().toUpperCase();
+    const needsReturning = upper.startsWith('INSERT') && !upper.includes('RETURNING');
+    const returningSQL = needsReturning
       ? parameterize(sql) + ' RETURNING id'
       : parameterize(sql);
     const result = await client.query(returningSQL, params);
