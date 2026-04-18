@@ -13,6 +13,7 @@ import Stripe from "stripe";
 import { uploadImage, uploadVideo, uploadChatImage } from './server/services/cloudinary';
 import { sendEmail, emailTemplates } from './server/services/email';
 import { cached, invalidate, invalidatePattern, TTL, checkRateLimit } from './server/services/redis';
+import { sendPushToUser, vapidPublicKey } from './server/services/push';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -752,6 +753,12 @@ async function startServer() {
         listing_title: listing?.title || 'Prece'
       });
 
+      sendPushToUser(order.buyer_id, {
+        title: 'Pasūtījums nosūtīts',
+        body: `"${listing?.title ?? 'Prece'}" ir ceļā uz jums`,
+        url: `/profile?tab=orders`,
+      }).catch(e => console.error('Push error:', e));
+
       const buyer = await db.get('SELECT email, name FROM users WHERE id = ?', [order.buyer_id]) as any;
       if (buyer?.email) {
         const tmpl = emailTemplates.orderShipped(buyer.name || buyer.username, listing?.title ?? 'Prece', Number(orderId));
@@ -793,6 +800,12 @@ async function startServer() {
         listing_title: listing?.title || 'Prece',
         amount: order.amount
       });
+
+      sendPushToUser(order.seller_id, {
+        title: 'Nauda ieskaitīta',
+        body: `€${order.amount} par "${listing?.title ?? 'Prece'}"`,
+        url: `/profile?tab=wallet`,
+      }).catch(e => console.error('Push error:', e));
 
       await checkAndAwardBadges(order.seller_id);
 
@@ -1931,6 +1944,12 @@ Return ONLY valid JSON, no markdown.`;
         sender: 'other' // from the receiver's perspective, the sender is 'other'
       });
 
+      sendPushToUser(receiverId, {
+        title: 'Jauna ziņa',
+        body: content.length > 60 ? content.slice(0, 60) + '...' : content,
+        url: `/chat`,
+      }).catch(e => console.error('Push error:', e));
+
       res.json(message);
     } catch (error) {
       console.error("Error sending message:", error);
@@ -2421,6 +2440,44 @@ Return ONLY valid JSON, no markdown.`;
       res.status(401).json({ error: 'Invalid token' });
     }
   };
+
+  // Push notification endpoints
+  app.get('/api/push/vapid-public-key', (req, res) => {
+    res.json({ publicKey: vapidPublicKey });
+  });
+
+  app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { endpoint, keys } = req.body;
+      if (!endpoint || !keys?.p256dh || !keys?.auth) {
+        return res.status(400).json({ error: 'Invalid subscription data' });
+      }
+      await db.run(
+        `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id`,
+        [userId, endpoint, keys.p256dh, keys.auth]
+      );
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.delete('/api/push/unsubscribe', requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { endpoint } = req.body;
+      await db.run(
+        'DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?',
+        [userId, endpoint]
+      );
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
 
   const isAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.headers.authorization;

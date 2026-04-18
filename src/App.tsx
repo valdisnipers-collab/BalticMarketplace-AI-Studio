@@ -9,6 +9,7 @@ import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './components/AuthContext';
 import { I18nProvider } from './components/I18nContext';
 import { NotificationProvider } from './components/NotificationProvider';
+import { PushNotificationSetup } from './components/PushNotificationSetup';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
 import Home from './pages/Home';
@@ -62,6 +63,7 @@ export default function App() {
           <NotificationProvider>
             <Router>
               <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
+                <PushNotificationSetup />
                 <Navbar />
                 {/* Fade-out efekts, kas darbojas zem galvenes */}
                 <div className="sticky top-0 z-[95] h-20 w-full bg-gradient-to-t from-transparent to-slate-50 pointer-events-none -mb-20" />
