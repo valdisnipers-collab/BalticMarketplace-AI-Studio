@@ -230,9 +230,10 @@ async function startServer() {
   // File Upload Route
   app.post('/api/upload', upload.single('image'), async (req, res) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'No token' });
     try {
-      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      jwt.verify(token, JWT_SECRET);
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
       const result = await uploadImage(req.file.buffer, { folder: 'listings' });
@@ -245,23 +246,26 @@ async function startServer() {
 
   app.post('/api/upload/chat-image', upload.single('image'), async (req, res) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'No token' });
     try {
-      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      jwt.verify(token, JWT_SECRET);
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
       const result = await uploadChatImage(req.file.buffer);
       res.json({ url: result.url });
     } catch (error) {
+      console.error('Chat upload error:', error);
       res.status(500).json({ error: 'Upload failed' });
     }
   });
 
   app.post('/api/upload/multiple', upload.array('images', 10), async (req, res) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'No token' });
     try {
-      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      jwt.verify(token, JWT_SECRET);
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         return res.status(400).json({ error: 'No files uploaded' });
       }
@@ -287,9 +291,10 @@ async function startServer() {
 
   app.post('/api/upload/video', videoUpload.single('video'), async (req, res) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'No token' });
     try {
-      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      jwt.verify(token, JWT_SECRET);
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
       const result = await uploadVideo(req.file.buffer, { folder: 'videos' });

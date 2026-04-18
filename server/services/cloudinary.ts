@@ -54,7 +54,7 @@ export async function uploadVideo(
         folder: options.folder ?? 'videos',
         resource_type: 'video',
         transformation: [
-          { duration: '30' },
+          { duration: 30 },
           { quality: 'auto:good' },
           { format: 'mp4' },
         ],
