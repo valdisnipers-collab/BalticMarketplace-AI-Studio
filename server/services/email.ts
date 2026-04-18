@@ -1,5 +1,13 @@
 import { Resend } from 'resend';
 
+function esc(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
@@ -24,9 +32,9 @@ export const emailTemplates = {
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #E64415;">Jauns sludinājums!</h2>
-        <p>Sveiks, <strong>${userName}</strong>!</p>
-        <p>Ir pievienots jauns sludinājums <strong>"${listingTitle}"</strong>
-           par <strong>€${listingPrice}</strong>, kas atbilst jūsu saglabātajam meklējumam.</p>
+        <p>Sveiks, <strong>${esc(userName)}</strong>!</p>
+        <p>Ir pievienots jauns sludinājums <strong>"${esc(listingTitle)}"</strong>
+           par <strong>€${esc(String(listingPrice))}</strong>, kas atbilst jūsu saglabātajam meklējumam.</p>
         <a href="${process.env.APP_URL}/listing/${listingId}"
            style="display: inline-block; background: #E64415; color: white;
                   padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
@@ -44,8 +52,8 @@ export const emailTemplates = {
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #E64415;">Pasūtījums nosūtīts!</h2>
-        <p>Sveiks, <strong>${buyerName}</strong>!</p>
-        <p>Jūsu pasūtījums <strong>"${listingTitle}"</strong> ir nodots piegādei.</p>
+        <p>Sveiks, <strong>${esc(buyerName)}</strong>!</p>
+        <p>Jūsu pasūtījums <strong>"${esc(listingTitle)}"</strong> ir nodots piegādei.</p>
         <a href="${process.env.APP_URL}/profile?tab=orders"
            style="display: inline-block; background: #E64415; color: white;
                   padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
@@ -60,9 +68,9 @@ export const emailTemplates = {
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #22c55e;">Nauda ieskaitīta!</h2>
-        <p>Sveiks, <strong>${sellerName}</strong>!</p>
-        <p>Pircējs apstiprinājis saņemšanu. <strong>€${amount}</strong>
-           par "${listingTitle}" ir ieskaitīti jūsu kontā.</p>
+        <p>Sveiks, <strong>${esc(sellerName)}</strong>!</p>
+        <p>Pircējs apstiprinājis saņemšanu. <strong>€${esc(String(amount))}</strong>
+           par "${esc(listingTitle)}" ir ieskaitīti jūsu kontā.</p>
         <a href="${process.env.APP_URL}/profile?tab=wallet"
            style="display: inline-block; background: #22c55e; color: white;
                   padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
@@ -77,7 +85,7 @@ export const emailTemplates = {
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #E64415;">Strīds atrisināts</h2>
-        <p>Sveiks, <strong>${userName}</strong>!</p>
+        <p>Sveiks, <strong>${esc(userName)}</strong>!</p>
         <p>${resolution === 'refund'
           ? 'Lēmums pieņemts jūsu labā — nauda tiek atmaksāta.'
           : 'Lēmums pieņemts pārdevēja labā — nauda pārskaitīta.'}

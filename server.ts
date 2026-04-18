@@ -2621,6 +2621,21 @@ Return ONLY valid JSON, no markdown.`;
         }
       });
 
+      // Send email to affected user
+      const affectedUserId = action === 'refund' ? order.buyer_id : order.seller_id;
+      const affectedUser = await db.get<{ email: string; name: string; username: string }>(
+        'SELECT email, name, username FROM users WHERE id = ?',
+        [affectedUserId]
+      );
+      if (affectedUser) {
+        const tmpl = emailTemplates.disputeResolved(
+          affectedUser.name || affectedUser.username,
+          action === 'refund' ? 'refund' : 'release',
+          order.id
+        );
+        sendEmail(affectedUser.email, tmpl.subject, tmpl.html);
+      }
+
       res.json({ message: 'Dispute resolved successfully' });
     } catch (error) {
       console.error("Error resolving dispute:", error);
