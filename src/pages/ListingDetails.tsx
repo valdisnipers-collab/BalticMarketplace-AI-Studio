@@ -91,6 +91,7 @@ export default function ListingDetails() {
   const navigate = useNavigate();
   const [listing, setListing] = useState<ListingDetails | null>(null);
   const [sellerBadges, setSellerBadges] = useState<any[]>([]);
+  const [sellerStore, setSellerStore] = useState<any>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [bids, setBids] = useState<Bid[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,6 +112,9 @@ export default function ListingDetails() {
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [shippingMethod, setShippingMethod] = useState('omniva');
   const [shippingAddress, setShippingAddress] = useState('');
+  const [omnivaLocations, setOmnivaLocations] = useState<any[]>([]);
+  const [omnivaSearch, setOmnivaSearch] = useState('');
+  const [selectedLocker, setSelectedLocker] = useState<any>(null);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -140,6 +144,11 @@ export default function ListingDetails() {
         fetch(`/api/users/${data.user_id}/badges`)
           .then(r => r.json())
           .then(setSellerBadges)
+          .catch(() => {});
+
+        fetch(`/api/stores/by-user/${data.user_id}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(setSellerStore)
           .catch(() => {});
 
         const parsedAttributes = data.attributes ? JSON.parse(data.attributes) : null;
@@ -505,7 +514,15 @@ export default function ListingDetails() {
                   </div>
                 )}
               </div>
-              
+
+              {(listing as any).video_url && (
+                <div className="mt-4 rounded-2xl overflow-hidden bg-black">
+                  <video controls className="w-full max-h-80" preload="metadata">
+                    <source src={(listing as any).video_url} type="video/mp4" />
+                  </video>
+                </div>
+              )}
+
               {listing.is_highlighted ? (
                 <Badge className="absolute top-6 left-6 bg-amber-400 text-amber-950 hover:bg-amber-500 font-bold shadow-lg px-3 py-1.5 text-xs">
                   <Star className="w-3.5 h-3.5 mr-1.5 fill-current" />
@@ -908,6 +925,12 @@ export default function ListingDetails() {
                 <Button variant="outline" className="w-full" onClick={() => navigate(`/profile/${listing.user_id}`)}>
                   Skatīt profilu
                 </Button>
+                {sellerStore && (
+                  <Link to={`/store/${sellerStore.slug}`}
+                    className="block text-center text-sm font-semibold text-[#E64415] hover:underline mt-2">
+                    Skatīt veikalu →
+                  </Link>
+                )}
               </div>
 
               {/* Financial Architecture */}
@@ -1002,16 +1025,50 @@ export default function ListingDetails() {
                 </select>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Piegādes adrese / Pakomāts</label>
-                <input 
-                  type="text"
-                  className="w-full h-12 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 text-sm font-semibold focus:border-emerald-500 outline-none"
-                  placeholder="Ievadiet adresi vai pakomāta nosaukumu"
-                  value={shippingAddress}
-                  onChange={(e) => setShippingAddress(e.target.value)}
-                />
-              </div>
+              {shippingMethod === 'omniva' ? (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Omniva pakomāts</label>
+                  <input
+                    type="text"
+                    className="w-full h-10 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 text-sm font-semibold focus:border-emerald-500 outline-none"
+                    placeholder="Meklēt pilsētu (piem., Rīga)..."
+                    value={omnivaSearch}
+                    onChange={e => {
+                      setOmnivaSearch(e.target.value);
+                      if (e.target.value.length >= 2) {
+                        fetch(`/api/shipping/omniva-locations?city=${encodeURIComponent(e.target.value)}`)
+                          .then(r => r.json()).then(setOmnivaLocations).catch(() => {});
+                      } else {
+                        setOmnivaLocations([]);
+                      }
+                    }}
+                  />
+                  {omnivaLocations.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-100 bg-white divide-y divide-slate-50">
+                      {omnivaLocations.map(loc => (
+                        <button key={loc.id} type="button"
+                          onClick={() => { setSelectedLocker(loc); setShippingAddress(`Omniva: ${loc.name}, ${loc.address}`); setOmnivaLocations([]); setOmnivaSearch(loc.name); }}
+                          className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition-colors ${selectedLocker?.id === loc.id ? 'bg-emerald-50 font-semibold' : ''}`}>
+                          <p className="font-semibold text-slate-800">{loc.name}</p>
+                          <p className="text-slate-500">{loc.address}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedLocker && <p className="text-xs text-emerald-600 font-semibold">✓ {selectedLocker.name}</p>}
+                </div>
+              ) : shippingMethod !== 'pickup' ? (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Piegādes adrese / Pakomāts</label>
+                  <input
+                    type="text"
+                    className="w-full h-12 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 text-sm font-semibold focus:border-emerald-500 outline-none"
+                    placeholder="Ievadiet adresi vai pakomāta nosaukumu"
+                    value={shippingAddress}
+                    onChange={(e) => setShippingAddress(e.target.value)}
+                  />
+                </div>
+              ) : null}
 
               <div className="bg-slate-50 p-4 rounded-xl space-y-2">
                 <div className="flex justify-between text-sm font-semibold text-slate-600">
@@ -1039,7 +1096,7 @@ export default function ListingDetails() {
                 <Button 
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
                   onClick={handleBuyNow}
-                  disabled={isBuying || !shippingAddress.trim()}
+                  disabled={isBuying || (shippingMethod !== 'pickup' && !shippingAddress.trim())}
                 >
                   {isBuying ? 'Apstrādā...' : 'Maksāt droši'}
                 </Button>

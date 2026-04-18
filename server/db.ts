@@ -447,6 +447,10 @@ try {
   `);
 } catch (e) {}
 
+try { db.exec('ALTER TABLE listings ADD COLUMN lat REAL'); } catch (e) {}
+try { db.exec('ALTER TABLE listings ADD COLUMN lng REAL'); } catch (e) {}
+try { db.exec('ALTER TABLE listings ADD COLUMN video_url TEXT'); } catch (e) {}
+
 try {
   db.exec(`
     CREATE TABLE IF NOT EXISTS user_achievements (

@@ -21,6 +21,7 @@ import Profile from './pages/Profile';
 import Search from './pages/Search';
 import Chat from './pages/Chat';
 import AdminDashboard from './pages/AdminDashboard';
+import StorePage from './pages/StorePage';
 
 const pageVariants = {
   initial: { opacity: 0, y: 10 },
@@ -47,6 +48,7 @@ function AnimatedRoutes() {
         <Route path="/listing/:id" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><ListingDetails /></motion.div>} />
         <Route path="/profile" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Profile /></motion.div>} />
         <Route path="/admin" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><AdminDashboard /></motion.div>} />
+        <Route path="/store/:slug" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><StorePage /></motion.div>} />
       </Routes>
     </AnimatePresence>
   );

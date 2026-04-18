@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import nodemailer from 'nodemailer';
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -15,6 +16,38 @@ import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-dev-key-change-in-production";
+
+const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+}) : null;
+
+async function sendEmail(to: string, subject: string, html: string) {
+  if (!emailTransporter) {
+    console.log(`[EMAIL SIMULATED] To: ${to} | Subject: ${subject}`);
+    return;
+  }
+  try {
+    await emailTransporter.sendMail({
+      from: process.env.SMTP_FROM || 'BalticMarket <noreply@balticmarket.lv>',
+      to, subject, html
+    });
+  } catch (e) {
+    console.error('[EMAIL ERROR]', e);
+  }
+}
+
+async function geocodeLocation(location: string): Promise<{ lat: number; lng: number } | null> {
+  if (!location) return null;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location + ', Latvia')}&format=json&limit=1`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'BalticMarket/1.0' } });
+    const data = await res.json() as any[];
+    if (data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch (e) {}
+  return null;
+}
 
 const BADGE_DEFINITIONS: Record<string, { label: string; description: string; icon: string; color: string }> = {
   verified_seller:  { label: 'Verificēts',        description: 'Smart-ID identitāte apstiprināta',  icon: '🛡️', color: 'blue' },
@@ -281,6 +314,30 @@ async function startServer() {
     } catch (error) {
       console.error("Multiple upload error:", error);
       res.status(401).json({ error: 'Invalid token or upload failed' });
+    }
+  });
+
+  const videoUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (file.mimetype.startsWith('video/')) cb(null, true);
+      else cb(new Error('Only video files are allowed'));
+    }
+  });
+
+  app.post('/api/upload/video', videoUpload.single('video'), async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    try {
+      jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}.mp4`;
+      const filepath = path.join(uploadsDir, filename);
+      fs.writeFileSync(filepath, req.file.buffer);
+      res.json({ videoUrl: `/uploads/${filename}` });
+    } catch (error) {
+      res.status(500).json({ error: 'Upload failed' });
     }
   });
 
@@ -725,6 +782,15 @@ async function startServer() {
         listing_title: listing?.title || 'Prece'
       });
 
+      const buyer = db.prepare('SELECT email, name FROM users WHERE id = ?').get(order.buyer_id) as any;
+      if (buyer?.email) {
+        sendEmail(
+          buyer.email,
+          `Jūsu pasūtījums ir nosūtīts | BalticMarket`,
+          `<h2>Sveiks, ${buyer.name}!</h2><p>Jūsu pasūtījums <strong>"${listing?.title}"</strong> ir nodots piegādei.</p><p><a href="https://balticmarket.lv/profile?tab=orders">Skatīt pasūtījumu</a></p>`
+        );
+      }
+
       res.json({ message: 'Order marked as shipped' });
     } catch (error) {
       res.status(500).json({ error: 'Server error' });
@@ -764,6 +830,17 @@ async function startServer() {
       });
 
       checkAndAwardBadges(order.seller_id);
+
+      const seller = db.prepare('SELECT email, name FROM users WHERE id = ?').get(order.seller_id) as any;
+      const completedListing = db.prepare('SELECT title FROM listings WHERE id = ?').get(order.listing_id) as any;
+      if (seller?.email) {
+        sendEmail(
+          seller.email,
+          `Pārdevums pabeigts — nauda ieskaitīta | BalticMarket`,
+          `<h2>Sveiks, ${seller.name}!</h2><p>Pircējs apstiprinājis saņemšanu. Nauda par <strong>"${completedListing?.title}"</strong> (€${order.amount}) ir ieskaitīta jūsu kontā.</p><p><a href="https://balticmarket.lv/profile?tab=wallet">Skatīt maku</a></p>`
+        );
+      }
+
       res.json({ message: 'Order confirmed and funds transferred' });
     } catch (error) {
       console.error("Error confirming order:", error);
@@ -1163,7 +1240,7 @@ async function startServer() {
 
   app.get("/api/listings", (req, res) => {
     try {
-      const { category, subcategory, minPrice, maxPrice, sort, location, listingType, ...restQuery } = req.query;
+      const { category, subcategory, minPrice, maxPrice, sort, location, listingType, lat, lng, radius, ...restQuery } = req.query;
       const { hasAccess, userId } = hasEarlyAccess(req);
 
       let query = `
@@ -1206,6 +1283,15 @@ async function startServer() {
       if (location) {
         query += ` AND location LIKE ?`;
         params.push(`%${location}%`);
+      }
+      if (lat && lng && radius) {
+        const latF = parseFloat(lat as string);
+        const lngF = parseFloat(lng as string);
+        const radiusKm = parseFloat(radius as string);
+        const latDelta = radiusKm / 111.0;
+        const lngDelta = radiusKm / (111.0 * Math.cos(latF * Math.PI / 180));
+        query += ` AND lat BETWEEN ${latF - latDelta} AND ${latF + latDelta}`;
+        query += ` AND lng BETWEEN ${lngF - lngDelta} AND ${lngF + lngDelta}`;
       }
 
       // Handle dynamic attribute filters
@@ -1552,14 +1638,14 @@ Return ONLY valid JSON, no markdown.`;
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for } = req.body;
-      
+      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url } = req.body;
+
       if (!title || price === undefined || !category) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null);
+      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, video_url || null);
       
       const listingId = info.lastInsertRowid;
       
@@ -1580,6 +1666,15 @@ Return ONLY valid JSON, no markdown.`;
       setTimeout(() => {
         moderateListing(listingId, title, description, price);
       }, 0);
+
+      // Geocode location asynchronously
+      if (location) {
+        geocodeLocation(location).then(coords => {
+          if (coords) {
+            db.prepare('UPDATE listings SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, listingId);
+          }
+        });
+      }
 
       res.json({ id: listingId, message: 'Listing created successfully' });
     } catch (error) {
@@ -1624,10 +1719,13 @@ Return ONLY valid JSON, no markdown.`;
             `/listing/${listingId}`
           );
           
-          // Simulate email notification
-          const user = db.prepare('SELECT email FROM users WHERE id = ?').get(search.user_id) as any;
-          if (user && user.email) {
-            console.log(`[EMAIL SIMULATION] Sending email to ${user.email}: New listing matches your saved search! Title: ${listingData.title}, Price: €${listingData.price}`);
+          const user = db.prepare('SELECT email, name FROM users WHERE id = ?').get(search.user_id) as any;
+          if (user?.email) {
+            sendEmail(
+              user.email,
+              `Jauns sludinājums atbilst jūsu meklēšanai | BalticMarket`,
+              `<h2>Sveiks, ${user.name}!</h2><p>Ir pievienots jauns sludinājums <strong>"${listingData.title}"</strong> par <strong>€${listingData.price}</strong>, kas atbilst jūsu saglabātajam meklējumam.</p><p><a href="https://balticmarket.lv/listing/${listingId}">Skatīt sludinājumu</a></p>`
+            );
           }
         }
       }
@@ -2580,6 +2678,36 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
+  // Omniva Shipping
+  let omnivaLocationsCache: any[] | null = null;
+  let omnivaLastFetch = 0;
+
+  app.get('/api/shipping/omniva-locations', async (req, res) => {
+    const now = Date.now();
+    if (!omnivaLocationsCache || now - omnivaLastFetch > 24 * 60 * 60 * 1000) {
+      try {
+        const response = await fetch('https://omniva.lv/locations.json');
+        const data = await response.json() as any[];
+        omnivaLocationsCache = data
+          .filter((loc: any) => loc.A0_NAME === 'LV')
+          .map((loc: any) => ({
+            id: loc.ZIP,
+            name: loc.NAME,
+            address: loc.A2_NAME + (loc.A3_NAME ? ', ' + loc.A3_NAME : '') + ', ' + loc.A1_NAME,
+            city: loc.A1_NAME,
+          }));
+        omnivaLastFetch = now;
+      } catch (e) {
+        return res.status(503).json({ error: 'Nevar ielādēt Omniva lokācijas' });
+      }
+    }
+    const city = req.query.city as string;
+    const locations = city
+      ? omnivaLocationsCache!.filter(l => l.city.toLowerCase().includes(city.toLowerCase()))
+      : omnivaLocationsCache!.slice(0, 100);
+    res.json(locations);
+  });
+
   // Badges Endpoints
   app.get('/api/users/:id/badges', (req, res) => {
     try {
@@ -2614,6 +2742,16 @@ Return ONLY valid JSON, no markdown.`;
       if (!store) return res.status(404).json({ error: 'Veikals nav atrasts' });
       const listings = db.prepare(`SELECT * FROM listings WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 50`).all(store.user_id);
       res.json({ ...store, listings });
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get('/api/stores/by-user/:userId', (req, res) => {
+    try {
+      const store = db.prepare('SELECT * FROM stores WHERE user_id = ?').get(req.params.userId);
+      if (!store) return res.status(404).json({ error: 'Nav veikala' });
+      res.json(store);
     } catch (error) {
       res.status(500).json({ error: 'Server error' });
     }

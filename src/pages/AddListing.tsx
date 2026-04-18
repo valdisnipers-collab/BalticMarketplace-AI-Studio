@@ -87,6 +87,8 @@ export default function AddListing() {
   const [location, setLocation] = useState('');
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   
   // Dynamic attributes state
   const [attributes, setAttributes] = useState<Record<string, string>>({});
@@ -333,6 +335,7 @@ export default function AddListing() {
           location,
           category,
           image_url: JSON.stringify(imageUrls),
+          video_url: videoUrl || null,
           attributes: {
             ...attributes,
             saleType,
@@ -743,6 +746,45 @@ export default function AddListing() {
                               </AnimatePresence>
                             </div>
                           </div>
+                        )}
+                      </div>
+
+                      {/* Video upload */}
+                      <div className="mt-4">
+                        <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-500 hover:text-[#E64415] transition-colors">
+                          <span className="text-lg">🎬</span>
+                          <span className="font-semibold text-xs uppercase tracking-wider">
+                            {isUploadingVideo ? 'Augšupielādē...' : videoUrl ? '✓ Video pievienots' : 'Pievienot video (max 30s, 50MB)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            disabled={isUploadingVideo}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setIsUploadingVideo(true);
+                              try {
+                                const formData = new FormData();
+                                formData.append('video', file);
+                                const res = await fetch('/api/upload/video', {
+                                  method: 'POST',
+                                  headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
+                                  body: formData
+                                });
+                                const data = await res.json();
+                                if (data.videoUrl) setVideoUrl(data.videoUrl);
+                              } catch {}
+                              setIsUploadingVideo(false);
+                            }}
+                          />
+                        </label>
+                        {videoUrl && (
+                          <button type="button" onClick={() => setVideoUrl('')}
+                            className="text-xs text-red-500 hover:underline mt-1">
+                            Noņemt video
+                          </button>
                         )}
                       </div>
                     </div>

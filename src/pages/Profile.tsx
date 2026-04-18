@@ -1193,6 +1193,12 @@ export default function Profile() {
                 </div>
               </div>
             </div>
+
+            {/* Store editor */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
+              <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight mb-6">Veikala vitrīna</h2>
+              <StoreEditor />
+            </div>
           </motion.div>
         )}
 
@@ -2239,4 +2245,91 @@ export default function Profile() {
     </div>
   </div>
 );
+}
+
+function StoreEditor() {
+  const [store, setStore] = useState<any>(null);
+  const [form, setForm] = useState({ slug: '', tagline: '', description: '', website: '', phone: '', working_hours: '' });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    fetch('/api/stores/my', { headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` } })
+      .then(r => r.json())
+      .then(data => { if (data) { setStore(data); setForm(prev => ({ ...prev, ...data })); } })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/stores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
+        body: JSON.stringify(form)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStore(data);
+        setMessage('Saglabāts!');
+      } else {
+        const err = await res.json();
+        setMessage(err.error || 'Kļūda');
+      }
+    } catch {
+      setMessage('Kļūda');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fields = [
+    { key: 'slug', label: 'URL adrese (piem.: mans-veikals)', placeholder: 'mans-veikals' },
+    { key: 'tagline', label: 'Tagline', placeholder: 'Jūsu veikala moto' },
+    { key: 'website', label: 'Mājaslapa', placeholder: 'https://' },
+    { key: 'phone', label: 'Tālrunis', placeholder: '+371...' },
+    { key: 'working_hours', label: 'Darba laiks', placeholder: 'P-P: 9:00-18:00' },
+  ];
+
+  return (
+    <div className="space-y-4 max-w-lg">
+      {fields.map(f => (
+        <div key={f.key}>
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{f.label}</label>
+          <input
+            value={(form as any)[f.key] || ''}
+            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+            placeholder={f.placeholder}
+            className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E64415]/30"
+          />
+        </div>
+      ))}
+      <div>
+        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Apraksts</label>
+        <textarea
+          value={form.description || ''}
+          onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
+          placeholder="Veikala apraksts..."
+          rows={3}
+          className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E64415]/30"
+        />
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="bg-[#E64415] text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-[#c73d13] disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saglabā...' : 'Saglabāt'}
+        </button>
+        {message && <span className={`text-sm font-semibold ${message === 'Saglabāts!' ? 'text-green-600' : 'text-red-600'}`}>{message}</span>}
+      </div>
+      {store?.slug && (
+        <p className="text-xs text-slate-500">
+          Veikala lapa: <a href={`/store/${store.slug}`} className="text-[#E64415] hover:underline">/store/{store.slug}</a>
+        </p>
+      )}
+    </div>
+  );
 }
