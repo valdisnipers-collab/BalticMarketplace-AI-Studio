@@ -4,6 +4,11 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from './pg';
 
+if (process.env.NODE_ENV === 'production') {
+  console.error('FATAL: init-db must not run in production. Aborting.');
+  process.exit(1);
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function initDb() {

@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS reports (
   id BIGSERIAL PRIMARY KEY,
   reporter_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
   listing_id BIGINT REFERENCES listings(id) ON DELETE CASCADE,
-  user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
   reason TEXT NOT NULL,
   status TEXT DEFAULT 'pending',
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -253,6 +253,16 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS orders_buyer_idx ON orders(buyer_id);
 CREATE INDEX IF NOT EXISTS orders_seller_idx ON orders(seller_id);
 
+-- Additional performance indexes
+CREATE INDEX IF NOT EXISTS bids_listing_id_idx ON bids(listing_id);
+CREATE INDEX IF NOT EXISTS bids_user_id_idx ON bids(user_id);
+CREATE INDEX IF NOT EXISTS offers_listing_id_idx ON offers(listing_id);
+CREATE INDEX IF NOT EXISTS offers_buyer_id_idx ON offers(buyer_id);
+CREATE INDEX IF NOT EXISTS offers_status_idx ON offers(status);
+CREATE INDEX IF NOT EXISTS transactions_user_id_idx ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS categories_parent_id_idx ON categories(parent_id);
+CREATE INDEX IF NOT EXISTS reviews_seller_id_idx ON reviews(seller_id);
+
 -- Disputes
 CREATE TABLE IF NOT EXISTS disputes (
   id BIGSERIAL PRIMARY KEY,
@@ -265,6 +275,8 @@ CREATE TABLE IF NOT EXISTS disputes (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS disputes_status_idx ON disputes(status);
 
 -- User achievements (badges)
 CREATE TABLE IF NOT EXISTS user_achievements (
