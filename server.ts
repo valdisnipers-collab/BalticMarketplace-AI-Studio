@@ -1172,12 +1172,13 @@ async function startServer() {
 
       let sql = `
         SELECT listings.*, users.name as author_name
-        FROM listings_fts 
-        JOIN listings ON listings_fts.id = listings.id
-        JOIN users ON listings.user_id = users.id 
-        WHERE listings_fts MATCH ?
+        FROM listings
+        JOIN users ON listings.user_id = users.id
+        WHERE listings.status = 'active'
+        AND to_tsvector('simple', coalesce(listings.title,'') || ' ' || coalesce(listings.description,'') || ' ' || coalesce(listings.category,''))
+            @@ plainto_tsquery('simple', ?)
       `;
-      const params: any[] = [query + '*'];
+      const params: any[] = [query];
 
       if (!hasAccess) {
         if (userId) {
@@ -1227,7 +1228,7 @@ async function startServer() {
       } else if (sort === 'price_desc') {
         sql += ` ORDER BY listings.is_highlighted DESC, listings.price DESC`;
       } else {
-        sql += ` ORDER BY listings.is_highlighted DESC, rank`;
+        sql += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
       }
 
       const listings = await db.all(sql, params);
@@ -1658,12 +1659,12 @@ Return ONLY valid JSON, no markdown.`;
 
       // Check saved searches and notify users asynchronously
       setTimeout(() => {
-        checkSavedSearchesAndNotify(listingId, { title, price, category, attributes });
+        checkSavedSearchesAndNotify(listingId as number, { title, price, category, attributes }).catch(e => console.error('[saved-search-notify]', e));
       }, 0);
 
       // Run AI moderation asynchronously
       setTimeout(() => {
-        moderateListing(listingId, title, description, price);
+        moderateListing(listingId as number, title, description, price).catch(e => console.error('[moderate-listing]', e));
       }, 0);
 
       // Geocode location asynchronously
@@ -1672,7 +1673,7 @@ Return ONLY valid JSON, no markdown.`;
           if (coords) {
             await db.run('UPDATE listings SET lat = ?, lng = ? WHERE id = ?', [coords.lat, coords.lng, listingId]);
           }
-        });
+        }).catch(e => console.error('[geocode]', e));
       }
 
       res.json({ id: listingId, message: 'Listing created successfully' });
