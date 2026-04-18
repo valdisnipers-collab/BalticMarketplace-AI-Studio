@@ -154,7 +154,7 @@ async function startServer() {
   });
 
   // Stripe Webhook (must be before express.json())
-  app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req: any, res: any) => {
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
     
@@ -184,7 +184,7 @@ async function startServer() {
         const orderId = session.metadata?.orderId;
         if (orderId) {
           try {
-            db.prepare('UPDATE orders SET status = ?, stripe_session_id = ? WHERE id = ?').run('paid', session.id, orderId);
+            await db.run('UPDATE orders SET status = ?, stripe_session_id = ? WHERE id = ?', ['paid', session.id, orderId]);
             console.log(`Successfully processed escrow payment for order ${orderId}`);
           } catch (dbError) {
             console.error('Database error processing escrow webhook:', dbError);
@@ -194,24 +194,24 @@ async function startServer() {
         try {
           if (type === 'points') {
             // Add points
-            db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(amount, userId);
-            
-            db.prepare(`
+            await db.run('UPDATE users SET points = points + ? WHERE id = ?', [amount, userId]);
+
+            await db.run(`
               INSERT INTO points_history (user_id, points, reason)
               VALUES (?, ?, 'Punktu pirkums')
-            `).run(userId, amount);
+            `, [userId, amount]);
           } else {
             // Add funds (EUR)
-            db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, userId);
-            
+            await db.run('UPDATE users SET balance = balance + ? WHERE id = ?', [amount, userId]);
+
             // Reward bonus points for purchase (10 points per 1 EUR)
             const bonusPoints = Math.floor(amount * 10);
             if (bonusPoints > 0) {
-              db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(bonusPoints, userId);
-              db.prepare(`
+              await db.run('UPDATE users SET points = points + ? WHERE id = ?', [bonusPoints, userId]);
+              await db.run(`
                 INSERT INTO points_history (user_id, points, reason)
                 VALUES (?, ?, 'Bonuss par maka papildināšanu')
-              `).run(userId, bonusPoints);
+              `, [userId, bonusPoints]);
             }
           }
           console.log(`Successfully processed payment for user ${userId}: ${amount} ${type}`);
@@ -592,37 +592,37 @@ async function startServer() {
   });
 
   // User Profile Routes
-  app.get("/api/users/me/analytics", (req, res) => {
+  app.get("/api/users/me/analytics", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      
+
       // Get total views of user's listings
-      const viewsResult = db.prepare('SELECT SUM(views) as total_views FROM listings WHERE user_id = ?').get(decoded.userId) as { total_views: number | null };
-      
+      const viewsResult = await db.get('SELECT SUM(views) as total_views FROM listings WHERE user_id = ?', [decoded.userId]) as { total_views: number | null };
+
       // Get total favorites
-      const favoritesResult = db.prepare(`
-        SELECT COUNT(*) as total_favorites 
+      const favoritesResult = await db.get(`
+        SELECT COUNT(*) as total_favorites
         FROM favorites f
         JOIN listings l ON f.listing_id = l.id
         WHERE l.user_id = ?
-      `).get(decoded.userId) as { total_favorites: number };
+      `, [decoded.userId]) as { total_favorites: number };
 
       // Get total messages received for their listings
-      const messagesResult = db.prepare(`
+      const messagesResult = await db.get(`
         SELECT COUNT(*) as total_messages
         FROM messages m
         JOIN listings l ON m.listing_id = l.id
         WHERE l.user_id = ? AND m.receiver_id = ?
-      `).get(decoded.userId, decoded.userId) as { total_messages: number };
+      `, [decoded.userId, decoded.userId]) as { total_messages: number };
 
       res.json({
         total_views: viewsResult.total_views || 0,
-        total_favorites: favoritesResult.total_favorites || 0,
-        total_messages: messagesResult.total_messages || 0
+        total_favorites: Number(favoritesResult.total_favorites) || 0,
+        total_messages: Number(messagesResult.total_messages) || 0
       });
     } catch (error) {
       console.error("Error fetching analytics:", error);
@@ -630,7 +630,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/users/:id/follow", (req, res) => {
+  app.post("/api/users/:id/follow", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -643,7 +643,7 @@ async function startServer() {
         return res.status(400).json({ error: 'You cannot follow yourself' });
       }
 
-      db.prepare('INSERT OR IGNORE INTO followers (follower_id, following_id) VALUES (?, ?)').run(decoded.userId, followingId);
+      await db.run('INSERT INTO followers (follower_id, following_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [decoded.userId, followingId]);
       res.json({ message: 'Successfully followed user' });
     } catch (error) {
       console.error("Error following user:", error);
@@ -651,7 +651,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/users/:id/follow", (req, res) => {
+  app.delete("/api/users/:id/follow", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -660,7 +660,7 @@ async function startServer() {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const followingId = req.params.id;
 
-      db.prepare('DELETE FROM followers WHERE follower_id = ? AND following_id = ?').run(decoded.userId, followingId);
+      await db.run('DELETE FROM followers WHERE follower_id = ? AND following_id = ?', [decoded.userId, followingId]);
       res.json({ message: 'Successfully unfollowed user' });
     } catch (error) {
       console.error("Error unfollowing user:", error);
@@ -668,7 +668,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/:id/follow-status", (req, res) => {
+  app.get("/api/users/:id/follow-status", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.json({ isFollowing: false });
 
@@ -677,7 +677,7 @@ async function startServer() {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const followingId = req.params.id;
 
-      const result = db.prepare('SELECT 1 FROM followers WHERE follower_id = ? AND following_id = ?').get(decoded.userId, followingId);
+      const result = await db.get('SELECT 1 FROM followers WHERE follower_id = ? AND following_id = ?', [decoded.userId, followingId]);
       res.json({ isFollowing: !!result });
     } catch (error) {
       res.json({ isFollowing: false });
@@ -704,16 +704,16 @@ async function startServer() {
 
       if (!hasAccess) {
         if (userId) {
-          sql += ` AND (listings.created_at <= datetime('now', '-15 minutes') OR listings.user_id = ?)`;
+          sql += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
           params.push(userId);
         } else {
-          sql += ` AND listings.created_at <= datetime('now', '-15 minutes')`;
+          sql += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
         }
       }
 
       sql += ` ORDER BY listings.created_at DESC LIMIT 50`;
 
-      const listings = db.prepare(sql).all(...params);
+      const listings = await db.all(sql, params);
       res.json(listings);
     } catch (error) {
       console.error("Error fetching following listings:", error);
@@ -721,49 +721,49 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/me/orders/bought", (req, res) => {
+  app.get("/api/users/me/orders/bought", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const orders = db.prepare(`
+      const orders = await db.all(`
         SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as seller_name
         FROM orders o
         JOIN listings l ON o.listing_id = l.id
         JOIN users u ON o.seller_id = u.id
         WHERE o.buyer_id = ?
         ORDER BY o.created_at DESC
-      `).all(decoded.userId);
+      `, [decoded.userId]);
       res.json(orders);
     } catch (error) {
       res.status(500).json({ error: 'Server error' });
     }
   });
 
-  app.get("/api/users/me/orders/sold", (req, res) => {
+  app.get("/api/users/me/orders/sold", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const orders = db.prepare(`
+      const orders = await db.all(`
         SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as buyer_name
         FROM orders o
         JOIN listings l ON o.listing_id = l.id
         JOIN users u ON o.buyer_id = u.id
         WHERE o.seller_id = ?
         ORDER BY o.created_at DESC
-      `).all(decoded.userId);
+      `, [decoded.userId]);
       res.json(orders);
     } catch (error) {
       res.status(500).json({ error: 'Server error' });
     }
   });
 
-  app.post("/api/orders/:id/ship", (req, res) => {
+  app.post("/api/orders/:id/ship", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -772,20 +772,20 @@ async function startServer() {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const orderId = req.params.id;
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+      const order = await db.get('SELECT * FROM orders WHERE id = ?', [orderId]) as any;
       if (!order) return res.status(404).json({ error: 'Order not found' });
       if (order.seller_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
       if (order.status !== 'paid') return res.status(400).json({ error: 'Order is not in paid status' });
 
-      db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('shipped', orderId);
-      
-      const listing = db.prepare('SELECT title FROM listings WHERE id = ?').get(order.listing_id) as any;
+      await db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['shipped', orderId]);
+
+      const listing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;
       io.to(`user_${order.buyer_id}`).emit('order_shipped', {
         id: orderId,
         listing_title: listing?.title || 'Prece'
       });
 
-      const buyer = db.prepare('SELECT email, name FROM users WHERE id = ?').get(order.buyer_id) as any;
+      const buyer = await db.get('SELECT email, name FROM users WHERE id = ?', [order.buyer_id]) as any;
       if (buyer?.email) {
         sendEmail(
           buyer.email,
@@ -886,18 +886,18 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/me/listings", (req, res) => {
+  app.get("/api/users/me/listings", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const listings = db.prepare(`
-        SELECT * FROM listings 
-        WHERE user_id = ? 
+      const listings = await db.all(`
+        SELECT * FROM listings
+        WHERE user_id = ?
         ORDER BY is_highlighted DESC, created_at DESC
-      `).all(decoded.userId);
+      `, [decoded.userId]);
       res.json(listings);
     } catch (error) {
       console.error("Error fetching user listings:", error);
@@ -925,16 +925,16 @@ async function startServer() {
 
       if (!hasAccess) {
         if (userId) {
-          sql += ` AND (listings.created_at <= datetime('now', '-15 minutes') OR listings.user_id = ?)`;
+          sql += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
           params.push(userId);
         } else {
-          sql += ` AND listings.created_at <= datetime('now', '-15 minutes')`;
+          sql += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
         }
       }
 
       sql += ` ORDER BY listings.is_highlighted DESC, favorites.created_at DESC`;
 
-      const favorites = db.prepare(sql).all(...params);
+      const favorites = await db.all(sql, params);
       res.json(favorites);
     } catch (error) {
       console.error("Error fetching user favorites:", error);
@@ -943,7 +943,7 @@ async function startServer() {
   });
 
   // Favorites Routes
-  app.post("/api/favorites/:id", (req, res) => {
+  app.post("/api/favorites/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -951,8 +951,8 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      
-      db.prepare('INSERT OR IGNORE INTO favorites (user_id, listing_id) VALUES (?, ?)').run(decoded.userId, listingId);
+
+      await db.run('INSERT INTO favorites (user_id, listing_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [decoded.userId, listingId]);
       res.json({ message: 'Added to favorites' });
     } catch (error) {
       console.error("Error adding favorite:", error);
@@ -960,7 +960,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/favorites/:id", (req, res) => {
+  app.delete("/api/favorites/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -968,8 +968,8 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      
-      db.prepare('DELETE FROM favorites WHERE user_id = ? AND listing_id = ?').run(decoded.userId, listingId);
+
+      await db.run('DELETE FROM favorites WHERE user_id = ? AND listing_id = ?', [decoded.userId, listingId]);
       res.json({ message: 'Removed from favorites' });
     } catch (error) {
       console.error("Error removing favorite:", error);
@@ -977,14 +977,14 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/me/saved-searches", (req, res) => {
+  app.get("/api/users/me/saved-searches", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     try {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const searches = db.prepare('SELECT * FROM saved_searches WHERE user_id = ? ORDER BY created_at DESC').all(decoded.userId);
+      const searches = await db.all('SELECT * FROM saved_searches WHERE user_id = ? ORDER BY created_at DESC', [decoded.userId]);
       res.json(searches);
     } catch (error) {
       console.error("Error fetching saved searches:", error);
@@ -992,7 +992,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/users/me/saved-searches", (req, res) => {
+  app.post("/api/users/me/saved-searches", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -1000,20 +1000,20 @@ async function startServer() {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const { query, category, subcategory, min_price, max_price, attributes } = req.body;
-      
-      const result = db.prepare(`
+
+      const result = await db.run(`
         INSERT INTO saved_searches (user_id, query, category, subcategory, min_price, max_price, attributes)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        decoded.userId, 
-        query || null, 
-        category || null, 
-        subcategory || null, 
-        min_price || null, 
-        max_price || null, 
+      `, [
+        decoded.userId,
+        query || null,
+        category || null,
+        subcategory || null,
+        min_price || null,
+        max_price || null,
         attributes ? JSON.stringify(attributes) : null
-      );
-      
+      ]);
+
       res.json({ id: result.lastInsertRowid, message: 'Search saved' });
     } catch (error) {
       console.error("Error saving search:", error);
@@ -1021,15 +1021,15 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/users/me/saved-searches/:id", (req, res) => {
+  app.delete("/api/users/me/saved-searches/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     try {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      
-      db.prepare('DELETE FROM saved_searches WHERE id = ? AND user_id = ?').run(req.params.id, decoded.userId);
+
+      await db.run('DELETE FROM saved_searches WHERE id = ? AND user_id = ?', [req.params.id, decoded.userId]);
       res.json({ message: 'Saved search deleted' });
     } catch (error) {
       console.error("Error deleting saved search:", error);
@@ -1037,14 +1037,14 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/me/notifications", (req, res) => {
+  app.get("/api/users/me/notifications", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     try {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const notifications = db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(decoded.userId);
+      const notifications = await db.all('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', [decoded.userId]);
       res.json(notifications);
     } catch (error) {
       console.error("Error fetching notifications:", error);
@@ -1052,15 +1052,15 @@ async function startServer() {
     }
   });
 
-  app.put("/api/users/me/notifications/:id/read", (req, res) => {
+  app.put("/api/users/me/notifications/:id/read", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     try {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(req.params.id, decoded.userId);
+
+      await db.run('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?', [req.params.id, decoded.userId]);
       res.json({ message: 'Notification marked as read' });
     } catch (error) {
       console.error("Error updating notification:", error);
@@ -1068,9 +1068,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/users/:id", (req, res) => {
+  app.get("/api/users/:id", async (req, res) => {
     try {
-      const user = db.prepare('SELECT id, name, created_at FROM users WHERE id = ?').get(req.params.id) as any;
+      const user = await db.get('SELECT id, name, created_at FROM users WHERE id = ?', [req.params.id]) as any;
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json(user);
     } catch (error) {
@@ -1080,16 +1080,16 @@ async function startServer() {
   });
 
   // Reviews Routes
-  app.get("/api/users/:id/reviews", (req, res) => {
+  app.get("/api/users/:id/reviews", async (req, res) => {
     try {
       const sellerId = req.params.id;
-      const reviews = db.prepare(`
-        SELECT reviews.*, users.name as reviewer_name 
-        FROM reviews 
-        JOIN users ON reviews.reviewer_id = users.id 
-        WHERE seller_id = ? 
+      const reviews = await db.all(`
+        SELECT reviews.*, users.name as reviewer_name
+        FROM reviews
+        JOIN users ON reviews.reviewer_id = users.id
+        WHERE seller_id = ?
         ORDER BY reviews.created_at DESC
-      `).all(sellerId);
+      `, [sellerId]);
       res.json(reviews);
     } catch (error) {
       console.error("Error fetching reviews:", error);
@@ -1097,7 +1097,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/users/:id/reviews", (req, res) => {
+  app.post("/api/users/:id/reviews", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -1120,21 +1120,20 @@ async function startServer() {
       }
 
       // Verify that the user actually bought from this seller and the order is completed
-      const order = db.prepare('SELECT * FROM orders WHERE id = ? AND buyer_id = ? AND seller_id = ? AND status = ?').get(orderId, decoded.userId, sellerId, 'completed');
-      
+      const order = await db.get('SELECT * FROM orders WHERE id = ? AND buyer_id = ? AND seller_id = ? AND status = ?', [orderId, decoded.userId, sellerId, 'completed']);
+
       if (!order) {
         return res.status(403).json({ error: 'You can only review sellers after a completed purchase' });
       }
 
       // Check if a review already exists for this order
-      const existingReview = db.prepare('SELECT id FROM reviews WHERE order_id = ?').get(orderId);
+      const existingReview = await db.get('SELECT id FROM reviews WHERE order_id = ?', [orderId]);
       if (existingReview) {
         return res.status(400).json({ error: 'You have already reviewed this order' });
       }
 
-      const stmt = db.prepare('INSERT INTO reviews (reviewer_id, seller_id, order_id, rating, comment) VALUES (?, ?, ?, ?, ?)');
-      const info = stmt.run(decoded.userId, sellerId, orderId, rating, comment);
-      
+      const info = await db.run('INSERT INTO reviews (reviewer_id, seller_id, order_id, rating, comment) VALUES (?, ?, ?, ?, ?)', [decoded.userId, sellerId, orderId, rating, comment]);
+
       res.json({ id: info.lastInsertRowid, message: 'Review added successfully' });
     } catch (error) {
       console.error("Error adding review:", error);
@@ -1182,10 +1181,10 @@ async function startServer() {
 
       if (!hasAccess) {
         if (userId) {
-          sql += ` AND (listings.created_at <= datetime('now', '-15 minutes') OR listings.user_id = ?)`;
+          sql += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
           params.push(userId);
         } else {
-          sql += ` AND listings.created_at <= datetime('now', '-15 minutes')`;
+          sql += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
         }
       }
 
@@ -1194,7 +1193,7 @@ async function startServer() {
         params.push(category);
       }
       if (subcategory) {
-        sql += ` AND json_extract(listings.attributes, '$.subcategory') = ?`;
+        sql += ` AND (listings.attributes::json)->>'subcategory' = ?`;
         params.push(subcategory);
       }
       if (listingType && listingType !== 'all') {
@@ -1210,7 +1209,7 @@ async function startServer() {
         params.push(Number(maxPrice));
       }
       if (location) {
-        sql += ` AND listings.location LIKE ?`;
+        sql += ` AND listings.location ILIKE ?`;
         params.push(`%${location}%`);
       }
 
@@ -1218,8 +1217,8 @@ async function startServer() {
       for (const [key, value] of Object.entries(restQuery)) {
         if (key.startsWith('attr_') && value) {
           const attrName = key.replace('attr_', '');
-          sql += ` AND json_extract(listings.attributes, ?) = ?`;
-          params.push(`$.${attrName}`, value);
+          sql += ` AND (listings.attributes::json)->>? = ?`;
+          params.push(attrName, value);
         }
       }
 
@@ -1230,8 +1229,8 @@ async function startServer() {
       } else {
         sql += ` ORDER BY listings.is_highlighted DESC, rank`;
       }
-      
-      const listings = db.prepare(sql).all(...params);
+
+      const listings = await db.all(sql, params);
       res.json(listings);
     } catch (error) {
       console.error("Error searching listings:", error);
@@ -1254,10 +1253,10 @@ async function startServer() {
 
       if (!hasAccess) {
         if (userId) {
-          query += ` AND (listings.created_at <= datetime('now', '-15 minutes') OR listings.user_id = ?)`;
+          query += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
           params.push(userId);
         } else {
-          query += ` AND listings.created_at <= datetime('now', '-15 minutes')`;
+          query += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
         }
       }
 
@@ -1266,7 +1265,7 @@ async function startServer() {
         params.push(category);
       }
       if (subcategory) {
-        query += ` AND json_extract(attributes, '$.subcategory') = ?`;
+        query += ` AND (attributes::json)->>'subcategory' = ?`;
         params.push(subcategory);
       }
       if (listingType && listingType !== 'all') {
@@ -1282,7 +1281,7 @@ async function startServer() {
         params.push(Number(maxPrice));
       }
       if (location) {
-        query += ` AND location LIKE ?`;
+        query += ` AND location ILIKE ?`;
         params.push(`%${location}%`);
       }
       if (lat && lng && radius) {
@@ -1299,8 +1298,8 @@ async function startServer() {
       for (const [key, value] of Object.entries(restQuery)) {
         if (key.startsWith('attr_') && value) {
           const attrName = key.replace('attr_', '');
-          query += ` AND json_extract(attributes, ?) = ?`;
-          params.push(`$.${attrName}`, value);
+          query += ` AND (attributes::json)->>? = ?`;
+          params.push(attrName, value);
         }
       }
 
@@ -1311,8 +1310,8 @@ async function startServer() {
       } else {
         query += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
       }
-      
-      const listings = db.prepare(query).all(...params);
+
+      const listings = await db.all(query, params);
       res.json(listings);
     } catch (error) {
       console.error("Error fetching listings:", error);
@@ -1334,14 +1333,14 @@ async function startServer() {
 
       if (!hasAccess) {
         if (userId) {
-          sql += ` AND (listings.created_at <= datetime('now', '-15 minutes') OR listings.user_id = ?)`;
+          sql += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
           params.push(userId);
         } else {
-          sql += ` AND listings.created_at <= datetime('now', '-15 minutes')`;
+          sql += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
         }
       }
 
-      const listing = db.prepare(sql).get(...params);
+      const listing = await db.get(sql, params);
       
       if (!listing) return res.status(404).json({ error: 'Listing not found or not available yet' });
       res.json(listing);
@@ -1603,36 +1602,36 @@ Return ONLY valid JSON, no markdown.`;
       const result = JSON.parse(resultText);
 
       // Update database with AI results
-      db.prepare(`
-        UPDATE listings 
-        SET ai_trust_score = ?, 
-            ai_moderation_status = ?, 
+      await db.run(`
+        UPDATE listings
+        SET ai_trust_score = ?,
+            ai_moderation_status = ?,
             ai_moderation_reason = ?,
             status = CASE WHEN ? = 'flagged' THEN 'flagged' ELSE status END
         WHERE id = ?
-      `).run(
+      `, [
         result.trustScore || 100,
         result.status || 'approved',
         result.reason || null,
         result.status,
         listingId
-      );
+      ]);
 
       if (result.isFlagged || result.status === 'flagged') {
         console.log(`[AI MODERATION] Listing ${listingId} flagged. Reason: ${result.reason}`);
-        
+
         // Add to reports table for admin review
-        db.prepare(`
+        await db.run(`
           INSERT INTO reports (reporter_id, listing_id, reason, status)
           VALUES (1, ?, ?, 'pending')
-        `).run(listingId, `AI Moderācija: ${result.reason} (Uzticamība: ${result.trustScore}%)`);
+        `, [listingId, `AI Moderācija: ${result.reason} (Uzticamība: ${result.trustScore}%)`]);
       }
     } catch (error) {
       console.error("Error in AI moderation:", error);
     }
   }
 
-  app.post("/api/listings", (req, res) => {
+  app.post("/api/listings", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -1645,19 +1644,18 @@ Return ONLY valid JSON, no markdown.`;
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      const stmt = db.prepare('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, video_url || null);
-      
+      const info = await db.run('INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, video_url || null]);
+
       const listingId = info.lastInsertRowid;
-      
+
       // Reward user with 50 points for posting a listing
       try {
-        db.prepare('UPDATE users SET points = points + 50 WHERE id = ?').run(decoded.userId);
-        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(decoded.userId, 50, 'Sludinājuma pievienošana');
+        await db.run('UPDATE users SET points = points + 50 WHERE id = ?', [decoded.userId]);
+        await db.run('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, 50, 'Sludinājuma pievienošana']);
       } catch (pointsError) {
         console.error("Error rewarding points for listing:", pointsError);
       }
-      
+
       // Check saved searches and notify users asynchronously
       setTimeout(() => {
         checkSavedSearchesAndNotify(listingId, { title, price, category, attributes });
@@ -1670,9 +1668,9 @@ Return ONLY valid JSON, no markdown.`;
 
       // Geocode location asynchronously
       if (location) {
-        geocodeLocation(location).then(coords => {
+        geocodeLocation(location).then(async coords => {
           if (coords) {
-            db.prepare('UPDATE listings SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, listingId);
+            await db.run('UPDATE listings SET lat = ?, lng = ? WHERE id = ?', [coords.lat, coords.lng, listingId]);
           }
         });
       }
@@ -1684,43 +1682,43 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  function checkSavedSearchesAndNotify(listingId: number | bigint, listingData: any) {
+  async function checkSavedSearchesAndNotify(listingId: number | bigint, listingData: any) {
     try {
-      const savedSearches = db.prepare('SELECT * FROM saved_searches').all() as any[];
-      
+      const savedSearches = await db.all('SELECT * FROM saved_searches', []) as any[];
+
       for (const search of savedSearches) {
         let match = true;
-        
+
         if (search.category && search.category !== listingData.category) {
           match = false;
         }
-        
+
         if (match && search.min_price && listingData.price < search.min_price) {
           match = false;
         }
-        
+
         if (match && search.max_price && listingData.price > search.max_price) {
           match = false;
         }
-        
+
         if (match && search.query && !listingData.title.toLowerCase().includes(search.query.toLowerCase())) {
           match = false;
         }
-        
+
         // We could add more complex attribute matching here
-        
+
         if (match) {
           // Send notification
-          db.prepare(`
+          await db.run(`
             INSERT INTO notifications (user_id, type, title, message, link)
             VALUES (?, 'saved_search_match', 'Jauns sludinājums jūsu meklējumam', ?, ?)
-          `).run(
+          `, [
             search.user_id,
             `Atrasts jauns sludinājums "${listingData.title}" par €${listingData.price}.`,
             `/listing/${listingId}`
-          );
-          
-          const user = db.prepare('SELECT email, name FROM users WHERE id = ?').get(search.user_id) as any;
+          ]);
+
+          const user = await db.get('SELECT email, name FROM users WHERE id = ?', [search.user_id]) as any;
           if (user?.email) {
             sendEmail(
               user.email,
@@ -1735,7 +1733,7 @@ Return ONLY valid JSON, no markdown.`;
     }
   }
 
-  app.post("/api/listings/:id/highlight", (req, res) => {
+  app.post("/api/listings/:id/highlight", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -1745,27 +1743,27 @@ Return ONLY valid JSON, no markdown.`;
       const listingId = req.params.id;
 
       // Verify ownership
-      const listing = db.prepare('SELECT user_id, is_highlighted FROM listings WHERE id = ?').get(listingId) as any;
-      
+      const listing = await db.get('SELECT user_id, is_highlighted FROM listings WHERE id = ?', [listingId]) as any;
+
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
       if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
       if (listing.is_highlighted) return res.status(400).json({ error: 'Listing is already highlighted' });
 
       // Check points
-      const user = db.prepare('SELECT points FROM users WHERE id = ?').get(decoded.userId) as any;
+      const user = await db.get('SELECT points FROM users WHERE id = ?', [decoded.userId]) as any;
       if (!user || user.points < 100) {
         return res.status(400).json({ error: 'Nepietiekams punktu skaits (nepieciešami 100 punkti)' });
       }
 
       // Deduct points and highlight
-      db.transaction(() => {
-        db.prepare('UPDATE users SET points = points - 100 WHERE id = ?').run(decoded.userId);
-        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(decoded.userId, -100, `Sludinājuma #${listingId} izcelšana`);
-        db.prepare('UPDATE listings SET is_highlighted = 1 WHERE id = ?').run(listingId);
-      })();
+      await db.transaction(async (client) => {
+        await db.clientRun(client, 'UPDATE users SET points = points - 100 WHERE id = ?', [decoded.userId]);
+        await db.clientRun(client, 'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, -100, `Sludinājuma #${listingId} izcelšana`]);
+        await db.clientRun(client, 'UPDATE listings SET is_highlighted = 1 WHERE id = ?', [listingId]);
+      });
 
       // Fetch updated user to return new points balance
-      const updatedUser = db.prepare('SELECT points FROM users WHERE id = ?').get(decoded.userId) as any;
+      const updatedUser = await db.get('SELECT points FROM users WHERE id = ?', [decoded.userId]) as any;
 
       res.json({ message: 'Sludinājums izcelts veiksmīgi', points: updatedUser.points });
     } catch (error) {
@@ -1774,7 +1772,7 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.delete("/api/listings/:id", (req, res) => {
+  app.delete("/api/listings/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -1784,12 +1782,12 @@ Return ONLY valid JSON, no markdown.`;
       const listingId = req.params.id;
 
       // Verify ownership
-      const listing = db.prepare('SELECT user_id FROM listings WHERE id = ?').get(listingId) as { user_id: number } | undefined;
-      
+      const listing = await db.get('SELECT user_id FROM listings WHERE id = ?', [listingId]) as { user_id: number } | undefined;
+
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
       if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to delete this listing' });
 
-      db.prepare('DELETE FROM listings WHERE id = ?').run(listingId);
+      await db.run('DELETE FROM listings WHERE id = ?', [listingId]);
       res.json({ message: 'Listing deleted successfully' });
     } catch (error) {
       console.error("Error deleting listing:", error);
@@ -1798,42 +1796,42 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Messaging API
-  app.get("/api/messages/unread-count", (req, res) => {
+  app.get("/api/messages/unread-count", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const userId = decoded.userId;
 
-      const result = db.prepare(`
-        SELECT COUNT(*) as count 
-        FROM messages 
+      const result = await db.get(`
+        SELECT COUNT(*) as count
+        FROM messages
         WHERE receiver_id = ? AND is_read = 0
-      `).get(userId) as { count: number };
+      `, [userId]) as { count: number | string };
 
-      res.json({ count: result.count });
+      res.json({ count: Number(result.count) });
     } catch (error) {
       console.error("Error fetching unread count:", error);
       res.status(500).json({ error: 'Server error fetching unread count' });
     }
   });
 
-  app.get("/api/messages/conversations", (req, res) => {
+  app.get("/api/messages/conversations", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const userId = decoded.userId;
 
       // Get latest message for each conversation
-      const conversations = db.prepare(`
-        SELECT 
-          m.id, 
-          CASE WHEN m.content = '' AND m.image_url IS NOT NULL THEN 'Attēls' ELSE m.content END as lastMessage, 
+      const conversations = await db.all(`
+        SELECT
+          m.id,
+          CASE WHEN m.content = '' AND m.image_url IS NOT NULL THEN 'Attēls' ELSE m.content END as lastMessage,
           m.created_at as time, m.is_read,
           CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END as other_user_id,
           u.name as other_user_name,
@@ -1849,7 +1847,7 @@ Return ONLY valid JSON, no markdown.`;
           GROUP BY CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END, listing_id
         )
         ORDER BY m.created_at DESC
-      `).all(userId, userId, userId, userId, userId, userId);
+      `, [userId, userId, userId, userId, userId, userId]);
 
       res.json(conversations);
     } catch (error) {
@@ -1858,11 +1856,11 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/messages/:otherUserId", (req, res) => {
+  app.get("/api/messages/:otherUserId", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const userId = decoded.userId;
@@ -1870,7 +1868,7 @@ Return ONLY valid JSON, no markdown.`;
       const listingId = req.query.listingId;
 
       let query = `
-        SELECT m.*, 
+        SELECT m.*,
           CASE WHEN m.sender_id = ? THEN 'me' ELSE 'other' END as sender,
           o.amount as offer_amount, o.status as offer_status
         FROM messages m
@@ -1886,7 +1884,7 @@ Return ONLY valid JSON, no markdown.`;
 
       query += ` ORDER BY m.created_at ASC`;
 
-      const messages = db.prepare(query).all(...params);
+      const messages = await db.all(query, params);
 
       // Mark as read
       let updateQuery = `UPDATE messages SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?`;
@@ -1895,7 +1893,7 @@ Return ONLY valid JSON, no markdown.`;
         updateQuery += ` AND listing_id = ?`;
         updateParams.push(listingId);
       }
-      db.prepare(updateQuery).run(...updateParams);
+      await db.run(updateQuery, updateParams);
 
       res.json(messages);
     } catch (error) {
@@ -1957,14 +1955,13 @@ Return ONLY valid JSON, no markdown.`;
         }
       }
 
-      const stmt = db.prepare('INSERT INTO messages (sender_id, receiver_id, listing_id, content, image_url, is_phishing_warning, system_warning) VALUES (?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(senderId, receiverId, listingId || null, content || '', image_url || null, isPhishingWarning, systemWarning);
+      const info = await db.run('INSERT INTO messages (sender_id, receiver_id, listing_id, content, image_url, is_phishing_warning, system_warning) VALUES (?, ?, ?, ?, ?, ?, ?)', [senderId, receiverId, listingId || null, content || '', image_url || null, isPhishingWarning, systemWarning]);
 
-      const message = db.prepare(`
-        SELECT m.*, 'me' as sender 
-        FROM messages m 
+      const message = await db.get(`
+        SELECT m.*, 'me' as sender
+        FROM messages m
         WHERE id = ?
-      `).get(info.lastInsertRowid);
+      `, [info.lastInsertRowid]);
 
       // Emit the message to the receiver
       io.to(`user_${receiverId}`).emit('new_message', {
@@ -1980,11 +1977,11 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Offers API
-  app.post("/api/listings/:id/offers", (req, res) => {
+  app.post("/api/listings/:id/offers", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const senderId = decoded.userId;
@@ -1995,9 +1992,9 @@ Return ONLY valid JSON, no markdown.`;
         return res.status(400).json({ error: 'Invalid offer amount' });
       }
 
-      const listing = db.prepare('SELECT user_id, title FROM listings WHERE id = ?').get(listingId) as any;
+      const listing = await db.get('SELECT user_id, title FROM listings WHERE id = ?', [listingId]) as any;
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
-      
+
       const isSeller = listing.user_id === senderId;
       const buyerId = isSeller ? providedBuyerId : senderId;
       const receiverId = isSeller ? buyerId : listing.user_id;
@@ -2006,26 +2003,24 @@ Return ONLY valid JSON, no markdown.`;
         return res.status(400).json({ error: 'Buyer ID is required for counter-offers' });
       }
 
-      const stmt = db.prepare('INSERT INTO offers (listing_id, buyer_id, sender_id, amount) VALUES (?, ?, ?, ?)');
-      const info = stmt.run(listingId, buyerId, senderId, amount);
+      const info = await db.run('INSERT INTO offers (listing_id, buyer_id, sender_id, amount) VALUES (?, ?, ?, ?)', [listingId, buyerId, senderId, amount]);
       const offerId = info.lastInsertRowid;
 
       // Also send a message about the offer
-      const msgStmt = db.prepare('INSERT INTO messages (sender_id, receiver_id, listing_id, offer_id, content) VALUES (?, ?, ?, ?, ?)');
-      msgStmt.run(senderId, receiverId, listingId, offerId, isSeller ? `Es piedāvāju pretcenu €${amount}.` : `Es piedāvāju €${amount} par šo preci.`);
+      await db.run('INSERT INTO messages (sender_id, receiver_id, listing_id, offer_id, content) VALUES (?, ?, ?, ?, ?)', [senderId, receiverId, listingId, offerId, isSeller ? `Es piedāvāju pretcenu €${amount}.` : `Es piedāvāju €${amount} par šo preci.`]);
 
       // Notify receiver
-      db.prepare(`
+      await db.run(`
         INSERT INTO notifications (user_id, type, title, message, link)
         VALUES (?, 'new_offer', ?, ?, ?)
-      `).run(
+      `, [
         receiverId,
         isSeller ? 'Saņemts pretpiedāvājums' : 'Jauns piedāvājums',
-        isSeller 
+        isSeller
           ? `Pārdevējs izteica pretpiedāvājumu €${amount} sludinājumam "${listing.title}".`
           : `Saņemts jauns piedāvājums €${amount} sludinājumam "${listing.title}".`,
         `/chat?userId=${senderId}&listingId=${listingId}`
-      );
+      ]);
 
       res.json({ id: offerId, message: 'Offer sent successfully' });
     } catch (error) {
@@ -2034,21 +2029,21 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/users/me/offers/received", (req, res) => {
+  app.get("/api/users/me/offers/received", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const offers = db.prepare(`
+      const offers = await db.all(`
         SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as buyer_name
         FROM offers o
         JOIN listings l ON o.listing_id = l.id
         JOIN users u ON o.buyer_id = u.id
         WHERE l.user_id = ?
         ORDER BY o.created_at DESC
-      `).all(decoded.userId);
+      `, [decoded.userId]);
       res.json(offers);
     } catch (error) {
       console.error("Error fetching received offers:", error);
@@ -2056,21 +2051,21 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/users/me/offers/sent", (req, res) => {
+  app.get("/api/users/me/offers/sent", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const offers = db.prepare(`
+      const offers = await db.all(`
         SELECT o.*, l.title as listing_title, l.image_url as listing_image, u.name as seller_name, l.user_id as seller_id
         FROM offers o
         JOIN listings l ON o.listing_id = l.id
         JOIN users u ON l.user_id = u.id
         WHERE o.buyer_id = ?
         ORDER BY o.created_at DESC
-      `).all(decoded.userId);
+      `, [decoded.userId]);
       res.json(offers);
     } catch (error) {
       console.error("Error fetching sent offers:", error);
@@ -2078,11 +2073,11 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.patch("/api/offers/:id/status", (req, res) => {
+  app.patch("/api/offers/:id/status", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const offerId = req.params.id;
@@ -2093,15 +2088,15 @@ Return ONLY valid JSON, no markdown.`;
       }
 
       // Verify ownership (only receiver can accept/reject)
-      const offer = db.prepare(`
+      const offer = await db.get(`
         SELECT o.*, l.user_id as seller_id, l.title as listing_title
         FROM offers o
         JOIN listings l ON o.listing_id = l.id
         WHERE o.id = ?
-      `).get(offerId) as any;
+      `, [offerId]) as any;
 
       if (!offer) return res.status(404).json({ error: 'Offer not found' });
-      
+
       const isSeller = offer.seller_id === decoded.userId;
       const isBuyer = offer.buyer_id === decoded.userId;
       const isSender = offer.sender_id === decoded.userId;
@@ -2119,24 +2114,24 @@ Return ONLY valid JSON, no markdown.`;
         return res.status(400).json({ error: 'Offer status already updated' });
       }
 
-      db.prepare('UPDATE offers SET status = ? WHERE id = ?').run(status, offerId);
+      await db.run('UPDATE offers SET status = ? WHERE id = ?', [status, offerId]);
 
       // If accepted, mark listing as sold
       if (status === 'accepted') {
-        db.prepare('UPDATE listings SET status = "sold" WHERE id = ?').run(offer.listing_id);
+        await db.run("UPDATE listings SET status = 'sold' WHERE id = ?", [offer.listing_id]);
       }
 
       // Notify the other party (the sender)
       const statusText = status === 'accepted' ? 'pieņemts' : 'noraidīts';
-      db.prepare(`
+      await db.run(`
         INSERT INTO notifications (user_id, type, title, message, link)
         VALUES (?, 'offer_status', ?, ?, ?)
-      `).run(
+      `, [
         offer.sender_id,
         `Piedāvājums ${statusText}`,
         `Jūsu piedāvājums €${offer.amount} sludinājumam "${offer.listing_title}" tika ${statusText}.`,
         `/chat?userId=${decoded.userId}&listingId=${offer.listing_id}`
-      );
+      ]);
 
       res.json({ success: true, status });
     } catch (error) {
@@ -2144,7 +2139,7 @@ Return ONLY valid JSON, no markdown.`;
       res.status(500).json({ error: 'Server error updating offer status' });
     }
   });
-  app.post("/api/listings/:id/bids", (req, res) => {
+  app.post("/api/listings/:id/bids", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -2159,13 +2154,13 @@ Return ONLY valid JSON, no markdown.`;
       }
 
       // Check if listing exists and is an auction
-      const listing = db.prepare('SELECT price, attributes, user_id, status FROM listings WHERE id = ?').get(listingId) as any;
+      const listing = await db.get('SELECT price, attributes, user_id, status FROM listings WHERE id = ?', [listingId]) as any;
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
-      
+
       if (listing.status !== 'active') {
         return res.status(400).json({ error: 'This auction has ended' });
       }
-      
+
       if (listing.user_id === decoded.userId) {
         return res.status(400).json({ error: 'Cannot bid on your own listing' });
       }
@@ -2176,7 +2171,7 @@ Return ONLY valid JSON, no markdown.`;
       }
 
       // Check if bid is higher than current highest bid or starting price
-      const highestBid = db.prepare('SELECT MAX(amount) as maxAmount FROM bids WHERE listing_id = ?').get(listingId) as { maxAmount: number | null };
+      const highestBid = await db.get('SELECT MAX(amount) as maxAmount FROM bids WHERE listing_id = ?', [listingId]) as { maxAmount: number | null };
       const currentHighest = highestBid.maxAmount !== null ? highestBid.maxAmount : listing.price;
 
       if (amount <= currentHighest) {
@@ -2188,28 +2183,27 @@ Return ONLY valid JSON, no markdown.`;
         const endDate = new Date(attributes.auctionEndDate);
         const now = new Date();
         const timeDiffMs = endDate.getTime() - now.getTime();
-        
+
         // If less than 3 minutes remaining, extend by 3 minutes
         if (timeDiffMs > 0 && timeDiffMs < 3 * 60 * 1000) {
           const newEndDate = new Date(now.getTime() + 3 * 60 * 1000);
           attributes.auctionEndDate = newEndDate.toISOString();
-          
-          db.prepare('UPDATE listings SET attributes = ? WHERE id = ?').run(
+
+          await db.run('UPDATE listings SET attributes = ? WHERE id = ?', [
             JSON.stringify(attributes),
             listingId
-          );
+          ]);
         }
       }
 
-      const stmt = db.prepare('INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)');
-      const info = stmt.run(listingId, decoded.userId, amount);
-      
-      const newBid = db.prepare(`
+      const info = await db.run('INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)', [listingId, decoded.userId, amount]);
+
+      const newBid = await db.get(`
         SELECT b.id, b.user_id, b.amount, b.created_at, u.name as bidder_name
         FROM bids b
         JOIN users u ON b.user_id = u.id
         WHERE b.id = ?
-      `).get(info.lastInsertRowid) as any;
+      `, [info.lastInsertRowid]) as any;
 
       // Emit real-time bid update
       io.emit('new_bid', {
@@ -2218,14 +2212,14 @@ Return ONLY valid JSON, no markdown.`;
       });
 
       // Notify seller
-      db.prepare(`
+      await db.run(`
         INSERT INTO notifications (user_id, type, title, message, link)
         VALUES (?, 'new_bid', 'Jauns solījums jūsu izsolē', ?, ?)
-      `).run(
+      `, [
         listing.user_id,
         `Lietotājs ${newBid.bidder_name} veica solījumu €${amount} jūsu izsolē.`,
         `/listing/${listingId}`
-      );
+      ]);
 
       res.json(newBid);
     } catch (error) {
@@ -2234,17 +2228,16 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/listings/:id/bids", (req, res) => {
+  app.get("/api/listings/:id/bids", async (req, res) => {
     try {
       const listingId = req.params.id;
-      const stmt = db.prepare(`
-        SELECT bids.*, users.name as bidder_name 
-        FROM bids 
-        JOIN users ON bids.user_id = users.id 
-        WHERE listing_id = ? 
+      const bids = await db.all(`
+        SELECT bids.*, users.name as bidder_name
+        FROM bids
+        JOIN users ON bids.user_id = users.id
+        WHERE listing_id = ?
         ORDER BY amount DESC
-      `);
-      const bids = stmt.all(listingId);
+      `, [listingId]);
       res.json(bids);
     } catch (error) {
       console.error("Error fetching bids:", error);
@@ -2252,7 +2245,7 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.put("/api/listings/:id", (req, res) => {
+  app.put("/api/listings/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -2263,37 +2256,33 @@ Return ONLY valid JSON, no markdown.`;
       const { title, description, price, category, image_url, location, is_auction, auction_end_date, listing_type, exchange_for } = req.body;
 
       // Verify ownership
-      const listing = db.prepare('SELECT user_id, price, title FROM listings WHERE id = ?').get(listingId) as { user_id: number, price: number, title: string } | undefined;
-      
+      const listing = await db.get('SELECT user_id, price, title FROM listings WHERE id = ?', [listingId]) as { user_id: number, price: number, title: string } | undefined;
+
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
       if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to edit this listing' });
 
-      db.prepare(`
-        UPDATE listings 
+      await db.run(`
+        UPDATE listings
         SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?, listing_type = ?, exchange_for = ?
         WHERE id = ?
-      `).run(title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, listingId);
+      `, [title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, listingId]);
 
       // Price Drop Alert Logic
       if (price < listing.price) {
         // Fetch users who favorited this listing
-        const favoritedUsers = db.prepare('SELECT user_id FROM favorites WHERE listing_id = ?').all(listingId) as { user_id: number }[];
-        
-        const insertNotification = db.prepare(`
-          INSERT INTO notifications (user_id, type, title, message, link)
-          VALUES (?, 'system', 'Price Drop Alert!', ?, ?)
-        `);
+        const favoritedUsers = await db.all('SELECT user_id FROM favorites WHERE listing_id = ?', [listingId]) as { user_id: number }[];
 
         const message = `Great news! The price for "${listing.title}" has dropped from €${listing.price} to €${price}.`;
         const link = `/listing/${listingId}`;
 
-        const notifyUsers = db.transaction((users: { user_id: number }[]) => {
-          for (const user of users) {
-            insertNotification.run(user.user_id, message, link);
+        await db.transaction(async (client) => {
+          for (const user of favoritedUsers) {
+            await db.clientRun(client, `
+              INSERT INTO notifications (user_id, type, title, message, link)
+              VALUES (?, 'system', 'Price Drop Alert!', ?, ?)
+            `, [user.user_id, message, link]);
           }
         });
-        
-        notifyUsers(favoritedUsers);
       }
 
       res.json({ message: 'Listing updated successfully' });
@@ -2304,14 +2293,14 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Wallet API
-  app.get("/api/wallet/points-history", (req, res) => {
+  app.get("/api/wallet/points-history", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const history = db.prepare('SELECT * FROM points_history WHERE user_id = ? ORDER BY created_at DESC').all(decoded.userId);
+      const history = await db.all('SELECT * FROM points_history WHERE user_id = ? ORDER BY created_at DESC', [decoded.userId]);
       res.json(history);
     } catch (error) {
       console.error("Error fetching points history:", error);
@@ -2319,15 +2308,15 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/wallet/balance", (req, res) => {
+  app.get("/api/wallet/balance", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(decoded.userId) as { balance: number } | undefined;
-      
+      const user = await db.get('SELECT balance FROM users WHERE id = ?', [decoded.userId]) as { balance: number } | undefined;
+
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json({ balance: user.balance || 0 });
     } catch (error) {
@@ -2336,9 +2325,9 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/settings", (req, res) => {
+  app.get("/api/settings", async (req, res) => {
     try {
-      const settings = db.prepare('SELECT key, value FROM settings').all() as { key: string, value: string }[];
+      const settings = await db.all('SELECT key, value FROM settings', []) as { key: string, value: string }[];
       const settingsMap = settings.reduce((acc, curr) => {
         acc[curr.key] = curr.value;
         return acc;
@@ -2350,25 +2339,24 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.put("/api/settings", (req, res) => {
+  app.put("/api/settings", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const user = db.prepare('SELECT role FROM users WHERE id = ?').get(decoded.userId) as { role: string };
+      const user = await db.get('SELECT role FROM users WHERE id = ?', [decoded.userId]) as { role: string };
       if (user?.role !== 'admin') {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
       const settings = req.body; // Record<string, string>
-      db.transaction(() => {
-        const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+      await db.transaction(async (client) => {
         for (const [key, value] of Object.entries(settings)) {
-          stmt.run(key, String(value));
+          await db.clientRun(client, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, String(value)]);
         }
-      })();
+      });
       res.json({ message: 'Settings updated successfully' });
     } catch (error) {
       console.error("Error updating settings:", error);
@@ -2376,23 +2364,23 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.post("/api/wallet/buy-early-access", (req, res) => {
+  app.post("/api/wallet/buy-early-access", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      
+
       // Fetch settings
-      const priceSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('early_access_price') as any;
-      const durationSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('early_access_duration_hours') as any;
-      
+      const priceSetting = await db.get('SELECT value FROM settings WHERE key = ?', ['early_access_price']) as any;
+      const durationSetting = await db.get('SELECT value FROM settings WHERE key = ?', ['early_access_duration_hours']) as any;
+
       const price = priceSetting ? parseInt(priceSetting.value, 10) : 150;
       const durationHours = durationSetting ? parseInt(durationSetting.value, 10) : 24;
 
       // Check points
-      const user = db.prepare('SELECT points, early_access_until FROM users WHERE id = ?').get(decoded.userId) as any;
+      const user = await db.get('SELECT points, early_access_until FROM users WHERE id = ?', [decoded.userId]) as any;
       if (!user || user.points < price) {
         return res.status(400).json({ error: `Nepietiekams punktu skaits (nepieciešami ${price} punkti)` });
       }
@@ -2409,13 +2397,13 @@ Return ONLY valid JSON, no markdown.`;
       newEarlyAccessUntil.setHours(newEarlyAccessUntil.getHours() + durationHours);
 
       // Deduct points and update early access
-      db.transaction(() => {
-        db.prepare('UPDATE users SET points = points - ?, early_access_until = ? WHERE id = ?').run(price, newEarlyAccessUntil.toISOString(), decoded.userId);
-        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)').run(decoded.userId, -price, `Agrā piekļuve (${durationHours}h)`);
-      })();
+      await db.transaction(async (client) => {
+        await db.clientRun(client, 'UPDATE users SET points = points - ?, early_access_until = ? WHERE id = ?', [price, newEarlyAccessUntil.toISOString(), decoded.userId]);
+        await db.clientRun(client, 'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, -price, `Agrā piekļuve (${durationHours}h)`]);
+      });
 
       // Fetch updated user to return new points balance and early access
-      const updatedUser = db.prepare('SELECT points, early_access_until FROM users WHERE id = ?').get(decoded.userId) as any;
+      const updatedUser = await db.get('SELECT points, early_access_until FROM users WHERE id = ?', [decoded.userId]) as any;
 
       res.json({ 
         message: 'Agrā piekļuve veiksmīgi iegādāta', 
@@ -2428,7 +2416,7 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.post("/api/wallet/deduct", (req, res) => {
+  app.post("/api/wallet/deduct", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
 
@@ -2441,16 +2429,16 @@ Return ONLY valid JSON, no markdown.`;
         return res.status(400).json({ error: 'Invalid amount' });
       }
 
-      const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(decoded.userId) as { balance: number } | undefined;
-      
+      const user = await db.get('SELECT balance FROM users WHERE id = ?', [decoded.userId]) as { balance: number } | undefined;
+
       if (!user) return res.status(404).json({ error: 'User not found' });
       if (user.balance < amount) {
         return res.status(400).json({ error: 'Insufficient funds' });
       }
 
-      db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(amount, decoded.userId);
-      
-      const updatedUser = db.prepare('SELECT balance FROM users WHERE id = ?').get(decoded.userId) as { balance: number };
+      await db.run('UPDATE users SET balance = balance - ? WHERE id = ?', [amount, decoded.userId]);
+
+      const updatedUser = await db.get('SELECT balance FROM users WHERE id = ?', [decoded.userId]) as { balance: number };
       res.json({ message: 'Funds deducted successfully', balance: updatedUser.balance });
     } catch (error) {
       console.error("Error deducting funds:", error);
@@ -2490,25 +2478,25 @@ Return ONLY valid JSON, no markdown.`;
     }
   };
 
-  app.get("/api/admin/stats", isAdmin, (req, res) => {
+  app.get("/api/admin/stats", isAdmin, async (req, res) => {
     try {
-      const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-      const totalListings = db.prepare('SELECT COUNT(*) as count FROM listings').get() as { count: number };
-      const pendingReports = db.prepare('SELECT COUNT(*) as count FROM reports WHERE status = ?').get('pending') as { count: number };
-      
+      const totalUsers = await db.get('SELECT COUNT(*) as count FROM users', []) as { count: number | string };
+      const totalListings = await db.get('SELECT COUNT(*) as count FROM listings', []) as { count: number | string };
+      const pendingReports = await db.get('SELECT COUNT(*) as count FROM reports WHERE status = ?', ['pending']) as { count: number | string };
+
       // Calculate total revenue from transactions (assuming we have a transactions table, or we can sum up wallet balances for now, or sum up ad payments)
       // For now, let's just sum up the balances of all users as a proxy for money in the system.
-      let totalRevenueResult = { total: 0 };
+      let totalRevenueResult: { total: number | null } = { total: 0 };
       try {
-         totalRevenueResult = db.prepare('SELECT SUM(balance) as total FROM users').get() as { total: number };
+        totalRevenueResult = await db.get('SELECT SUM(balance) as total FROM users', []) as { total: number | null };
       } catch (e) {
-         // Ignore if error
+        // Ignore if error
       }
 
       res.json({
-        totalUsers: totalUsers.count,
-        totalListings: totalListings.count,
-        pendingReports: pendingReports.count,
+        totalUsers: Number(totalUsers.count),
+        totalListings: Number(totalListings.count),
+        pendingReports: Number(pendingReports.count),
         totalRevenue: totalRevenueResult.total || 0
       });
     } catch (error) {
@@ -2517,9 +2505,9 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/admin/users", isAdmin, (req, res) => {
+  app.get("/api/admin/users", isAdmin, async (req, res) => {
     try {
-      const users = db.prepare('SELECT id, email, name, role, created_at, balance FROM users ORDER BY created_at DESC').all();
+      const users = await db.all('SELECT id, email, name, role, created_at, balance FROM users ORDER BY created_at DESC', []);
       res.json(users);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -2527,13 +2515,13 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.put("/api/admin/users/:id/role", isAdmin, (req, res) => {
+  app.put("/api/admin/users/:id/role", isAdmin, async (req, res) => {
     try {
       const { role } = req.body;
       if (!['user', 'b2b', 'admin'].includes(role)) {
         return res.status(400).json({ error: 'Invalid role' });
       }
-      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, req.params.id);
+      await db.run('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
       res.json({ message: 'User role updated successfully' });
     } catch (error) {
       console.error("Error updating user role:", error);
@@ -2541,9 +2529,9 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.delete("/api/admin/users/:id", isAdmin, (req, res) => {
+  app.delete("/api/admin/users/:id", isAdmin, async (req, res) => {
     try {
-      db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+      await db.run('DELETE FROM users WHERE id = ?', [req.params.id]);
       res.json({ message: 'User deleted successfully' });
     } catch (error) {
       console.error("Error deleting user:", error);
@@ -2551,14 +2539,14 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/admin/listings", isAdmin, (req, res) => {
+  app.get("/api/admin/listings", isAdmin, async (req, res) => {
     try {
-      const listings = db.prepare(`
+      const listings = await db.all(`
         SELECT listings.*, users.name as author_name, users.email as author_email
         FROM listings
         JOIN users ON listings.user_id = users.id
         ORDER BY listings.created_at DESC
-      `).all();
+      `, []);
       res.json(listings);
     } catch (error) {
       console.error("Error fetching listings:", error);
@@ -2566,9 +2554,9 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.delete("/api/admin/listings/:id", isAdmin, (req, res) => {
+  app.delete("/api/admin/listings/:id", isAdmin, async (req, res) => {
     try {
-      db.prepare('DELETE FROM listings WHERE id = ?').run(req.params.id);
+      await db.run('DELETE FROM listings WHERE id = ?', [req.params.id]);
       res.json({ message: 'Listing deleted successfully' });
     } catch (error) {
       console.error("Error deleting listing:", error);
@@ -2577,11 +2565,11 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Reporting API
-  app.post("/api/reports", (req, res) => {
+  app.post("/api/reports", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const reporterId = decoded.userId;
@@ -2591,8 +2579,7 @@ Return ONLY valid JSON, no markdown.`;
         return res.status(400).json({ error: 'Reason is required' });
       }
 
-      const stmt = db.prepare('INSERT INTO reports (reporter_id, listing_id, user_id, reason) VALUES (?, ?, ?, ?)');
-      const info = stmt.run(reporterId, listingId || null, userId || null, reason);
+      const info = await db.run('INSERT INTO reports (reporter_id, listing_id, user_id, reason) VALUES (?, ?, ?, ?)', [reporterId, listingId || null, userId || null, reason]);
 
       res.json({ id: info.lastInsertRowid, message: 'Report submitted successfully' });
     } catch (error) {
@@ -2601,11 +2588,11 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/admin/reports", isAdmin, (req, res) => {
+  app.get("/api/admin/reports", isAdmin, async (req, res) => {
     try {
-      const reports = db.prepare(`
-        SELECT r.*, 
-               u1.name as reporter_name, 
+      const reports = await db.all(`
+        SELECT r.*,
+               u1.name as reporter_name,
                u2.name as reported_user_name,
                l.title as reported_listing_title
         FROM reports r
@@ -2613,7 +2600,7 @@ Return ONLY valid JSON, no markdown.`;
         LEFT JOIN users u2 ON r.user_id = u2.id
         LEFT JOIN listings l ON r.listing_id = l.id
         ORDER BY r.created_at DESC
-      `).all();
+      `, []);
       res.json(reports);
     } catch (error) {
       console.error("Error fetching reports:", error);
@@ -2621,9 +2608,9 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/admin/disputes", isAdmin, (req, res) => {
+  app.get("/api/admin/disputes", isAdmin, async (req, res) => {
     try {
-      const disputes = db.prepare(`
+      const disputes = await db.all(`
         SELECT d.*, o.amount, o.status as order_status, l.title as listing_title, u.name as buyer_name, s.name as seller_name
         FROM disputes d
         JOIN orders o ON d.order_id = o.id
@@ -2631,7 +2618,7 @@ Return ONLY valid JSON, no markdown.`;
         JOIN users u ON o.buyer_id = u.id
         JOIN users s ON o.seller_id = s.id
         ORDER BY d.created_at DESC
-      `).all();
+      `, []);
       res.json(disputes);
     } catch (error) {
       console.error("Error fetching admin disputes:", error);
@@ -2639,38 +2626,38 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.post("/api/admin/disputes/:id/resolve", isAdmin, (req, res) => {
+  app.post("/api/admin/disputes/:id/resolve", isAdmin, async (req, res) => {
     try {
       const disputeId = req.params.id;
       const { action, adminNotes } = req.body; // action: 'refund' or 'release'
 
-      const dispute = db.prepare('SELECT * FROM disputes WHERE id = ?').get(disputeId) as any;
+      const dispute = await db.get('SELECT * FROM disputes WHERE id = ?', [disputeId]) as any;
       if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
       if (dispute.status !== 'open') return res.status(400).json({ error: 'Dispute already resolved' });
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(dispute.order_id) as any;
+      const order = await db.get('SELECT * FROM orders WHERE id = ?', [dispute.order_id]) as any;
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
-      db.transaction(() => {
+      await db.transaction(async (client) => {
         if (action === 'refund') {
-          db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('refunded', order.id);
-          db.prepare('UPDATE disputes SET status = ?, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('resolved_refunded', adminNotes, disputeId);
-          
-          db.prepare(`
+          await db.clientRun(client, 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['refunded', order.id]);
+          await db.clientRun(client, 'UPDATE disputes SET status = ?, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['resolved_refunded', adminNotes, disputeId]);
+
+          await db.clientRun(client, `
             INSERT INTO notifications (user_id, type, title, message, link)
             VALUES (?, 'system', 'Strīds atrisināts: Nauda atgriezta', ?, ?)
-          `).run(order.buyer_id, `Jūsu strīds par pasūtījumu #${order.id} ir atrisināts. Nauda tiks atgriezta.`, `/profile?tab=orders`);
+          `, [order.buyer_id, `Jūsu strīds par pasūtījumu #${order.id} ir atrisināts. Nauda tiks atgriezta.`, `/profile?tab=orders`]);
         } else if (action === 'release') {
-          db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('completed', order.id);
-          db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(order.amount, order.seller_id);
-          db.prepare('UPDATE disputes SET status = ?, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('resolved_released', adminNotes, disputeId);
-          
-          db.prepare(`
+          await db.clientRun(client, 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', order.id]);
+          await db.clientRun(client, 'UPDATE users SET balance = balance + ? WHERE id = ?', [order.amount, order.seller_id]);
+          await db.clientRun(client, 'UPDATE disputes SET status = ?, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['resolved_released', adminNotes, disputeId]);
+
+          await db.clientRun(client, `
             INSERT INTO notifications (user_id, type, title, message, link)
             VALUES (?, 'system', 'Strīds atrisināts: Nauda izmaksāta', ?, ?)
-          `).run(order.seller_id, `Strīds par pasūtījumu #${order.id} ir atrisināts par labu jums. Nauda ir ieskaitīta jūsu kontā.`, `/profile?tab=orders`);
+          `, [order.seller_id, `Strīds par pasūtījumu #${order.id} ir atrisināts par labu jums. Nauda ir ieskaitīta jūsu kontā.`, `/profile?tab=orders`]);
         }
-      })();
+      });
 
       res.json({ message: 'Dispute resolved successfully' });
     } catch (error) {
@@ -2710,9 +2697,9 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Badges Endpoints
-  app.get('/api/users/:id/badges', (req, res) => {
+  app.get('/api/users/:id/badges', async (req, res) => {
     try {
-      const badges = db.prepare('SELECT badge_id, earned_at FROM user_achievements WHERE user_id = ? ORDER BY earned_at DESC').all(req.params.id) as any[];
+      const badges = await db.all('SELECT badge_id, earned_at FROM user_achievements WHERE user_id = ? ORDER BY earned_at DESC', [req.params.id]) as any[];
       res.json(badges.map(b => ({ ...b, ...(BADGE_DEFINITIONS[b.badge_id] || {}) })));
     } catch (error) {
       res.status(500).json({ error: 'Server error' });
@@ -2720,37 +2707,37 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // B2B Stores Endpoints
-  app.get('/api/stores/my', requireAuth, (req, res) => {
+  app.get('/api/stores/my', requireAuth, async (req, res) => {
     try {
       const userId = (req as any).userId;
-      const store = db.prepare('SELECT * FROM stores WHERE user_id = ?').get(userId);
+      const store = await db.get('SELECT * FROM stores WHERE user_id = ?', [userId]);
       res.json(store || null);
     } catch (error) {
       res.status(500).json({ error: 'Server error' });
     }
   });
 
-  app.get('/api/stores/:slug', (req, res) => {
+  app.get('/api/stores/:slug', async (req, res) => {
     try {
-      const store = db.prepare(`
+      const store = await db.get(`
         SELECT s.*, u.name, u.company_name, u.company_reg_number, u.company_vat,
                (SELECT AVG(r.rating) FROM reviews r WHERE r.seller_id = u.id) as avg_rating,
                (SELECT COUNT(*) FROM reviews r WHERE r.seller_id = u.id) as review_count,
                (SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id AND l.status = 'active') as active_listings_count
         FROM stores s JOIN users u ON s.user_id = u.id
         WHERE s.slug = ?
-      `).get(req.params.slug) as any;
+      `, [req.params.slug]) as any;
       if (!store) return res.status(404).json({ error: 'Veikals nav atrasts' });
-      const listings = db.prepare(`SELECT * FROM listings WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 50`).all(store.user_id);
+      const listings = await db.all(`SELECT * FROM listings WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 50`, [store.user_id]);
       res.json({ ...store, listings });
     } catch (error) {
       res.status(500).json({ error: 'Server error' });
     }
   });
 
-  app.get('/api/stores/by-user/:userId', (req, res) => {
+  app.get('/api/stores/by-user/:userId', async (req, res) => {
     try {
-      const store = db.prepare('SELECT * FROM stores WHERE user_id = ?').get(req.params.userId);
+      const store = await db.get('SELECT * FROM stores WHERE user_id = ?', [req.params.userId]);
       if (!store) return res.status(404).json({ error: 'Nav veikala' });
       res.json(store);
     } catch (error) {
@@ -2758,24 +2745,24 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.post('/api/stores', requireAuth, (req, res) => {
+  app.post('/api/stores', requireAuth, async (req, res) => {
     try {
       const userId = (req as any).userId;
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+      const user = await db.get('SELECT * FROM users WHERE id = ?', [userId]) as any;
       if (user.user_type !== 'b2b') return res.status(403).json({ error: 'Tikai B2B konti var izveidot veikalu' });
       const { slug, banner_url, logo_url, tagline, description, website, phone, working_hours } = req.body;
       if (!slug || !/^[a-z0-9-]{3,50}$/.test(slug)) {
         return res.status(400).json({ error: 'Slug: 3-50 simboli, tikai mazie burti, cipari un defises' });
       }
-      const existing = db.prepare('SELECT id FROM stores WHERE user_id = ?').get(userId);
+      const existing = await db.get('SELECT id FROM stores WHERE user_id = ?', [userId]);
       if (existing) {
-        db.prepare(`UPDATE stores SET slug=?, banner_url=?, logo_url=?, tagline=?, description=?, website=?, phone=?, working_hours=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?`)
-          .run(slug, banner_url || null, logo_url || null, tagline || null, description || null, website || null, phone || null, working_hours || null, userId);
+        await db.run(`UPDATE stores SET slug=?, banner_url=?, logo_url=?, tagline=?, description=?, website=?, phone=?, working_hours=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?`,
+          [slug, banner_url || null, logo_url || null, tagline || null, description || null, website || null, phone || null, working_hours || null, userId]);
       } else {
-        db.prepare(`INSERT INTO stores (user_id, slug, banner_url, logo_url, tagline, description, website, phone, working_hours) VALUES (?,?,?,?,?,?,?,?,?)`)
-          .run(userId, slug, banner_url || null, logo_url || null, tagline || null, description || null, website || null, phone || null, working_hours || null);
+        await db.run(`INSERT INTO stores (user_id, slug, banner_url, logo_url, tagline, description, website, phone, working_hours) VALUES (?,?,?,?,?,?,?,?,?)`,
+          [userId, slug, banner_url || null, logo_url || null, tagline || null, description || null, website || null, phone || null, working_hours || null]);
       }
-      const store = db.prepare('SELECT * FROM stores WHERE user_id = ?').get(userId);
+      const store = await db.get('SELECT * FROM stores WHERE user_id = ?', [userId]);
       res.json(store);
     } catch (error: any) {
       if (error.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Šis slug jau ir aizņemts' });
@@ -2784,14 +2771,14 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Ads Endpoints
-  app.get("/api/admin/ads", isAdmin, (req, res) => {
+  app.get("/api/admin/ads", isAdmin, async (req, res) => {
     try {
-      const ads = db.prepare(`
-        SELECT ads.*, users.name as user_name 
-        FROM ads 
-        LEFT JOIN users ON ads.user_id = users.id 
+      const ads = await db.all(`
+        SELECT ads.*, users.name as user_name
+        FROM ads
+        LEFT JOIN users ON ads.user_id = users.id
         ORDER BY ads.created_at DESC
-      `).all();
+      `, []);
       res.json(ads);
     } catch (error) {
       console.error("Error fetching ads:", error);
@@ -2799,11 +2786,10 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.post("/api/admin/ads", isAdmin, (req, res) => {
+  app.post("/api/admin/ads", isAdmin, async (req, res) => {
     const { title, image_url, link_url, size, start_date, end_date, is_active, category } = req.body;
     try {
-      const stmt = db.prepare('INSERT INTO ads (title, image_url, link_url, size, start_date, end_date, is_active, category, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(title, image_url, link_url, size, start_date, end_date, is_active ? 1 : 0, category || null, 'approved');
+      const info = await db.run('INSERT INTO ads (title, image_url, link_url, size, start_date, end_date, is_active, category, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [title, image_url, link_url, size, start_date, end_date, is_active ? 1 : 0, category || null, 'approved']);
       res.json({ id: info.lastInsertRowid, message: 'Ad created successfully' });
     } catch (error) {
       console.error("Error creating ad:", error);
@@ -2811,65 +2797,58 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.put("/api/admin/ads/:id", isAdmin, (req, res) => {
+  app.put("/api/admin/ads/:id", isAdmin, async (req, res) => {
     const { id } = req.params;
     const { title, image_url, link_url, size, start_date, end_date, is_active, category, status } = req.body;
     try {
-      db.exec('BEGIN TRANSACTION');
-      
-      // Check if status changed to rejected
-      const currentAd = db.prepare('SELECT status, user_id, price_points FROM ads WHERE id = ?').get(id) as {status: string, user_id: number | null, price_points: number | null};
-      
-      if (currentAd && currentAd.status === 'pending' && status === 'rejected' && currentAd.user_id && currentAd.price_points) {
-        // Refund points
-        db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(currentAd.price_points, currentAd.user_id);
-        // Record transaction
-        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)')
-          .run(currentAd.user_id, currentAd.price_points, `Reklāmas noraidīšana: ${title}`);
-      }
+      await db.transaction(async (client) => {
+        // Check if status changed to rejected
+        const currentAd = await db.get('SELECT status, user_id, price_points FROM ads WHERE id = ?', [id]) as {status: string, user_id: number | null, price_points: number | null};
 
-      const stmt = db.prepare('UPDATE ads SET title = ?, image_url = ?, link_url = ?, size = ?, start_date = ?, end_date = ?, is_active = ?, category = ?, status = ? WHERE id = ?');
-      stmt.run(title, image_url, link_url, size, start_date, end_date, is_active ? 1 : 0, category || null, status || 'approved', id);
-      
-      db.exec('COMMIT');
+        if (currentAd && currentAd.status === 'pending' && status === 'rejected' && currentAd.user_id && currentAd.price_points) {
+          // Refund points
+          await db.clientRun(client, 'UPDATE users SET points = points + ? WHERE id = ?', [currentAd.price_points, currentAd.user_id]);
+          // Record transaction
+          await db.clientRun(client, 'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [currentAd.user_id, currentAd.price_points, `Reklāmas noraidīšana: ${title}`]);
+        }
+
+        await db.clientRun(client, 'UPDATE ads SET title = ?, image_url = ?, link_url = ?, size = ?, start_date = ?, end_date = ?, is_active = ?, category = ?, status = ? WHERE id = ?', [title, image_url, link_url, size, start_date, end_date, is_active ? 1 : 0, category || null, status || 'approved', id]);
+      });
+
       res.json({ message: 'Ad updated successfully' });
     } catch (error) {
-      db.exec('ROLLBACK');
       console.error("Error updating ad:", error);
       res.status(500).json({ error: 'Server error updating ad' });
     }
   });
 
-  app.delete("/api/admin/ads/:id", isAdmin, (req, res) => {
+  app.delete("/api/admin/ads/:id", isAdmin, async (req, res) => {
     const { id } = req.params;
     try {
-      db.exec('BEGIN TRANSACTION');
-      
-      const currentAd = db.prepare('SELECT status, user_id, price_points, title FROM ads WHERE id = ?').get(id) as {status: string, user_id: number | null, price_points: number | null, title: string};
-      
-      if (currentAd && currentAd.status === 'pending' && currentAd.user_id && currentAd.price_points) {
-        // Refund points
-        db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(currentAd.price_points, currentAd.user_id);
-        // Record transaction
-        db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)')
-          .run(currentAd.user_id, currentAd.price_points, `Reklāmas dzēšana: ${currentAd.title}`);
-      }
+      await db.transaction(async (client) => {
+        const currentAd = await db.get('SELECT status, user_id, price_points, title FROM ads WHERE id = ?', [id]) as {status: string, user_id: number | null, price_points: number | null, title: string};
 
-      db.prepare('DELETE FROM ads WHERE id = ?').run(id);
-      
-      db.exec('COMMIT');
+        if (currentAd && currentAd.status === 'pending' && currentAd.user_id && currentAd.price_points) {
+          // Refund points
+          await db.clientRun(client, 'UPDATE users SET points = points + ? WHERE id = ?', [currentAd.price_points, currentAd.user_id]);
+          // Record transaction
+          await db.clientRun(client, 'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [currentAd.user_id, currentAd.price_points, `Reklāmas dzēšana: ${currentAd.title}`]);
+        }
+
+        await db.clientRun(client, 'DELETE FROM ads WHERE id = ?', [id]);
+      });
+
       res.json({ message: 'Ad deleted successfully' });
     } catch (error) {
-      db.exec('ROLLBACK');
       console.error("Error deleting ad:", error);
       res.status(500).json({ error: 'Server error deleting ad' });
     }
   });
 
-  app.get("/api/admin/ads/:id/stats", isAdmin, (req, res) => {
+  app.get("/api/admin/ads/:id/stats", isAdmin, async (req, res) => {
     const { id } = req.params;
     try {
-      const stats = db.prepare('SELECT date, views, clicks FROM ad_stats WHERE ad_id = ? ORDER BY date ASC').all(id);
+      const stats = await db.all('SELECT date, views, clicks FROM ad_stats WHERE ad_id = ? ORDER BY date ASC', [id]);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching ad stats:", error);
@@ -2878,14 +2857,14 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // User Self-Service Ads Endpoints
-  app.get("/api/users/me/ads", (req, res) => {
+  app.get("/api/users/me/ads", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const ads = db.prepare('SELECT * FROM ads WHERE user_id = ? ORDER BY created_at DESC').all(decoded.userId);
+      const ads = await db.all('SELECT * FROM ads WHERE user_id = ? ORDER BY created_at DESC', [decoded.userId]);
       res.json(ads);
     } catch (error) {
       console.error("Error fetching user ads:", error);
@@ -2893,24 +2872,24 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.get("/api/users/me/ads/:id/stats", (req, res) => {
+  app.get("/api/users/me/ads/:id/stats", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const adId = req.params.id;
       // Verify ad belongs to user
-      const ad = db.prepare('SELECT id FROM ads WHERE id = ? AND user_id = ?').get(adId, decoded.userId);
+      const ad = await db.get('SELECT id FROM ads WHERE id = ? AND user_id = ?', [adId, decoded.userId]);
       if (!ad) return res.status(404).json({ error: 'Ad not found' });
 
-      const stats = db.prepare(`
-        SELECT date, views, clicks 
-        FROM ad_stats 
-        WHERE ad_id = ? 
+      const stats = await db.all(`
+        SELECT date, views, clicks
+        FROM ad_stats
+        WHERE ad_id = ?
         ORDER BY date ASC
-      `).all(adId);
+      `, [adId]);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching ad stats:", error);
@@ -2918,63 +2897,63 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.post("/api/users/me/ads", (req, res) => {
+  app.post("/api/users/me/ads", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const { title, image_url, link_url, size, start_date, end_date, category } = req.body;
-      
+
       // Get ad price from settings
-      const settings = db.prepare('SELECT key, value FROM settings').all() as {key: string, value: string}[];
+      const settings = await db.all('SELECT key, value FROM settings', []) as {key: string, value: string}[];
       const settingsMap = settings.reduce((acc, s) => ({...acc, [s.key]: s.value}), {} as Record<string, string>);
       const adPrice = parseInt(settingsMap['ad_price_points'] || '500', 10);
 
-      db.exec('BEGIN TRANSACTION');
-      
-      const user = db.prepare('SELECT points FROM users WHERE id = ?').get(decoded.userId) as {points: number};
-      if (!user || user.points < adPrice) {
-        db.exec('ROLLBACK');
+      let adId: number | bigint | undefined;
+      await db.transaction(async (client) => {
+        const user = await db.get('SELECT points FROM users WHERE id = ?', [decoded.userId]) as {points: number};
+        if (!user || user.points < adPrice) {
+          throw new Error('INSUFFICIENT_POINTS');
+        }
+
+        // Deduct points
+        await db.clientRun(client, 'UPDATE users SET points = points - ? WHERE id = ?', [adPrice, decoded.userId]);
+
+        // Record transaction
+        await db.clientRun(client, 'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, -adPrice, `Reklāmas izveide: ${title}`]);
+
+        // Create ad
+        const info = await db.clientRun(client, 'INSERT INTO ads (title, image_url, link_url, size, start_date, end_date, is_active, category, user_id, status, price_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [title, image_url, link_url, size, start_date, end_date, 0, category || null, decoded.userId, 'pending', adPrice]);
+        adId = info.lastInsertRowid;
+      });
+
+      res.json({ id: adId, message: 'Ad submitted for review' });
+    } catch (error: any) {
+      if (error.message === 'INSUFFICIENT_POINTS') {
         return res.status(400).json({ error: 'Nepietiekams punktu atlikums' });
       }
-
-      // Deduct points
-      db.prepare('UPDATE users SET points = points - ? WHERE id = ?').run(adPrice, decoded.userId);
-      
-      // Record transaction
-      db.prepare('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)')
-        .run(decoded.userId, -adPrice, `Reklāmas izveide: ${title}`);
-
-      // Create ad
-      const stmt = db.prepare('INSERT INTO ads (title, image_url, link_url, size, start_date, end_date, is_active, category, user_id, status, price_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = stmt.run(title, image_url, link_url, size, start_date, end_date, 0, category || null, decoded.userId, 'pending', adPrice);
-      
-      db.exec('COMMIT');
-      res.json({ id: info.lastInsertRowid, message: 'Ad submitted for review' });
-    } catch (error) {
-      db.exec('ROLLBACK');
       console.error("Error creating user ad:", error);
       res.status(500).json({ error: 'Server error creating ad' });
     }
   });
 
   // Public Ads Endpoints
-  app.get("/api/ads", (req, res) => {
+  app.get("/api/ads", async (req, res) => {
     try {
       const now = new Date().toISOString();
       // Fetch all active, approved ads that are within date range.
       // We'll shuffle them randomly on the backend.
-      const ads = db.prepare(`
-        SELECT id, title, image_url, link_url, size, category 
-        FROM ads 
-        WHERE is_active = 1 
-          AND status = 'approved' 
-          AND start_date <= ? 
+      const ads = await db.all(`
+        SELECT id, title, image_url, link_url, size, category
+        FROM ads
+        WHERE is_active = 1
+          AND status = 'approved'
+          AND start_date <= ?
           AND end_date >= ?
         ORDER BY RANDOM()
-      `).all(now, now);
+      `, [now, now]);
       res.json(ads);
     } catch (error) {
       console.error("Error fetching active ads:", error);
@@ -2982,45 +2961,45 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.post("/api/ads/:id/view", (req, res) => {
+  app.post("/api/ads/:id/view", async (req, res) => {
     const { id } = req.params;
     const today = new Date().toISOString().split('T')[0];
     try {
-      db.prepare('UPDATE ads SET views = views + 1 WHERE id = ?').run(id);
-      db.prepare(`
-        INSERT INTO ad_stats (ad_id, date, views, clicks) 
-        VALUES (?, ?, 1, 0) 
+      await db.run('UPDATE ads SET views = views + 1 WHERE id = ?', [id]);
+      await db.run(`
+        INSERT INTO ad_stats (ad_id, date, views, clicks)
+        VALUES (?, ?, 1, 0)
         ON CONFLICT(ad_id, date) DO UPDATE SET views = views + 1
-      `).run(id, today);
+      `, [id, today]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false });
     }
   });
 
-  app.post("/api/ads/:id/click", (req, res) => {
+  app.post("/api/ads/:id/click", async (req, res) => {
     const { id } = req.params;
     const today = new Date().toISOString().split('T')[0];
     try {
-      db.prepare('UPDATE ads SET clicks = clicks + 1 WHERE id = ?').run(id);
-      db.prepare(`
-        INSERT INTO ad_stats (ad_id, date, views, clicks) 
-        VALUES (?, ?, 0, 1) 
+      await db.run('UPDATE ads SET clicks = clicks + 1 WHERE id = ?', [id]);
+      await db.run(`
+        INSERT INTO ad_stats (ad_id, date, views, clicks)
+        VALUES (?, ?, 0, 1)
         ON CONFLICT(ad_id, date) DO UPDATE SET clicks = clicks + 1
-      `).run(id, today);
+      `, [id, today]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false });
     }
   });
 
-  app.put("/api/admin/reports/:id", isAdmin, (req, res) => {
+  app.put("/api/admin/reports/:id", isAdmin, async (req, res) => {
     try {
       const { status } = req.body;
       if (!['resolved', 'dismissed'].includes(status)) {
         return res.status(400).json({ error: 'Invalid status' });
       }
-      db.prepare('UPDATE reports SET status = ? WHERE id = ?').run(status, req.params.id);
+      await db.run('UPDATE reports SET status = ? WHERE id = ?', [status, req.params.id]);
       res.json({ message: 'Report updated successfully' });
     } catch (error) {
       console.error("Error updating report:", error);
@@ -3068,7 +3047,7 @@ Return ONLY valid JSON, no markdown.`;
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const { listingId, shippingMethod, shippingAddress } = req.body;
 
-      const listing = db.prepare('SELECT * FROM listings WHERE id = ?').get(listingId) as any;
+      const listing = await db.get('SELECT * FROM listings WHERE id = ?', [listingId]) as any;
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
       if (listing.user_id === decoded.userId) return res.status(400).json({ error: 'Cannot buy your own listing' });
 
@@ -3079,7 +3058,7 @@ Return ONLY valid JSON, no markdown.`;
         if (!attributes.auctionEndDate || new Date(attributes.auctionEndDate) > new Date()) {
           return res.status(400).json({ error: 'Auction has not ended yet' });
         }
-        const highestBid = db.prepare('SELECT user_id, amount FROM bids WHERE listing_id = ? ORDER BY amount DESC LIMIT 1').get(listingId) as any;
+        const highestBid = await db.get('SELECT user_id, amount FROM bids WHERE listing_id = ? ORDER BY amount DESC LIMIT 1', [listingId]) as any;
         if (!highestBid) {
           return res.status(400).json({ error: 'No bids on this auction' });
         }
@@ -3090,10 +3069,10 @@ Return ONLY valid JSON, no markdown.`;
       }
 
       // Create order in pending state
-      const result = db.prepare(`
+      const result = await db.run(`
         INSERT INTO orders (listing_id, buyer_id, seller_id, amount, shipping_method, shipping_address)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(listingId, decoded.userId, listing.user_id, finalPrice, shippingMethod, shippingAddress);
+      `, [listingId, decoded.userId, listing.user_id, finalPrice, shippingMethod, shippingAddress]);
       
       const orderId = result.lastInsertRowid;
 
@@ -3194,14 +3173,14 @@ Return ONLY valid JSON, no markdown.`;
   });
 
   // Notifications API
-  app.get("/api/notifications", (req, res) => {
+  app.get("/api/notifications", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const notifications = db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC').all(decoded.userId);
+      const notifications = await db.all('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC', [decoded.userId]);
       res.json(notifications);
     } catch (error) {
       console.error("Error fetching notifications:", error);
@@ -3209,14 +3188,14 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.put("/api/notifications/:id/read", (req, res) => {
+  app.put("/api/notifications/:id/read", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(req.params.id, decoded.userId);
+      await db.run('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?', [req.params.id, decoded.userId]);
       res.json({ success: true });
     } catch (error) {
       console.error("Error updating notification:", error);
@@ -3224,14 +3203,14 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
-  app.put("/api/notifications/read-all", (req, res) => {
+  app.put("/api/notifications/read-all", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(decoded.userId);
+      await db.run('UPDATE notifications SET is_read = 1 WHERE user_id = ?', [decoded.userId]);
       res.json({ success: true });
     } catch (error) {
       console.error("Error updating notifications:", error);
@@ -3264,57 +3243,57 @@ Return ONLY valid JSON, no markdown.`;
     checkEndedAuctions(); // Run once on startup
   });
 
-  function checkEndedAuctions() {
+  async function checkEndedAuctions() {
     try {
       // Find all active listings
-      const activeListings = db.prepare("SELECT id, user_id, title, attributes FROM listings WHERE status = 'active'").all() as any[];
-      
+      const activeListings = await db.all("SELECT id, user_id, title, attributes FROM listings WHERE status = 'active'", []) as any[];
+
       const now = new Date();
-      
+
       for (const listing of activeListings) {
         if (!listing.attributes) continue;
-        
+
         try {
           const attributes = JSON.parse(listing.attributes);
           if (attributes.saleType === 'auction' && attributes.auctionEndDate) {
             const endDate = new Date(attributes.auctionEndDate);
-            
+
             if (endDate <= now) {
               // Auction has ended
               console.log(`Auction ${listing.id} has ended. Processing...`);
-              
+
               // Get highest bid
-              const highestBid = db.prepare(`
-                SELECT b.id, b.user_id, b.amount, u.name as bidder_name 
+              const highestBid = await db.get(`
+                SELECT b.id, b.user_id, b.amount, u.name as bidder_name
                 FROM bids b
                 JOIN users u ON b.user_id = u.id
-                WHERE b.listing_id = ? 
+                WHERE b.listing_id = ?
                 ORDER BY b.amount DESC LIMIT 1
-              `).get(listing.id) as any;
-              
+              `, [listing.id]) as any;
+
               if (highestBid) {
                 // Update listing status to sold
-                db.prepare("UPDATE listings SET status = 'sold' WHERE id = ?").run(listing.id);
-                
+                await db.run("UPDATE listings SET status = 'sold' WHERE id = ?", [listing.id]);
+
                 // Notify winner
-                db.prepare(`
+                await db.run(`
                   INSERT INTO notifications (user_id, type, title, message, link)
                   VALUES (?, 'auction_won', 'Apsveicam! Jūs uzvarējāt izsolē', ?, ?)
-                `).run(
-                  highestBid.user_id, 
+                `, [
+                  highestBid.user_id,
                   `Jūs uzvarējāt izsolē "${listing.title}" ar solījumu €${highestBid.amount}.`,
                   `/listing/${listing.id}`
-                );
-                
+                ]);
+
                 // Notify seller
-                db.prepare(`
+                await db.run(`
                   INSERT INTO notifications (user_id, type, title, message, link)
                   VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies', ?, ?)
-                `).run(
+                `, [
                   listing.user_id,
                   `Izsole "${listing.title}" ir noslēgusies. Uzvarētājs: ${highestBid.bidder_name} ar solījumu €${highestBid.amount}.`,
                   `/listing/${listing.id}`
-                );
+                ]);
 
                 // Emit real-time update
                 io.emit('auction_ended', {
@@ -3322,20 +3301,20 @@ Return ONLY valid JSON, no markdown.`;
                   winnerId: highestBid.user_id,
                   amount: highestBid.amount
                 });
-                
+
               } else {
                 // Update listing status to expired
-                db.prepare("UPDATE listings SET status = 'expired' WHERE id = ?").run(listing.id);
-                
+                await db.run("UPDATE listings SET status = 'expired' WHERE id = ?", [listing.id]);
+
                 // Notify seller
-                db.prepare(`
+                await db.run(`
                   INSERT INTO notifications (user_id, type, title, message, link)
                   VALUES (?, 'auction_ended', 'Jūsu izsole ir noslēgusies bez solījumiem', ?, ?)
-                `).run(
+                `, [
                   listing.user_id,
                   `Izsole "${listing.title}" ir noslēgusies, bet neviens neveica solījumus.`,
                   `/listing/${listing.id}`
-                );
+                ]);
 
                 // Emit real-time update
                 io.emit('auction_ended', {
