@@ -21,6 +21,7 @@ import { createAuthRouter } from './server/routes/auth';
 import { createUploadsRouter } from './server/routes/uploads';
 import { createListingsRouter } from './server/routes/listings';
 import { createUsersRouter } from './server/routes/users';
+import { createMessagesRouter } from './server/routes/messages';
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-dev-key-change-in-production";
 
@@ -274,6 +275,9 @@ async function startServer() {
 
   // User Routes
   app.use('/api/users', createUsersRouter({ io }));
+
+  // Messages Routes
+  app.use('/api/messages', createMessagesRouter({ io }));
 
   app.post("/api/orders/:id/ship", async (req, res) => {
     const authHeader = req.headers.authorization;
