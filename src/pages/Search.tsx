@@ -273,13 +273,16 @@ export default function Search() {
         },
         body: JSON.stringify({ ids: Array.from(selectedIds) }),
       });
-      if (!res.ok) throw new Error('compare failed');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'compare failed');
+      }
       const data = await res.json();
       compareListingsSnapshot.current = selectedListingCards;
       setCompareResult(data);
       setComparePanelOpen(true);
-    } catch {
-      alert('Neizdevās salīdzināt sludinājumus. Lūdzu, mēģiniet vēlreiz.');
+    } catch (err: any) {
+      alert(err?.message || 'Neizdevās salīdzināt sludinājumus. Lūdzu, mēģiniet vēlreiz.');
     } finally {
       setCompareLoading(false);
     }

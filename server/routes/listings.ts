@@ -1200,15 +1200,17 @@ Return ONLY valid JSON, no markdown.`;
       const placeholders = sanitizedIds.map(() => '?').join(', ');
       const listings = await db.all(
         `SELECT l.id, l.title, l.description, l.price, l.category, l.location,
-                l.image_url, l.attributes, l.quality_score, u.name as author_name
+                l.image_url, l.attributes, l.quality_score, l.status, u.name as author_name
          FROM listings l
          LEFT JOIN users u ON l.user_id = u.id
-         WHERE l.id IN (${placeholders}) AND l.status = 'active'`,
+         WHERE l.id IN (${placeholders})`,
         sanitizedIds
       ) as any[];
 
+      console.log(`[COMPARE] requested ids: ${sanitizedIds}, found: ${listings.length}, statuses: ${listings.map((l: any) => l.status || 'n/a').join(',')}`);
+
       if (listings.length < 2) {
-        return res.status(400).json({ error: 'Nepietiekams aktīvo sludinājumu skaits' });
+        return res.status(400).json({ error: `Nepietiekams sludinājumu skaits (atrasti: ${listings.length} no ${sanitizedIds.length})` });
       }
 
       if (!process.env.GEMINI_API_KEY) {
