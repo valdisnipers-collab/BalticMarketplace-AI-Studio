@@ -1,11 +1,11 @@
-import { MeiliSearch } from 'meilisearch';
+import { Meilisearch } from 'meilisearch';
 import db from '../pg';
 
 const MEILISEARCH_HOST = process.env.MEILISEARCH_HOST;
 const MEILISEARCH_API_KEY = process.env.MEILISEARCH_API_KEY;
 
 const client = MEILISEARCH_HOST
-  ? new MeiliSearch({
+  ? new Meilisearch({
       host: MEILISEARCH_HOST,
       apiKey: MEILISEARCH_API_KEY,
     })
