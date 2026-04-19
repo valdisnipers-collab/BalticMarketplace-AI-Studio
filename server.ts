@@ -7,10 +7,8 @@ import bcrypt from "bcryptjs";
 import db from "./server/pg";
 import { GoogleGenAI } from "@google/genai";
 import twilio from "twilio";
-import multer from "multer";
 import fs from "fs";
 import Stripe from "stripe";
-import { uploadImage, uploadVideo, uploadChatImage } from './server/services/cloudinary';
 import { sendEmail, emailTemplates } from './server/services/email';
 import { cached, invalidate, invalidatePattern, TTL, checkRateLimit } from './server/services/redis';
 import { sendPushToUser, vapidPublicKey } from './server/services/push';
@@ -20,6 +18,7 @@ import http from "http";
 import { corsMiddleware, helmetMiddleware, generalLimiter, authLimiter, uploadLimiter } from './server/middleware/security';
 import { validateBody, registerSchema, loginSchema, listingSchema } from './server/middleware/validate';
 import { createAuthRouter } from './server/routes/auth';
+import { createUploadsRouter } from './server/routes/uploads';
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-dev-key-change-in-production";
 
@@ -93,19 +92,6 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-const storage = multer.memoryStorage();
-
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only images are allowed'));
-    }
-  }
-});
 
 // Twilio Configuration
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
@@ -272,83 +258,8 @@ async function startServer() {
   // Middleware to parse JSON bodies
   app.use(express.json());
 
-  // File Upload Route
-  app.post('/api/upload', uploadLimiter, upload.single('image'), async (req, res) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'No token' });
-    try {
-      jwt.verify(token, JWT_SECRET);
-      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-      const result = await uploadImage(req.file.buffer, { folder: 'listings' });
-      res.json({ url: result.url });
-    } catch (error) {
-      console.error('Upload error:', error);
-      res.status(500).json({ error: 'Upload failed' });
-    }
-  });
-
-  app.post('/api/upload/chat-image', upload.single('image'), async (req, res) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'No token' });
-    try {
-      jwt.verify(token, JWT_SECRET);
-      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-      const result = await uploadChatImage(req.file.buffer);
-      res.json({ url: result.url });
-    } catch (error) {
-      console.error('Chat upload error:', error);
-      res.status(500).json({ error: 'Upload failed' });
-    }
-  });
-
-  app.post('/api/upload/multiple', upload.array('images', 10), async (req, res) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'No token' });
-    try {
-      jwt.verify(token, JWT_SECRET);
-      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        return res.status(400).json({ error: 'No files uploaded' });
-      }
-
-      const uploads = await Promise.all(
-        req.files.map(file => uploadImage(file.buffer, { folder: 'listings' }))
-      );
-      res.json({ urls: uploads.map(u => u.url) });
-    } catch (error) {
-      console.error('Multiple upload error:', error);
-      res.status(500).json({ error: 'Upload failed' });
-    }
-  });
-
-  const videoUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 },
-    fileFilter: (_req, file, cb) => {
-      if (file.mimetype.startsWith('video/')) cb(null, true);
-      else cb(new Error('Only video files are allowed'));
-    }
-  });
-
-  app.post('/api/upload/video', uploadLimiter, videoUpload.single('video'), async (req, res) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'No token' });
-    try {
-      jwt.verify(token, JWT_SECRET);
-      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-      const result = await uploadVideo(req.file.buffer, { folder: 'videos' });
-      res.json({ videoUrl: result.url });
-    } catch (error) {
-      console.error('Video upload error:', error);
-      res.status(500).json({ error: 'Upload failed' });
-    }
-  });
+  // Upload Routes
+  app.use('/api/upload', createUploadsRouter({ uploadLimiter }));
 
   // API routes FIRST
   app.get('/api/health', (_req, res) => {
