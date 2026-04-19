@@ -1257,7 +1257,9 @@ Atbildi TIKAI JSON formātā (bez markdown):
       });
 
       const text = (response.text || '').trim().replace(/```json|```/g, '').trim();
-      const result = JSON.parse(text);
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return res.status(500).json({ error: 'AI atbilde nav derīga' });
+      const result = JSON.parse(jsonMatch[0]);
 
       if (
         result.bestPickId === undefined ||
@@ -1268,8 +1270,8 @@ Atbildi TIKAI JSON formātā (bez markdown):
       }
 
       res.json(result);
-    } catch (e) {
-      console.error('[COMPARE]', e);
+    } catch (error) {
+      console.error('[COMPARE]', error);
       res.status(500).json({ error: 'Salīdzināšana neizdevās' });
     }
   });
