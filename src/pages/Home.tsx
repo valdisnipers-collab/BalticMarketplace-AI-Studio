@@ -750,17 +750,11 @@ export default function Home() {
                  listing.listing_type === 'exchange' ? 'MAIŅA' : 
                  `${listing.price.toLocaleString()} €`}
               </span>
-              {listing.listing_type !== 'giveaway' && listing.listing_type !== 'exchange' && (
-                <span className="text-slate-500 text-xs font-medium">mtl. incl. VAT.</span>
-              )}
             </div>
             {listing.listing_type === 'exchange' && listing.exchange_for && (
               <p className="text-indigo-600 text-[10px] font-bold uppercase truncate mb-3">Pret: {listing.exchange_for}</p>
             )}
-            {listing.listing_type !== 'exchange' && (
-              <p className="text-slate-500 text-xs mb-3">36 months, 5.000 km per year</p>
-            )}
-            
+
             <div className="flex flex-wrap gap-2 mb-4">
               {listing.listing_type === 'giveaway' ? (
                 <Badge variant="secondary" className="bg-emerald-100 text-emerald-600 border-none font-bold text-[10px] px-2 py-0.5 uppercase">
@@ -781,24 +775,58 @@ export default function Home() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[11px] font-bold text-slate-700">09/2025</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
-                <Fuel className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[11px] font-bold text-slate-700">Petrol</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
-                <Zap className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[11px] font-bold text-slate-700">96 kW (131 hp)</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
-                <Settings className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[11px] font-bold text-slate-700">Automatic</span>
-              </div>
-            </div>
+            {(() => {
+              const attrs = listing.attributes || {};
+              const cat = listing.category || '';
+              type AttrItem = { icon: React.ReactNode; value: string };
+              let items: AttrItem[] = [];
+              if (cat === 'auto') {
+                if (attrs.year || attrs.year_month) items.push({ icon: <Calendar className="w-3.5 h-3.5 text-slate-400" />, value: attrs.year_month || attrs.year });
+                if (attrs.fuel) items.push({ icon: <Fuel className="w-3.5 h-3.5 text-slate-400" />, value: attrs.fuel });
+                if (attrs.engine || attrs.power) items.push({ icon: <Zap className="w-3.5 h-3.5 text-slate-400" />, value: attrs.engine || attrs.power });
+                if (attrs.transmission) items.push({ icon: <Settings className="w-3.5 h-3.5 text-slate-400" />, value: attrs.transmission });
+              } else if (cat === 'nekustamais-ipasums' || cat === 'majai') {
+                if (attrs.rooms) items.push({ icon: <HomeIcon className="w-3.5 h-3.5 text-slate-400" />, value: `${attrs.rooms} ist.` });
+                if (attrs.area) items.push({ icon: <Warehouse className="w-3.5 h-3.5 text-slate-400" />, value: `${attrs.area} m²` });
+                if (attrs.floor) items.push({ icon: <Building2 className="w-3.5 h-3.5 text-slate-400" />, value: `${attrs.floor}. stāvs` });
+                if (attrs.series) items.push({ icon: <Hammer className="w-3.5 h-3.5 text-slate-400" />, value: attrs.series });
+              } else if (cat === 'elektronika') {
+                if (attrs.brand) items.push({ icon: <Cpu className="w-3.5 h-3.5 text-slate-400" />, value: attrs.brand });
+                if (attrs.model) items.push({ icon: <Monitor className="w-3.5 h-3.5 text-slate-400" />, value: attrs.model });
+                if (attrs.storage) items.push({ icon: <Smartphone className="w-3.5 h-3.5 text-slate-400" />, value: attrs.storage });
+                if (attrs.condition) items.push({ icon: <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />, value: attrs.condition });
+              } else if (cat === 'berni') {
+                if (attrs.age_group || attrs.age) items.push({ icon: <Baby className="w-3.5 h-3.5 text-slate-400" />, value: attrs.age_group || attrs.age });
+                if (attrs.brand) items.push({ icon: <Star className="w-3.5 h-3.5 text-slate-400" />, value: attrs.brand });
+                if (attrs.condition) items.push({ icon: <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />, value: attrs.condition });
+              } else if (cat === 'mode') {
+                if (attrs.size) items.push({ icon: <Shirt className="w-3.5 h-3.5 text-slate-400" />, value: attrs.size });
+                if (attrs.brand) items.push({ icon: <Star className="w-3.5 h-3.5 text-slate-400" />, value: attrs.brand });
+                if (attrs.condition) items.push({ icon: <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />, value: attrs.condition });
+              } else if (cat === 'hobbiji' || cat === 'sports') {
+                if (attrs.brand) items.push({ icon: <Trophy className="w-3.5 h-3.5 text-slate-400" />, value: attrs.brand });
+                if (attrs.condition) items.push({ icon: <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />, value: attrs.condition });
+                if (attrs.type) items.push({ icon: <Dumbbell className="w-3.5 h-3.5 text-slate-400" />, value: attrs.type });
+              } else if (cat === 'darbs') {
+                if (attrs.type) items.push({ icon: <Briefcase className="w-3.5 h-3.5 text-slate-400" />, value: attrs.type });
+                if (attrs.experience) items.push({ icon: <Star className="w-3.5 h-3.5 text-slate-400" />, value: attrs.experience });
+                if (attrs.area) items.push({ icon: <MapPin className="w-3.5 h-3.5 text-slate-400" />, value: attrs.area });
+              } else {
+                const entries = Object.entries(attrs).filter(([, v]) => v && typeof v === 'string').slice(0, 2);
+                items = entries.map(([, v]) => ({ icon: <Star className="w-3.5 h-3.5 text-slate-400" />, value: String(v) }));
+              }
+              if (items.length === 0) return null;
+              return (
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {items.slice(0, 4).map((item, i) => (
+                    <div key={i} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
+                      {item.icon}
+                      <span className="text-[11px] font-bold text-slate-700 truncate">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             <div className="flex items-center text-slate-400 text-[11px] font-medium">
               <MapPin className="w-3 h-3 mr-1" />
