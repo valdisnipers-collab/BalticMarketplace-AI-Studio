@@ -1355,7 +1355,7 @@ export default function ListingDetails() {
           >
             {/* Header */}
             <div
-              className="sticky top-0 z-10 bg-white/40 backdrop-blur-md border-b border-slate-200/30"
+              className="sticky top-0 z-[50] bg-white/40 backdrop-blur-md border-b border-slate-200/30"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 h-16 px-4 max-w-7xl mx-auto">
@@ -1397,7 +1397,7 @@ export default function ListingDetails() {
 
             {/* Grid */}
             <div
-              className="max-w-5xl mx-auto px-4 py-6 columns-2 md:columns-3 gap-3 space-y-3"
+              className="max-w-5xl mx-auto px-4 py-6 columns-2 md:columns-3 gap-3 space-y-3 isolate"
               onClick={e => e.stopPropagation()}
             >
               {imageUrls.map((url, i) => (
