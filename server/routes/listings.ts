@@ -7,6 +7,7 @@ import { requireAuth, JWT_SECRET } from '../utils/auth';
 import { getGenAI } from '../utils/ai';
 import { geocodeLocation } from '../utils/geocode';
 import { hasEarlyAccess } from '../utils/earlyAccess';
+import { calculateQualityScore } from '../utils/quality';
 import { cached, invalidate, invalidatePattern } from '../services/redis';
 import { syncListing, removeListing, searchListings } from '../services/search';
 import { sendEmail, emailTemplates } from '../services/email';
@@ -263,6 +264,16 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
 
       const listingId = info.lastInsertRowid;
 
+      const qualityScore = calculateQualityScore({
+        title,
+        description,
+        image_url,
+        attributes: attributes ? JSON.stringify(attributes) : undefined,
+        price,
+        location,
+      });
+      await db.run('UPDATE listings SET quality_score = ? WHERE id = ?', [qualityScore, listingId]);
+
       try {
         await db.run('UPDATE users SET points = points + 50 WHERE id = ?', [decoded.userId]);
         await db.run('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, 50, 'Sludinājuma pievienošana']);
@@ -370,6 +381,17 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
         SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?, listing_type = ?, exchange_for = ?
         WHERE id = ?
       `, [title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, listingId]);
+
+      const updatedListing = await db.get('SELECT * FROM listings WHERE id = ?', [listingId]) as any;
+      const qualityScore = calculateQualityScore({
+        title: updatedListing.title,
+        description: updatedListing.description,
+        image_url: updatedListing.image_url,
+        attributes: updatedListing.attributes,
+        price: updatedListing.price,
+        location: updatedListing.location,
+      });
+      await db.run('UPDATE listings SET quality_score = ? WHERE id = ?', [qualityScore, listingId]);
 
       if (price < listing.price) {
         const favoritedUsers = await db.all('SELECT user_id FROM favorites WHERE listing_id = ?', [listingId]) as { user_id: number }[];
