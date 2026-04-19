@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { SectionHeader } from '@/components/ui/section-header';
 import { cn } from '@/lib/utils';
 import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
 import DiscoveryFeed from '../components/DiscoveryFeed';
@@ -100,6 +99,8 @@ interface Listing {
   exchange_for?: string;
 }
 
+type TabId = 'visi' | 'jaunaki' | 'popularaki' | 'ieteiktie' | 'sekotie';
+
 export default function Home() {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -112,7 +113,6 @@ export default function Home() {
   const [activeCategoryId, setActiveCategoryId] = useState(''); // Empty means universal search is active
 
   const [searchFilters, setSearchFilters] = useState<Record<string, string>>({});
-  type TabId = 'visi' | 'jaunaki' | 'popularaki' | 'ieteiktie' | 'sekotie';
   const [activeTab, setActiveTab] = useState<TabId>('visi');
   const [tabListings, setTabListings] = useState<Listing[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
