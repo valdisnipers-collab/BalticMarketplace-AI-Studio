@@ -168,7 +168,10 @@ export default function ListingDetails() {
   useEffect(() => {
     const fetchListingAndReviews = async () => {
       try {
-        const res = await fetch(`/api/listings/${id}`);
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch(`/api/listings/${id}`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        });
         if (!res.ok) throw new Error('Sludinājums nav atrasts');
         const data = await res.json();
         setListing(data);
