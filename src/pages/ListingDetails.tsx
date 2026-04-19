@@ -534,11 +534,19 @@ export default function ListingDetails() {
                       </div>
                     </div>
                     
+                    {/* Image counter */}
+                    {imageUrls.length > 1 && (
+                      <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-lg pointer-events-none">
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        {selectedIndex + 1} / {imageUrls.length}
+                      </div>
+                    )}
+
                     {imageUrls.length > 1 && (
                       <>
-                        <Button 
-                          variant="secondary" 
-                          size="icon" 
+                        <Button
+                          variant="secondary"
+                          size="icon"
                           className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm hover:bg-white text-slate-800 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={() => emblaApi?.scrollPrev()}
                         >
@@ -594,6 +602,31 @@ export default function ListingDetails() {
                   <LayoutGrid className="w-5 h-5 text-slate-700" />
                 </Button>
               </div>
+
+              {/* Thumbnail strip — auto category only */}
+              {listing.category === 'auto' && imageUrls.length > 1 && (
+                <div className="flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                  {imageUrls.map((url, index) => (
+                    <button
+                      key={index}
+                      onClick={() => emblaApi?.scrollTo(index)}
+                      className={cn(
+                        "flex-shrink-0 w-20 h-14 rounded-lg overflow-hidden border-2 transition-all",
+                        selectedIndex === index
+                          ? "border-[#E64415] opacity-100"
+                          : "border-transparent opacity-50 hover:opacity-80"
+                      )}
+                    >
+                      <img
+                        src={url}
+                        alt={`Foto ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
 
             {/* Title & Core Info */}
