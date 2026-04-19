@@ -138,6 +138,10 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
   const { io } = deps;
   const router = Router();
 
+  // Run once at startup — safe to re-run
+  db.query(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS ai_card_summary TEXT`)
+    .catch(() => {}); // ignore if column already exists
+
   // POST /api/listings/ai-suggestions
   router.post('/ai-suggestions', requireAuth, async (req: any, res) => {
     try {
@@ -439,6 +443,77 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
     } catch (e) {
       console.error('[DISCOVERY]', e);
       res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /api/listings/:id/ai-card-summary
+  router.get('/:id/ai-card-summary', async (req, res) => {
+    try {
+      const listingId = Number(req.params.id);
+      if (isNaN(listingId)) return res.status(400).json({ error: 'Invalid id' });
+
+      const row = await db.query(
+        'SELECT id, title, description, category, attributes, price, location, ai_trust_score, ai_card_summary FROM listings WHERE id = $1',
+        [listingId]
+      );
+      const listing = row.rows[0];
+      if (!listing) return res.status(404).json({ error: 'Not found' });
+
+      // Return cached summary if available
+      if (listing.ai_card_summary) {
+        return res.json(JSON.parse(listing.ai_card_summary));
+      }
+
+      // Generate via Gemini
+      const ai = getGenAI();
+      if (!ai) return res.status(503).json({ error: 'AI nav pieejams' });
+
+      const attrs = listing.attributes
+        ? (typeof listing.attributes === 'string' ? JSON.parse(listing.attributes) : listing.attributes)
+        : {};
+      const attrText = Object.entries(attrs)
+        .filter(([k, v]) => k !== 'features' && v)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+
+      const prompt = `Tu esi auto ekspertu asistents BalticMarket platformā. Analizē šo auto sludinājumu un atgriez TIKAI JSON bez nekā cita.
+
+Sludinājums:
+- Nosaukums: ${listing.title}
+- Cena: €${listing.price}
+- Kategorija: ${listing.category}
+- Parametri: ${attrText || 'nav norādīti'}
+- Apraksts: ${(listing.description || '').slice(0, 400)}
+
+Atgriec šo precīzu JSON struktūru (latviešu valodā):
+{
+  "summary": "1 teikums — objektīvs auto raksturojums",
+  "pros": ["stiprā puse 1", "stiprā puse 2", "stiprā puse 3"],
+  "cons": ["uzmanības punkts 1", "uzmanības punkts 2"],
+  "suited_for": "1 rinda — kam šis auto ir piemērotākais"
+}
+
+Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
+
+      const result = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
+      const text = (result.text ?? '').trim();
+
+      // Extract JSON from response (strip markdown code fences if present)
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return res.status(500).json({ error: 'AI atbilde nav derīga' });
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      // Cache in DB
+      await db.query(
+        'UPDATE listings SET ai_card_summary = $1 WHERE id = $2',
+        [JSON.stringify(parsed), listingId]
+      );
+
+      res.json(parsed);
+    } catch (error) {
+      console.error('[ai-card-summary] error:', error);
+      res.status(500).json({ error: 'Servera kļūda' });
     }
   });
 
