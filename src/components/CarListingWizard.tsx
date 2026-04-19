@@ -199,7 +199,7 @@ export default function CarListingWizard({ onSubmit, isSubmitting, error }: CarL
     setIsDecodingVin(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/ai/decode-vin', {
+      const res = await fetch('/api/listings/ai/decode-vin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ vin: form.vin }),
@@ -260,7 +260,7 @@ export default function CarListingWizard({ onSubmit, isSubmitting, error }: CarL
     setIsGenerating(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/generate-description', {
+      const res = await fetch('/api/listings/generate-description', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
@@ -288,7 +288,7 @@ export default function CarListingWizard({ onSubmit, isSubmitting, error }: CarL
     setIsGenerating(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/recommend-price', {
+      const res = await fetch('/api/listings/recommend-price', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({

@@ -198,13 +198,13 @@ export default function ListingDetails() {
     const token = localStorage.getItem('auth_token');
     try {
       if (isFavorite) {
-        await fetch(`/api/favorites/${id}`, {
+        await fetch(`/api/users/me/favorites/${id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
         setIsFavorite(false);
       } else {
-        await fetch(`/api/favorites/${id}`, {
+        await fetch(`/api/users/me/favorites/${id}`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
         });

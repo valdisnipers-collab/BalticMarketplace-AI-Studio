@@ -252,7 +252,7 @@ export default function AddListing() {
     setError('');
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/ai/generate-listing', {
+      const res = await fetch('/api/listings/ai/generate-listing', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -286,7 +286,7 @@ export default function AddListing() {
     setError('');
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/generate-description', {
+      const res = await fetch('/api/listings/generate-description', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -837,7 +837,7 @@ export default function AddListing() {
                           onClick={async () => {
                             try {
                               const token = localStorage.getItem('auth_token');
-                              const res = await fetch('/api/recommend-price', {
+                              const res = await fetch('/api/listings/recommend-price', {
                                 method: 'POST',
                                 headers: {
                                   'Content-Type': 'application/json',
