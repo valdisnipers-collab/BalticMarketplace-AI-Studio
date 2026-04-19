@@ -139,7 +139,7 @@ async function startServer() {
   const httpServer = http.createServer(app);
   
   const SOCKET_ORIGINS = process.env.NODE_ENV === 'production'
-    ? ['https://balticmarket.lv', 'https://www.balticmarket.lv']
+    ? ['https://balticmarket.net', 'https://www.balticmarket.net']
     : ['http://localhost:5173', 'http://localhost:3000'];
 
   const io = new SocketIOServer(httpServer, {
