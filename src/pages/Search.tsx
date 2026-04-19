@@ -66,6 +66,7 @@ export default function Search() {
   const [sort, setSort] = useState(searchParams.get('sort') || 'newest');
   const [attributeFilters, setAttributeFilters] = useState<Record<string, string>>(initialAttributes);
   const [showFilters, setShowFilters] = useState(false);
+  const [aiSummary, setAiSummary] = useState('');
 
   // Sync local state with URL params when they change externally (e.g., back navigation, links)
   useEffect(() => {
@@ -103,18 +104,27 @@ export default function Search() {
 
   const fetchListings = async () => {
     setLoading(true);
+    setAiSummary('');
     try {
       const q = searchParams.get('q');
-      let url = q ? '/api/listings/search' : '/api/listings';
-      
+      const url = q ? '/api/listings/search' : '/api/listings';
       const queryString = searchParams.toString();
       const finalUrl = queryString ? `${url}?${queryString}` : url;
 
-      const res = await fetch(finalUrl);
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(finalUrl, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
       const data = await res.json();
-      setListings(data);
+
+      if (q && data && typeof data === 'object' && 'listings' in data) {
+        setListings(data.listings);
+        setAiSummary(data.aiSummary || '');
+      } else {
+        setListings(Array.isArray(data) ? data : []);
+      }
     } catch (error) {
-      console.error("Error fetching listings:", error);
+      console.error('Error fetching listings:', error);
     } finally {
       setLoading(false);
     }
@@ -456,6 +466,14 @@ export default function Search() {
             </Select>
           </div>
         </div>
+
+        {/* AI interpretation banner */}
+        {aiSummary && !loading && (
+          <div className="flex items-center gap-2 px-3 py-2 mb-4 rounded-xl bg-violet-50 border border-violet-200 text-violet-800 text-sm">
+            <Sparkles className="w-4 h-4 shrink-0 text-violet-500" />
+            <span><strong>AI saprata:</strong> {aiSummary}</span>
+          </div>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
