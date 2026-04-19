@@ -126,6 +126,8 @@ export default function ListingDetails() {
   const [omnivaLocations, setOmnivaLocations] = useState<any[]>([]);
   const [omnivaSearch, setOmnivaSearch] = useState('');
   const [selectedLocker, setSelectedLocker] = useState<any>(null);
+  const [showAllTechData, setShowAllTechData] = useState(false);
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -752,6 +754,81 @@ export default function ListingDetails() {
                 </p>
               </div>
             </div>
+
+            {/* Technical Data Table — auto only */}
+            {listing.category === 'auto' && parsedAttributes && (() => {
+              const ATTR_LV: Record<string, string> = {
+                make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Reģistrācijas gads',
+                mileage: 'Nobraukums', fuel: 'Degviela', transmission: 'Ātrumkārba',
+                engine: 'Dzinējs', power: 'Jauda', bodyType: 'Virsbūves tips', color: 'Krāsa',
+                condition: 'Stāvoklis', doors: 'Durvju skaits', seats: 'Sēdvietu skaits',
+                drivetrain: 'Piedziņa', emission_class: 'Emisiju klase', previous_owners: 'Iepriekšējie īpašnieki',
+              };
+              const rows = Object.entries(parsedAttributes)
+                .filter(([k, v]) => !['features', 'saleType', 'subcategory'].includes(k) && v)
+                .map(([k, v]) => ({ label: ATTR_LV[k] || k, value: String(v) }));
+
+              if (rows.length === 0) return null;
+              const visibleRows = showAllTechData ? rows : rows.slice(0, 6);
+
+              return (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-bold text-slate-900">Tehniskā informācija</h2>
+                  <div className="rounded-2xl border border-slate-100 overflow-hidden">
+                    {visibleRows.map((row, i) => (
+                      <div key={i} className={cn(
+                        "grid grid-cols-2 px-5 py-3.5 text-sm",
+                        i % 2 === 0 ? "bg-slate-50" : "bg-white"
+                      )}>
+                        <span className="font-semibold text-slate-600">{row.label}</span>
+                        <span className="font-bold text-slate-900">{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {rows.length > 6 && (
+                    <button
+                      onClick={() => setShowAllTechData(!showAllTechData)}
+                      className="text-[#E64415] font-semibold text-sm hover:underline"
+                    >
+                      {showAllTechData ? '↑ Rādīt mazāk' : `↓ Rādīt vairāk (${rows.length - 6} vēl)`}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Features Checklist — auto only, only if features array present */}
+            {listing.category === 'auto' && parsedAttributes?.features && Array.isArray(parsedAttributes.features) && parsedAttributes.features.length > 0 && (() => {
+              const features: string[] = parsedAttributes.features;
+              const visibleFeatures = showAllFeatures ? features : features.slice(0, 12);
+
+              return (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-bold text-slate-900">Aprīkojums</h2>
+                  <div className="rounded-2xl border border-slate-100 overflow-hidden">
+                    <div className="grid grid-cols-2 gap-0">
+                      {visibleFeatures.map((feature, i) => (
+                        <div key={i} className={cn(
+                          "flex items-center gap-3 px-5 py-3 text-sm font-semibold text-slate-700 border-b border-slate-100",
+                          Math.floor(i / 2) % 2 === 0 ? "bg-slate-50" : "bg-white"
+                        )}>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" aria-hidden="true" />
+                          {feature}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {features.length > 12 && (
+                    <button
+                      onClick={() => setShowAllFeatures(!showAllFeatures)}
+                      className="text-[#E64415] font-semibold text-sm hover:underline"
+                    >
+                      {showAllFeatures ? '↑ Rādīt mazāk' : `↓ Rādīt vairāk (${features.length - 12} vēl)`}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* AI Safety Analysis */}
             {listing.ai_moderation_status && (
