@@ -345,8 +345,6 @@ export default function Search() {
       .map(([k, v]) => ({ key: k, label: v, onRemove: () => removeActiveFilter(k) })),
   ].filter((f): f is { key: string; label: string; onRemove: () => void } => f !== null);
 
-  const totalActiveFilterCount = activeFilters.length;
-
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 flex flex-col md:flex-row">
       <Helmet>
@@ -584,7 +582,13 @@ export default function Search() {
               </Button>
             )}
             <span className="text-sm text-slate-500">{t('search.sort')}:</span>
-            <Select value={sort} onValueChange={(val) => { setSort(val); setTimeout(() => handleSearch(), 0); }}>
+            <Select value={sort} onValueChange={(val) => {
+              setSort(val);
+              const params = new URLSearchParams(searchParams);
+              if (val && val !== 'newest') params.set('sort', val);
+              else params.delete('sort');
+              setSearchParams(params);
+            }}>
               <SelectTrigger className="w-[180px] bg-white">
                 <SelectValue placeholder={t('search.newest')}>
                   {sort === 'newest' ? t('search.newest') : 
