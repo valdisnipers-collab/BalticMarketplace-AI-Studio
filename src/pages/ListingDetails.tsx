@@ -537,7 +537,7 @@ export default function ListingDetails() {
                     {/* Image counter */}
                     {imageUrls.length > 1 && (
                       <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-lg pointer-events-none">
-                        <ImageIcon className="w-3.5 h-3.5" />
+                        <ImageIcon className="w-3.5 h-3.5" aria-hidden="true" />
                         {selectedIndex + 1} / {imageUrls.length}
                       </div>
                     )}
@@ -605,13 +605,15 @@ export default function ListingDetails() {
 
               {/* Thumbnail strip — auto category only */}
               {listing.category === 'auto' && imageUrls.length > 1 && (
-                <div className="flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                <div className="scrollbar-hide flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}>
                   {imageUrls.map((url, index) => (
                     <button
                       key={index}
                       onClick={() => emblaApi?.scrollTo(index)}
+                      aria-label={`Foto ${index + 1} no ${imageUrls.length}`}
+                      aria-current={selectedIndex === index ? true : undefined}
                       className={cn(
-                        "flex-shrink-0 w-20 h-14 rounded-lg overflow-hidden border-2 transition-all",
+                        "flex-shrink-0 w-20 h-14 rounded-lg overflow-hidden border-2 transition-all focus-visible:ring-2 focus-visible:ring-[#E64415] focus-visible:outline-none",
                         selectedIndex === index
                           ? "border-[#E64415] opacity-100"
                           : "border-transparent opacity-50 hover:opacity-80"
@@ -619,7 +621,7 @@ export default function ListingDetails() {
                     >
                       <img
                         src={url}
-                        alt={`Foto ${index + 1}`}
+                        alt={`${listing.title} — foto ${index + 1}`}
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
                       />
