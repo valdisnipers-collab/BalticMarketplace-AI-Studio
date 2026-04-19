@@ -1211,6 +1211,9 @@ Return ONLY valid JSON, no markdown.`;
         return res.status(400).json({ error: 'Nepietiekams aktīvo sludinājumu skaits' });
       }
 
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(503).json({ error: 'AI nav pieejams' });
+      }
       const ai = getGenAI();
 
       const listingsText = listings.map((l: any, i: number) => {

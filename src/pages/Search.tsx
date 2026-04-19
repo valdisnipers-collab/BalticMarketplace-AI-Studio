@@ -98,8 +98,14 @@ export default function Search() {
   const [openExpandId, setOpenExpandId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [compareLoading, setCompareLoading] = useState(false);
-  const [compareResult, setCompareResult] = useState<any>(null);
+  const [compareResult, setCompareResult] = useState<{
+    bestPickId: number;
+    overallSummary: string;
+    rankings: { id: number; rank: number; verdict: string; pros: string[]; cons: string[]; valueScore: number }[];
+  } | null>(null);
   const [comparePanelOpen, setComparePanelOpen] = useState(false);
+
+  const compareListingsSnapshot = React.useRef<{ id: number; title: string; image_url: string; price: number }[]>([]);
 
   // Initialize attribute filters from URL
   const initialAttributes: Record<string, string> = {};
@@ -251,8 +257,12 @@ export default function Search() {
 
   async function handleCompare() {
     if (selectedIds.size < 2 || compareLoading) return;
-    if (!user) return;
+    if (!user) {
+      alert('Lūdzu, piesakieties, lai izmantotu AI salīdzinājumu');
+      return;
+    }
     const token = localStorage.getItem('auth_token');
+    setCompareResult(null);
     setCompareLoading(true);
     try {
       const res = await fetch('/api/listings/compare', {
@@ -265,6 +275,7 @@ export default function Search() {
       });
       if (!res.ok) throw new Error('compare failed');
       const data = await res.json();
+      compareListingsSnapshot.current = selectedListingCards;
       setCompareResult(data);
       setComparePanelOpen(true);
     } catch {
@@ -874,7 +885,7 @@ export default function Search() {
         isOpen={comparePanelOpen}
         onClose={() => setComparePanelOpen(false)}
         result={compareResult}
-        listings={selectedListingCards}
+        listings={compareListingsSnapshot.current}
       />
     </div>
   );
