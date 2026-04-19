@@ -24,6 +24,7 @@ import Chat from './pages/Chat';
 import AdminDashboard from './pages/AdminDashboard';
 import StorePage from './pages/StorePage';
 import Compare from './pages/Compare';
+import SellerDashboard from './pages/SellerDashboard';
 
 const pageVariants = {
   initial: { opacity: 0, y: 10 },
@@ -52,6 +53,7 @@ function AnimatedRoutes() {
         <Route path="/admin" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><AdminDashboard /></motion.div>} />
         <Route path="/store/:slug" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><StorePage /></motion.div>} />
         <Route path="/compare" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Compare /></motion.div>} />
+        <Route path="/seller/dashboard" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><SellerDashboard /></motion.div>} />
       </Routes>
     </AnimatePresence>
   );

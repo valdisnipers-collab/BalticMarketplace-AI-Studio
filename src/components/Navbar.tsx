@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { useI18n } from './I18nContext';
-import { Plus, User, LogOut, MessageSquare, ShieldAlert, ShieldCheck, Coins, Bell, Globe, ChevronDown, ChevronUp, Search, Heart, Star, Info, PlusCircle } from 'lucide-react';
+import { Plus, User, LogOut, MessageSquare, ShieldAlert, ShieldCheck, Coins, Bell, Globe, ChevronDown, ChevronUp, Search, Heart, Star, Info, PlusCircle, BarChart2 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -376,6 +376,15 @@ export default function Navbar() {
                         className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-primary-600 hover:bg-orange-50 hover:text-[#E64415] transition-colors"
                       >
                         <ShieldCheck className="w-4 h-4 shrink-0" /> Admin Panelis
+                      </button>
+                    )}
+                    {(user.user_type === 'b2b' || user.role === 'admin') && (
+                      <button
+                        type="button"
+                        onClick={() => { navigate('/seller/dashboard'); setIsUserOpen(false); }}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <BarChart2 className="w-4 h-4 shrink-0" /> Pārdevēja panelis
                       </button>
                     )}
                     <button

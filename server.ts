@@ -23,6 +23,7 @@ import { createNotificationsRouter } from './server/routes/notifications';
 import { createStoresRouter } from './server/routes/stores';
 import { createPaymentsRouter } from './server/routes/payments';
 import { createAdminRouter } from './server/routes/admin';
+import { createDashboardRouter } from './server/routes/dashboard';
 
 
 let stripeClient: Stripe | null = null;
@@ -148,6 +149,7 @@ async function startServer() {
   app.use('/api/push', createPushRouter());
   app.use('/api/notifications', createNotificationsRouter());
   app.use('/api/stores', createStoresRouter());
+  app.use('/api/seller', createDashboardRouter());
   app.use('/api', createAdminRouter({ io }));
 
   // Vite middleware for development
