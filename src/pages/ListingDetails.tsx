@@ -1398,7 +1398,8 @@ export default function ListingDetails() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             ref={lightboxRef}
-            className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+            className="fixed inset-0 z-50 bg-black flex items-center justify-center cursor-zoom-out"
+            onClick={() => setLightboxIndex(null)}
             onKeyDown={e => {
               if (e.key === 'Escape') setLightboxIndex(null);
               if (e.key === 'ArrowLeft') setLightboxIndex(i => i !== null ? (i - 1 + imageUrls.length) % imageUrls.length : null);
@@ -1408,14 +1409,15 @@ export default function ListingDetails() {
             style={{ outline: 'none' }}
           >
             {/* Counter */}
-            <div className="absolute top-4 left-4 text-white/80 text-sm font-medium">
+            <div className="absolute top-4 left-4 text-white/80 text-sm font-medium pointer-events-none">
               {lightboxIndex + 1} / {imageUrls.length}
             </div>
 
             {/* Close */}
             <button
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+              className="absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white text-slate-900 flex items-center justify-center shadow-lg hover:bg-slate-100 transition-colors text-lg font-bold"
               onClick={() => setLightboxIndex(null)}
+              aria-label="Aizvērt"
             >
               ✕
             </button>
@@ -1428,8 +1430,9 @@ export default function ListingDetails() {
               transition={{ duration: 0.2 }}
               src={imageUrls[lightboxIndex]}
               alt={`Attēls ${lightboxIndex + 1}`}
-              className="max-w-full max-h-full object-contain px-16"
+              className="max-w-full max-h-full object-contain px-16 cursor-default"
               referrerPolicy="no-referrer"
+              onClick={e => e.stopPropagation()}
             />
 
             {/* Prev */}
