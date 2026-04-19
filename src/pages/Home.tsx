@@ -13,6 +13,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { cn } from '@/lib/utils';
 import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
 import DiscoveryFeed from '../components/DiscoveryFeed';
+import { SmartExpandDrawer } from '../components/SmartExpandDrawer';
 
 const mainCategories = [
   { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'text-[#E64415]', subcategories: [
@@ -112,6 +113,7 @@ export default function Home() {
   const [searchFilters, setSearchFilters] = useState<Record<string, string>>({});
   const [feedType, setFeedType] = useState<'all' | 'following'>('all');
   const [showHeroText, setShowHeroText] = useState(true);
+  const [openExpandId, setOpenExpandId] = useState<number | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollIndex, setScrollIndex] = useState(1); // Visual center (Transports)
@@ -855,8 +857,29 @@ export default function Home() {
               <MapPin className="w-3 h-3 mr-1" />
               <span>{listing.location || 'Rīga, Latvija'}</span>
             </div>
+
+            {listing.category === 'auto' && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpenExpandId(openExpandId === listing.id ? null : listing.id);
+                }}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 text-[11px] font-semibold text-[#E64415] hover:text-[#c73a11] transition-colors py-1"
+              >
+                <Sparkles className="w-3 h-3" />
+                {openExpandId === listing.id ? 'Aizvērt kopsavilkumu' : 'AI kopsavilkums'}
+              </button>
+            )}
           </div>
         </Link>
+
+        {listing.category === 'auto' && (
+          <SmartExpandDrawer
+            listingId={listing.id}
+            isOpen={openExpandId === listing.id}
+          />
+        )}
       </motion.div>
     );
   };
