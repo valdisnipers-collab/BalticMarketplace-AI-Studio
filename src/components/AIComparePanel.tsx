@@ -1,11 +1,12 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Trophy, TrendingUp, TrendingDown, Sparkles } from 'lucide-react';
+import { X, Trophy, TrendingUp, TrendingDown, Sparkles, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CompareRanking {
   id: number;
   rank: number;
   verdict: string;
+  priceVsMarket?: string;
   pros: string[];
   cons: string[];
   valueScore: number;
@@ -14,6 +15,7 @@ interface CompareRanking {
 interface CompareResult {
   bestPickId: number;
   overallSummary: string;
+  marketInsight?: string;
   rankings: CompareRanking[];
 }
 
@@ -73,6 +75,14 @@ export function AIComparePanel({ isOpen, onClose, result, listings }: Props) {
             </div>
 
             <div className="p-5 space-y-4">
+              {/* Market insight from Google Search */}
+              {result?.marketInsight && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 flex gap-2">
+                  <Globe className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+                  <span>{result.marketInsight}</span>
+                </div>
+              )}
+
               {/* Overall summary */}
               {result?.overallSummary && (
                 <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-sm text-violet-800">
@@ -146,7 +156,21 @@ export function AIComparePanel({ isOpen, onClose, result, listings }: Props) {
                     </div>
 
                     {/* Verdict */}
-                    <p className="text-xs text-slate-600 mb-3 italic">{ranking.verdict}</p>
+                    <p className="text-xs text-slate-600 mb-2 italic">{ranking.verdict}</p>
+
+                    {/* Price vs market */}
+                    {ranking.priceVsMarket && (
+                      <div className={cn(
+                        'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full mb-2',
+                        ranking.priceVsMarket.toLowerCase().includes('zem')
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : ranking.priceVsMarket.toLowerCase().includes('virs')
+                          ? 'bg-red-100 text-red-600'
+                          : 'bg-slate-100 text-slate-600'
+                      )}>
+                        {ranking.priceVsMarket}
+                      </div>
+                    )}
 
                     {/* Pros & Cons */}
                     <div className="space-y-1.5">

@@ -1236,22 +1236,54 @@ Return ONLY valid JSON, no markdown.`;
   Papildu info: ${attrsText || 'nav'}`;
       }).join('\n\n');
 
-      const prompt = `Tu esi pieredzējis tirgus analītiķis. Salīdzini šos ${listings.length} sludinājumus un sniedi objektīvu novērtējumu latviešu valodā.
+      // Step 1: Google Search grounding — get real-time market context
+      const itemsSummary = listings.map((l: any) => `${l.title} par €${l.price}`).join(', ');
+      const category = listings[0]?.category || '';
+      let marketContext = '';
+      try {
+        const searchResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: `Atrodi aktuālās tirgus cenas un tipiskās īpašības šādiem produktiem Baltijas/Latvijas tirgū: ${itemsSummary}. Kategorija: ${category}. Sniedz īsu tirgus pārskatu: vidējās cenas, populārākie modeļi, uz ko pircēji parasti pievērš uzmanību. Atbildi latviešu valodā, īsi un konkrēti.`,
+          config: {
+            tools: [{ googleSearch: {} }],
+          },
+        });
+        marketContext = searchResponse.text || '';
+      } catch (e) {
+        console.warn('[COMPARE] Search grounding failed, proceeding without market context:', e);
+      }
 
+      // Step 2: Structured comparison using market context + AI knowledge
+      const marketSection = marketContext
+        ? `\nAKTUĀLAIS TIRGUS KONTEKSTS (no Google meklēšanas):\n${marketContext}\n`
+        : '';
+
+      const prompt = `Tu esi pieredzējis un objektīvs tirgus analītiķis ar piekļuvi aktuāliem tirgus datiem. Salīdzini šos ${listings.length} sludinājumus UN novērtē tos pret tirgus vidējo līmeni.
+${marketSection}
+SLUDINĀJUMI:
 ${listingsText}
 
-Atbildi TIKAI JSON formātā (bez markdown):
+NOVĒRTĒŠANAS KRITĒRIJI:
+1. Cenas atbilstība tirgum — vai cena ir augstāka/zemāka par tirgus vidējo?
+2. Tehniskās specifikācijas vs. tirgus standarts šajā kategorijā
+3. Stāvoklis, komplektācija, papildu vērtība
+4. Atrašanās vieta un piegādes ērtums
+5. Kopējā vērtība naudas ekvivalentā
+
+Atbildi TIKAI JSON formātā (bez markdown, bez komentāriem):
 {
   "bestPickId": <labākā sludinājuma ID kā skaitlis>,
-  "overallSummary": "<2–3 teikumu kopsavilkums latviešu valodā>",
+  "marketInsight": "<1–2 teikumi par tirgus situāciju šajā kategorijā>",
+  "overallSummary": "<2–3 teikumu objektīvs kopsavilkums, iekļaujot salīdzinājumu ar tirgus vidējo>",
   "rankings": [
     {
       "id": <sludinājuma ID kā skaitlis>,
       "rank": <1 = labākais>,
-      "verdict": "<viens teikums — ko šis piedāvā>",
-      "pros": ["<priekšrocība 1>", "<priekšrocība 2>"],
-      "cons": ["<trūkums 1>"],
-      "valueScore": <0–100, cena/kvalitāte attiecība>
+      "verdict": "<viens teikums — ko šis piedāvā pret tirgu>",
+      "priceVsMarket": "<'Zem vidējā' | 'Tirgus cena' | 'Virs vidējā'> — un par cik procentiem aptuveni",
+      "pros": ["<konkrēta priekšrocība, ideālā gadījumā ar skaitļiem>", "<otra priekšrocība>"],
+      "cons": ["<konkrēts trūkums>"],
+      "valueScore": <0–100, kur 100 = izcila cena/kvalitāte attiecība pret tirgu>
     }
   ]
 }`;
