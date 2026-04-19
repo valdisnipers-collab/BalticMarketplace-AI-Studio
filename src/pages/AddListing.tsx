@@ -5,6 +5,7 @@ import { useI18n } from '../components/I18nContext';
 import { useListingDraft } from '../hooks/useListingDraft';
 import { DraftRecoveryBanner } from '../components/DraftRecoveryBanner';
 import { ListingQualityMeter } from '../components/ListingQualityMeter';
+import { AISuggestions } from '../components/AISuggestions';
 import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
@@ -951,6 +952,13 @@ export default function AddListing() {
                         placeholder="City, Region..."
                       />
                     </div>
+
+                    <AISuggestions
+                      title={title}
+                      category={category}
+                      description={description}
+                      attributes={attributes}
+                    />
 
                     <ListingQualityMeter
                       title={title}

@@ -116,11 +116,72 @@ async function checkSavedSearchesAndNotify(listingId: number | bigint, listingDa
   }
 }
 
+async function preprocessSearchQuery(query: string): Promise<string> {
+  if (!query || query.length < 10 || !process.env.GEMINI_API_KEY) return query;
+  try {
+    const ai = getGenAI();
+    const prompt = `Pārvērt šo dabiskās valodas meklēšanas frāzi īsā meklēšanas vaicājumā (2-4 atslēgvārdi latviešu/angļu).
+Frāze: "${query}"
+Atbilde: tikai atslēgvārdi, atdalīti ar atstarpēm, bez paskaidrojumiem.`;
+    const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt });
+    const processed = (response.text || query).trim().replace(/\n/g, ' ');
+    console.log(`[AI SEARCH] "${query}" → "${processed}"`);
+    return processed;
+  } catch {
+    return query;
+  }
+}
+
 // ── router factory ───────────────────────────────────────────────────────────
 
 export function createListingsRouter(deps: { io: SocketIOServer }) {
   const { io } = deps;
   const router = Router();
+
+  // POST /api/listings/ai-suggestions
+  router.post('/ai-suggestions', requireAuth, async (req: any, res) => {
+    try {
+      const { title, category, description, attributes } = req.body;
+      if (!title && !description) return res.json({ suggestions: [] });
+
+      const ai = getGenAI();
+      const filled = Object.entries(attributes || {})
+        .filter(([, v]) => v && v !== '')
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+
+      const prompt = `Tu esi marketplace palīgs. Analizē šo sludinājumu un dod 3 konkrētus ieteikumus latviešu valodā kā to uzlabot.
+
+Sludinājums:
+- Kategorija: ${category || 'nav norādīta'}
+- Virsraksts: ${title || 'nav'}
+- Apraksts: ${description ? (description as string).substring(0, 200) : 'nav'}
+- Aizpildītie lauki: ${filled || 'nav'}
+
+Dod tieši 3 ieteikumus kā JSON masīvu formātā:
+[{"field":"lauka_nosaukums","suggestion":"konkrēts ieteikums"}]
+
+Piemēri lauku nosaukumiem: title, description, price, images, location, attributes.
+Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma dimensijas un materiālu".`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: prompt,
+      });
+
+      let suggestions: any[] = [];
+      try {
+        const text = response.text || '';
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (jsonMatch) suggestions = JSON.parse(jsonMatch[0]);
+      } catch {}
+
+      res.json({ suggestions: suggestions.slice(0, 3) });
+    } catch (e) {
+      console.error('[AI SUGGESTIONS]', e);
+      res.json({ suggestions: [] });
+    }
+  });
 
   // GET /api/listings/search
   router.get('/search', async (req, res) => {
@@ -129,6 +190,10 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
       if (!query) return res.json([]);
 
       const { hasAccess, userId } = await hasEarlyAccess(req);
+
+      const rawQuery = query as string;
+      const isNL = rawQuery.length > 10 && rawQuery.includes(' ');
+      const searchQuery = isNL ? await preprocessSearchQuery(rawQuery) : rawQuery;
 
       const filter: string[] = ['status = "active"'];
       if (category) filter.push(`category = "${(category as string).replace(/"/g, '\\"')}"`);
@@ -142,7 +207,7 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
       else if (sort === 'price_desc') sortArr.push('price:desc');
       else sortArr.push('created_at:desc');
 
-      let hits = await searchListings({ q: query as string, filter, sort: sortArr });
+      let hits = await searchListings({ q: searchQuery, filter, sort: sortArr });
 
       if (!hasAccess) {
         const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();

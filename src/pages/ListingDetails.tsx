@@ -35,7 +35,8 @@ import {
   ShieldAlert,
   Zap,
   ExternalLink,
-  LayoutGrid
+  LayoutGrid,
+  BarChart2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -97,6 +98,9 @@ export default function ListingDetails() {
   const [sellerStore, setSellerStore] = useState<any>(null);
   const [auctionEndDate, setAuctionEndDate] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const [compareIds, setCompareIds] = useState<number[]>(() => {
+    try { return JSON.parse(localStorage.getItem('compare_ids') || '[]'); } catch { return []; }
+  });
   const [reviews, setReviews] = useState<Review[]>([]);
   const [bids, setBids] = useState<Bid[]>([]);
   const [loading, setLoading] = useState(true);
@@ -242,6 +246,15 @@ export default function ListingDetails() {
     } catch (error) {
       console.error("Error toggling favorite", error);
     }
+  };
+
+  const toggleCompare = () => {
+    if (!listing) return;
+    const newIds = compareIds.includes(listing.id)
+      ? compareIds.filter(id => id !== listing.id)
+      : [...compareIds, listing.id].slice(-3);
+    setCompareIds(newIds);
+    localStorage.setItem('compare_ids', JSON.stringify(newIds));
   };
 
   const handleFollow = async () => {
@@ -456,14 +469,31 @@ export default function ListingDetails() {
             {t('add.back')}
           </Link>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="icon"
               onClick={toggleFavorite}
               className={isFavorite ? 'bg-red-50 border-red-100 text-red-500 hover:bg-red-100 hover:text-red-600' : ''}
             >
               <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
             </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleCompare}
+              className={listing && compareIds.includes(listing.id) ? 'bg-violet-50 border-violet-200 text-violet-600' : ''}
+              title="Salīdzināt"
+            >
+              <BarChart2 className="w-5 h-5" />
+            </Button>
+            {compareIds.length >= 2 && (
+              <Link
+                to={`/compare?ids=${compareIds.join(',')}`}
+                className="text-xs px-3 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600 transition-colors font-medium"
+              >
+                Salīdzināt ({compareIds.length})
+              </Link>
+            )}
             <Button variant="outline" size="icon">
               <Share2 className="w-5 h-5" />
             </Button>
