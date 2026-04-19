@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
+import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin, ShieldCheck, Sparkles, Check } from 'lucide-react';
 import { SmartExpandDrawer } from '../components/SmartExpandDrawer';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FilterPill } from '@/components/ui/filter-pill';
+import { ListingCompareBar } from '../components/ListingCompareBar';
+import { AIComparePanel } from '../components/AIComparePanel';
 import {
   Select,
   SelectContent,
@@ -94,6 +96,10 @@ export default function Search() {
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [openExpandId, setOpenExpandId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareResult, setCompareResult] = useState<any>(null);
+  const [comparePanelOpen, setComparePanelOpen] = useState(false);
 
   // Initialize attribute filters from URL
   const initialAttributes: Record<string, string> = {};
@@ -228,6 +234,41 @@ export default function Search() {
       console.error("Error toggling favorite", error);
     }
   };
+
+  function toggleSelect(e: React.MouseEvent, id: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else if (next.size < 4) {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  async function handleCompare() {
+    if (selectedIds.size < 2 || compareLoading) return;
+    setCompareLoading(true);
+    try {
+      const res = await fetch('/api/listings/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (!res.ok) throw new Error('compare failed');
+      const data = await res.json();
+      setCompareResult(data);
+      setComparePanelOpen(true);
+    } catch {
+      // silently fail
+    } finally {
+      setCompareLoading(false);
+    }
+  }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -574,7 +615,7 @@ export default function Search() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+      <div className={`flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto ${selectedIds.size >= 2 ? 'pb-24' : ''}`}>
         <div className="mb-8 hidden md:flex justify-between items-end">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
@@ -676,13 +717,19 @@ export default function Search() {
               <motion.div
                 key={listing.id}
                 initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                whileHover={{ y: -5 }}
+                animate={{ opacity: 1, scale: 1, y: selectedIds.has(listing.id) ? -6 : 0 }}
+                whileHover={{ y: selectedIds.has(listing.id) ? -8 : -5 }}
                 transition={{ duration: 0.2 }}
               >
-                <Link 
+                <Link
                   to={`/listing/${listing.id}`}
-                  className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${listing.is_highlighted ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-primary-300'}`}
+                  className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${
+                    selectedIds.has(listing.id)
+                      ? 'border-[#E64415] ring-2 ring-[#E64415]/25 shadow-lg'
+                      : listing.is_highlighted
+                        ? 'border-amber-400 ring-2 ring-amber-400/20'
+                        : 'border-slate-200 hover:border-primary-300'
+                  }`}
                 >
                   <div className={`relative ${isAutoCategory(listing.category) ? 'aspect-[16/9]' : 'aspect-[4/3]'} overflow-hidden rounded-t-2xl bg-slate-100`}>
                     {listing.image_url ? (
@@ -724,7 +771,21 @@ export default function Search() {
                         </Badge>
                       )}
                     </div>
-                    <Button 
+                    {/* Select for comparison */}
+                    <button
+                      type="button"
+                      onClick={(e) => toggleSelect(e, listing.id)}
+                      aria-label={selectedIds.has(listing.id) ? 'Noņemt no salīdzinājuma' : 'Pievienot salīdzinājumam'}
+                      aria-pressed={selectedIds.has(listing.id)}
+                      className={`absolute bottom-3 left-3 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
+                        selectedIds.has(listing.id)
+                          ? 'bg-[#E64415] border-[#E64415] text-white shadow-md'
+                          : 'bg-white/90 border-slate-300 text-transparent hover:border-[#E64415] backdrop-blur-sm'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <Button
                       variant="secondary"
                       size="icon"
                       onClick={(e) => toggleFavorite(e, listing.id)}
@@ -791,6 +852,23 @@ export default function Search() {
           </motion.div>
         )}
       </div>
+      <ListingCompareBar
+        selected={filteredListings
+          .filter(l => selectedIds.has(l.id))
+          .map(l => ({ id: l.id, title: l.title, image_url: l.image_url, price: l.price }))}
+        onRemove={(id) => setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; })}
+        onClear={() => setSelectedIds(new Set())}
+        onCompare={handleCompare}
+        loading={compareLoading}
+      />
+      <AIComparePanel
+        isOpen={comparePanelOpen}
+        onClose={() => setComparePanelOpen(false)}
+        result={compareResult}
+        listings={filteredListings
+          .filter(l => selectedIds.has(l.id))
+          .map(l => ({ id: l.id, title: l.title, image_url: l.image_url, price: l.price }))}
+      />
     </div>
   );
 }
