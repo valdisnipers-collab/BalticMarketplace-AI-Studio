@@ -1239,8 +1239,79 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Tab content rendered in Tasks 3 and 4 */}
-        {/* PLACEHOLDER — replaced in next tasks */}
+        {/* Visi tab */}
+        {activeTab === 'visi' && (() => {
+          const featuredListings = listings.filter(l => l.is_highlighted).slice(0, 5);
+          const newestListings = listings.filter(l => !l.is_highlighted).slice(0, 8);
+          return (
+            <motion.div
+              key="visi"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Featured horizontal scroll — only shown when highlighted listings exist */}
+              {featuredListings.length > 0 && (
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-black text-slate-900 tracking-tight">Top</h2>
+                      <Badge className="bg-orange-100 text-[#E64415] hover:bg-orange-100 border-none font-black text-sm px-2.5 py-0.5 rounded-full italic">DEALS</Badge>
+                    </div>
+                    <Button variant="link" onClick={() => navigate('/search')} className="text-[#E64415] font-bold text-sm p-0 h-auto">
+                      Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                  <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
+                    {loading
+                      ? Array(4).fill(0).map((_, i) => (
+                          <div key={i} className="flex flex-col gap-2 shrink-0 w-64">
+                            <Skeleton className="aspect-[4/3] rounded-xl w-64" />
+                            <Skeleton className="h-4 w-1/2" />
+                            <Skeleton className="h-5 w-3/4" />
+                          </div>
+                        ))
+                      : featuredListings.map(listing => (
+                          <div key={listing.id} className="shrink-0 w-64">
+                            {renderListingCard(listing)}
+                          </div>
+                        ))
+                    }
+                  </div>
+                </div>
+              )}
+
+              {/* 728×90 Ad Banner Slot */}
+              <div className="w-full h-[90px] bg-slate-50 border border-dashed border-slate-200 rounded-2xl flex items-center justify-center mb-8">
+                <span className="text-slate-400 text-xs font-semibold tracking-wide uppercase">Reklāmas vieta · 728×90</span>
+              </div>
+
+              {/* Newest listings grid */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Jaunākie sludinājumi</h2>
+                <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-sm p-0 h-auto">
+                  Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {loading
+                  ? Array(8).fill(0).map((_, i) => (
+                      <div key={i} className="flex flex-col gap-3">
+                        <Skeleton className="aspect-[4/3] rounded-xl" />
+                        <Skeleton className="h-4 w-1/4" />
+                        <Skeleton className="h-5 w-3/4" />
+                        <Skeleton className="h-5 w-1/3 mt-auto" />
+                      </div>
+                    ))
+                  : newestListings.map(renderListingCard)
+                }
+              </div>
+            </motion.div>
+          );
+        })()}
+
+        {/* Other tabs placeholder — replaced in Task 4 */}
+        {activeTab !== 'visi' && null}
       </div>
 
       {/* Footer */}
