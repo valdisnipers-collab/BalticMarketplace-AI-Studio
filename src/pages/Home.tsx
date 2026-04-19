@@ -1310,8 +1310,64 @@ export default function Home() {
           );
         })()}
 
-        {/* Other tabs placeholder — replaced in Task 4 */}
-        {activeTab !== 'visi' && null}
+        {/* Jaunākie / Populārākie / Ieteiktie / Sekojamie tabs */}
+        {activeTab !== 'visi' && (() => {
+          const tabMeta: Record<Exclude<TabId, 'visi'>, { title: string; emptyMsg: string }> = {
+            jaunaki:    { title: 'Jaunākie sludinājumi',   emptyMsg: 'Nav jaunāko sludinājumu.' },
+            popularaki: { title: 'Populārākie sludinājumi', emptyMsg: 'Nav populāru sludinājumu.' },
+            ieteiktie:  { title: 'Ieteiktie tev',           emptyMsg: 'Nav ieteikto sludinājumu.' },
+            sekotie:    { title: 'Sekoto pārdevēju sludinājumi', emptyMsg: 'Seko pārdevējiem, lai redzētu viņu jaunākos sludinājumus.' },
+          };
+
+          const meta = tabMeta[activeTab as Exclude<TabId, 'visi'>];
+
+          return (
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">{meta.title}</h2>
+                <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-sm p-0 h-auto">
+                  Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+
+              {/* Auth gate for Sekojamie */}
+              {activeTab === 'sekotie' && !user ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <Lock className="w-10 h-10 text-slate-300 mb-4" />
+                  <h3 className="text-lg font-bold text-slate-700 mb-2">Pierakstieties, lai redzētu sekoto pārdevēju sludinājumus</h3>
+                  <Button onClick={() => navigate('/login')} className="bg-[#E64415] hover:bg-[#d13d13] text-white rounded-full px-6 mt-2">
+                    Pierakstīties
+                  </Button>
+                </div>
+              ) : tabLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {Array(8).fill(0).map((_, i) => (
+                    <div key={i} className="flex flex-col gap-3">
+                      <Skeleton className="aspect-[4/3] rounded-xl" />
+                      <Skeleton className="h-4 w-1/4" />
+                      <Skeleton className="h-5 w-3/4" />
+                      <Skeleton className="h-5 w-1/3 mt-auto" />
+                    </div>
+                  ))}
+                </div>
+              ) : tabListings.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <ImageIcon className="w-10 h-10 text-slate-300 mb-4" />
+                  <p className="text-slate-500 font-medium">{meta.emptyMsg}</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {tabListings.map(renderListingCard)}
+                </div>
+              )}
+            </motion.div>
+          );
+        })()}
       </div>
 
       {/* Footer */}
