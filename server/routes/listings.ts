@@ -346,7 +346,8 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
       const { hasAccess, userId } = await hasEarlyAccess(req);
 
       let sql = `
-        SELECT listings.*, users.name as author_name, users.email as author_email
+        SELECT listings.*, users.name as author_name, users.email as author_email,
+               users.trust_score as seller_trust_score, users.is_verified as seller_is_verified
         FROM listings
         JOIN users ON listings.user_id = users.id
         WHERE listings.id = ?

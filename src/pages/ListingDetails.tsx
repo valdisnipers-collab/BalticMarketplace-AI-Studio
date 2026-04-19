@@ -46,6 +46,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { parseImages } from '../lib/utils';
+import { TrustScoreBadge } from '../components/TrustScoreBadge';
 
 interface ListingDetails {
   id: number;
@@ -885,6 +886,15 @@ export default function ListingDetails() {
                             {b.icon} {b.label}
                           </span>
                         ))}
+                      </div>
+                    )}
+                    {(listing as any).seller_trust_score !== undefined && (
+                      <div className="mt-2">
+                        <TrustScoreBadge
+                          score={(listing as any).seller_trust_score}
+                          isVerified={!!(listing as any).seller_is_verified}
+                          compact={true}
+                        />
                       </div>
                     )}
                   </div>

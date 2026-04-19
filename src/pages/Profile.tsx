@@ -5,6 +5,7 @@ import { useI18n } from '../components/I18nContext';
 import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake, UserPlus, PlusCircle, ShoppingBag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { TrustScoreBadge } from '../components/TrustScoreBadge';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -728,6 +729,14 @@ export default function Profile() {
                       {badge.icon} {badge.label}
                     </span>
                   ))}
+                </div>
+              )}
+              {(user as any).trust_score !== undefined && (
+                <div className="mt-3">
+                  <TrustScoreBadge
+                    score={(user as any).trust_score}
+                    isVerified={!!user.is_verified}
+                  />
                 </div>
               )}
             </div>

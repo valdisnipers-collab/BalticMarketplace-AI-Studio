@@ -74,12 +74,19 @@ export function createAdminRouter(deps: { io: SocketIOServer }) {
   // Admin Listings
   router.get('/admin/listings', isAdmin, async (req, res) => {
     try {
-      const listings = await db.all(`
+      const { status } = req.query;
+      let query = `
         SELECT listings.*, users.name as author_name, users.email as author_email
         FROM listings
         JOIN users ON listings.user_id = users.id
-        ORDER BY listings.created_at DESC
-      `, []);
+      `;
+      const params: any[] = [];
+      if (status) {
+        query += ' WHERE listings.status = $1';
+        params.push(status);
+      }
+      query += ' ORDER BY listings.created_at DESC LIMIT 100';
+      const listings = await db.all(query, params);
       res.json(listings);
     } catch (error) {
       console.error("Error fetching listings:", error);
@@ -87,9 +94,21 @@ export function createAdminRouter(deps: { io: SocketIOServer }) {
     }
   });
 
+  router.post('/admin/listings/:id/approve', isAdmin, async (req, res) => {
+    try {
+      await db.run(
+        "UPDATE listings SET status = 'active', ai_moderation_status = 'approved' WHERE id = $1",
+        [req.params.id]
+      );
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   router.delete('/admin/listings/:id', isAdmin, async (req, res) => {
     try {
-      await db.run('DELETE FROM listings WHERE id = ?', [req.params.id]);
+      await db.run('DELETE FROM listings WHERE id = $1', [req.params.id]);
       res.json({ message: 'Listing deleted successfully' });
     } catch (error) {
       console.error("Error deleting listing:", error);

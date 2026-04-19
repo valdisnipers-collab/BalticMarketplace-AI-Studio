@@ -80,7 +80,9 @@ interface AdData {
 export default function AdminDashboard() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'listings' | 'reports' | 'settings' | 'ads' | 'disputes'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'listings' | 'reports' | 'settings' | 'ads' | 'disputes' | 'moderation'>('users');
+  const [flaggedListings, setFlaggedListings] = useState<any[]>([]);
+  const [loadingFlagged, setLoadingFlagged] = useState(false);
   const [users, setUsers] = useState<UserData[]>([]);
   const [listings, setListings] = useState<ListingData[]>([]);
   const [reports, setReports] = useState<ReportData[]>([]);
@@ -132,9 +134,23 @@ export default function AdminDashboard() {
         navigate('/');
       } else {
         fetchData();
+        fetchFlaggedListings();
       }
     }
   }, [user, loading, navigate]);
+
+  const fetchFlaggedListings = async () => {
+    setLoadingFlagged(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/admin/listings?status=flagged', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setFlaggedListings(Array.isArray(data) ? data : (data.listings || []));
+    } catch {}
+    setLoadingFlagged(false);
+  };
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -583,6 +599,22 @@ export default function AdminDashboard() {
             {disputes.filter(d => d.status === 'open').length > 0 && (
               <span className="ml-1.5 bg-red-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none">
                 {disputes.filter(d => d.status === 'open').length}
+              </span>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setActiveTab('moderation')}
+            className={`py-4 px-6 font-medium text-sm flex items-center border-b-2 rounded-none transition-colors whitespace-nowrap h-auto ${
+              activeTab === 'moderation'
+                ? 'border-primary-600 text-primary-600 bg-transparent hover:bg-transparent'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 bg-transparent hover:bg-transparent'
+            }`}
+          >
+            Moderācija
+            {flaggedListings.length > 0 && (
+              <span className="ml-1.5 bg-red-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {flaggedListings.length}
               </span>
             )}
           </Button>
@@ -1263,6 +1295,80 @@ export default function AdminDashboard() {
               disputes.map(dispute => (
                 <DisputeCard key={dispute.id} dispute={dispute} onResolve={resolveDispute} />
               ))
+            )}
+          </motion.div>
+        )}
+
+        {/* Moderation Tab */}
+        {activeTab === 'moderation' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">
+                Moderācijas rinda
+              </h2>
+              <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">
+                {flaggedListings.length}
+              </span>
+            </div>
+            {loadingFlagged ? (
+              <p className="text-sm text-slate-500">Ielādē...</p>
+            ) : flaggedListings.length === 0 ? (
+              <p className="text-sm text-slate-500">Nav sludinājumu kas prasa pārskatīšanu.</p>
+            ) : (
+              <div className="space-y-3">
+                {flaggedListings.map((listing: any) => (
+                  <div key={listing.id} className="flex items-center justify-between p-3 bg-red-50 border border-red-100 rounded-xl">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 truncate">{listing.title}</p>
+                      <p className="text-xs text-slate-500">
+                        AI uzticamības rādītājs: {listing.ai_trust_score ?? '—'}/100
+                        {listing.ai_moderation_reason ? ` · ${listing.ai_moderation_reason}` : ''}
+                        · {new Date(listing.created_at).toLocaleDateString('lv-LV')}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 ml-3 shrink-0">
+                      <a
+                        href={`/listing/${listing.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs px-2 py-1 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"
+                      >
+                        Skatīt
+                      </a>
+                      <button
+                        onClick={async () => {
+                          const token = localStorage.getItem('auth_token');
+                          await fetch(`/api/admin/listings/${listing.id}`, {
+                            method: 'DELETE',
+                            headers: { Authorization: `Bearer ${token}` },
+                          });
+                          fetchFlaggedListings();
+                        }}
+                        className="text-xs px-2 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                      >
+                        Dzēst
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const token = localStorage.getItem('auth_token');
+                          await fetch(`/api/admin/listings/${listing.id}/approve`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                          });
+                          fetchFlaggedListings();
+                        }}
+                        className="text-xs px-2 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                      >
+                        Apstiprināt
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </motion.div>
         )}
