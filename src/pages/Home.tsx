@@ -412,7 +412,9 @@ export default function Home() {
     if (activeTab === 'visi') return;
     if (activeTab === 'sekotie' && !user) { setTabLoading(false); return; }
 
+    const controller = new AbortController();
     setTabLoading(true);
+    setTabListings([]);
     const token = localStorage.getItem('auth_token');
 
     const endpoints: Record<Exclude<TabId, 'visi'>, string> = {
@@ -423,14 +425,16 @@ export default function Home() {
     };
 
     const headers: Record<string, string> = {};
-    if (activeTab === 'sekotie' && token) {
+    if ((activeTab === 'sekotie' || activeTab === 'ieteiktie') && token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    fetch(endpoints[activeTab], { headers })
+    fetch(endpoints[activeTab], { headers, signal: controller.signal })
       .then(res => res.json())
       .then(data => { setTabListings(Array.isArray(data) ? data.slice(0, 12) : []); setTabLoading(false); })
-      .catch(() => { setTabListings([]); setTabLoading(false); });
+      .catch(err => { if (err.name !== 'AbortError') { setTabListings([]); setTabLoading(false); } });
+
+    return () => controller.abort();
   }, [activeTab, user]);
 
   useEffect(() => {
