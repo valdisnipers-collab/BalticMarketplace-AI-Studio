@@ -11,6 +11,7 @@ import { calculateQualityScore } from '../utils/quality';
 import { cached, invalidate, invalidatePattern } from '../services/redis';
 import { syncListing, removeListing, searchListings } from '../services/search';
 import { sendEmail, emailTemplates } from '../services/email';
+import { triggerSavedSearchAlerts } from '../utils/savedSearchTrigger';
 import { validateBody, listingSchema } from '../middleware/validate';
 import type { Server as SocketIOServer } from 'socket.io';
 
@@ -319,6 +320,13 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
           lng: null,
         }).catch(e => console.error('[SEARCH SYNC CREATE]', e));
       }
+
+      triggerSavedSearchAlerts(
+        Number(listingId),
+        req.body.category || '',
+        req.body.title || '',
+        Number(req.body.price) || 0
+      ).catch(() => {});
 
       invalidatePattern('listings:home:*').catch(e => console.error('Cache invalidation error:', e));
       res.json({ id: listingId, message: 'Listing created successfully' });
