@@ -145,6 +145,13 @@ export default function ListingDetails() {
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [showGrid, setShowGrid] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lightboxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (lightboxIndex !== null) lightboxRef.current?.focus();
+  }, [lightboxIndex]);
 
   useEffect(() => {
     if (!emblaApi) return;
@@ -540,11 +547,11 @@ export default function ListingDetails() {
                     <div className="overflow-hidden h-full" ref={emblaRef}>
                       <div className="flex h-full">
                         {imageUrls.map((url, index) => (
-                          <div className="flex-[0_0_100%] min-w-0 h-full relative" key={index}>
-                            <img 
-                              src={url} 
-                              alt={`${listing.title} - Attēls ${index + 1}`} 
-                              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                          <div className="flex-[0_0_100%] min-w-0 h-full relative overflow-hidden cursor-zoom-in" key={index} onClick={() => setLightboxIndex(index)}>
+                            <img
+                              src={url}
+                              alt={`${listing.title} - Attēls ${index + 1}`}
+                              className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
                             />
                           </div>
@@ -616,7 +623,7 @@ export default function ListingDetails() {
               ) : null}
 
               <div className="absolute bottom-6 right-6 flex gap-2">
-                <Button variant="secondary" size="icon" className="shadow-lg bg-white/90 backdrop-blur-md hover:bg-white">
+                <Button variant="secondary" size="icon" className="shadow-lg bg-white/90 backdrop-blur-md hover:bg-white" onClick={() => setShowGrid(true)} title="Visi attēli">
                   <LayoutGrid className="w-5 h-5 text-slate-700" />
                 </Button>
               </div>
@@ -1335,6 +1342,118 @@ export default function ListingDetails() {
           </div>
         </div>
       )}
+
+      {/* Photo Grid Modal */}
+      <AnimatePresence>
+        {showGrid && (
+          <motion.div
+            key="photo-grid"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm overflow-y-auto"
+            onClick={() => setShowGrid(false)}
+          >
+            <div className="min-h-full px-4 py-16">
+              <button
+                className="fixed top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                onClick={() => setShowGrid(false)}
+              >
+                <ChevronLeft className="w-5 h-5 rotate-180" />
+              </button>
+              <p className="text-white/60 text-sm text-center mb-6">{imageUrls.length} attēli</p>
+              <div
+                className="max-w-5xl mx-auto columns-2 md:columns-3 gap-3 space-y-3"
+                onClick={e => e.stopPropagation()}
+              >
+                {imageUrls.map((url, i) => (
+                  <div
+                    key={i}
+                    className="break-inside-avoid cursor-pointer overflow-hidden rounded-lg group relative"
+                    onClick={() => { setShowGrid(false); setLightboxIndex(i); }}
+                  >
+                    <img
+                      src={url}
+                      alt={`Attēls ${i + 1}`}
+                      className="w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {lightboxIndex !== null && (
+          <motion.div
+            key="lightbox"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            ref={lightboxRef}
+            className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+            onKeyDown={e => {
+              if (e.key === 'Escape') setLightboxIndex(null);
+              if (e.key === 'ArrowLeft') setLightboxIndex(i => i !== null ? (i - 1 + imageUrls.length) % imageUrls.length : null);
+              if (e.key === 'ArrowRight') setLightboxIndex(i => i !== null ? (i + 1) % imageUrls.length : null);
+            }}
+            tabIndex={0}
+            style={{ outline: 'none' }}
+          >
+            {/* Counter */}
+            <div className="absolute top-4 left-4 text-white/80 text-sm font-medium">
+              {lightboxIndex + 1} / {imageUrls.length}
+            </div>
+
+            {/* Close */}
+            <button
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+              onClick={() => setLightboxIndex(null)}
+            >
+              ✕
+            </button>
+
+            {/* Image */}
+            <motion.img
+              key={lightboxIndex}
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.2 }}
+              src={imageUrls[lightboxIndex]}
+              alt={`Attēls ${lightboxIndex + 1}`}
+              className="max-w-full max-h-full object-contain px-16"
+              referrerPolicy="no-referrer"
+            />
+
+            {/* Prev */}
+            {imageUrls.length > 1 && (
+              <button
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center transition-colors"
+                onClick={e => { e.stopPropagation(); setLightboxIndex(i => i !== null ? (i - 1 + imageUrls.length) % imageUrls.length : 0); }}
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Next */}
+            {imageUrls.length > 1 && (
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center transition-colors"
+                onClick={e => { e.stopPropagation(); setLightboxIndex(i => i !== null ? (i + 1) % imageUrls.length : 0); }}
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
