@@ -302,8 +302,6 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
         query += ` ORDER BY listings.is_highlighted DESC, listings.price ASC`;
       } else if (sort === 'price_desc') {
         query += ` ORDER BY listings.is_highlighted DESC, listings.price DESC`;
-      } else if (sort === 'popular') {
-        query += ` ORDER BY listings.is_highlighted DESC, COALESCE(listings.view_count, 0) DESC, listings.created_at DESC`;
       } else {
         query += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
       }
@@ -550,8 +548,6 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       const listing = await db.get(sql, params);
 
       if (!listing) return res.status(404).json({ error: 'Listing not found or not available yet' });
-      // Fire-and-forget: non-blocking view counter increment
-      db.run('UPDATE listings SET view_count = COALESCE(view_count, 0) + 1 WHERE id = ?', [Number(req.params.id)]).catch(err => console.warn('[view_count] increment failed:', err.message));
       res.json(listing);
     } catch (error) {
       console.error('Error fetching listing:', error);

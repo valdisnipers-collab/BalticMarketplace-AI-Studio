@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SectionHeader } from '@/components/ui/section-header';
 import { cn } from '@/lib/utils';
 import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
 import DiscoveryFeed from '../components/DiscoveryFeed';
@@ -99,8 +100,6 @@ interface Listing {
   exchange_for?: string;
 }
 
-type TabId = 'visi' | 'jaunaki' | 'popularaki' | 'ieteiktie' | 'sekotie';
-
 export default function Home() {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -113,9 +112,7 @@ export default function Home() {
   const [activeCategoryId, setActiveCategoryId] = useState(''); // Empty means universal search is active
 
   const [searchFilters, setSearchFilters] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<TabId>('visi');
-  const [tabListings, setTabListings] = useState<Listing[]>([]);
-  const [tabLoading, setTabLoading] = useState(false);
+  const [feedType, setFeedType] = useState<'all' | 'following'>('all');
   const [showHeroText, setShowHeroText] = useState(true);
   const [openExpandId, setOpenExpandId] = useState<number | null>(null);
 
@@ -398,44 +395,25 @@ export default function Home() {
     setLocationQuery('');
   };
 
-  // Fetch base listings for Visi tab (runs once on mount)
   useEffect(() => {
     setLoading(true);
-    fetch('/api/listings')
-      .then(res => res.json())
-      .then(data => { setListings(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  // Fetch tab-specific listings when active tab changes (skip Visi — uses listings state)
-  useEffect(() => {
-    if (activeTab === 'visi') return;
-    if (activeTab === 'sekotie' && !user) { setTabLoading(false); return; }
-
-    const controller = new AbortController();
-    setTabLoading(true);
-    setTabListings([]);
-    const token = localStorage.getItem('auth_token');
-
-    const endpoints: Record<Exclude<TabId, 'visi'>, string> = {
-      jaunaki: '/api/listings',
-      popularaki: '/api/listings?sort=popular',
-      ieteiktie: '/api/listings/discovery',
-      sekotie: '/api/users/me/following/listings',
-    };
-
+    const endpoint = feedType === 'following' && user ? '/api/users/me/following/listings' : '/api/listings';
     const headers: Record<string, string> = {};
-    if ((activeTab === 'sekotie' || activeTab === 'ieteiktie') && token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    if (feedType === 'following' && user) {
+      headers['Authorization'] = `Bearer ${localStorage.getItem('auth_token')}`;
     }
 
-    fetch(endpoints[activeTab], { headers, signal: controller.signal })
+    fetch(endpoint, { headers })
       .then(res => res.json())
-      .then(data => { setTabListings(Array.isArray(data) ? data.slice(0, 12) : []); setTabLoading(false); })
-      .catch(err => { if (err.name !== 'AbortError') { setTabListings([]); setTabLoading(false); } });
-
-    return () => controller.abort();
-  }, [activeTab, user]);
+      .then(data => {
+        setListings(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Failed to fetch listings", err);
+        setLoading(false);
+      });
+  }, [feedType, user]);
 
   useEffect(() => {
     if (user) {
@@ -1212,169 +1190,109 @@ export default function Home() {
 
       <DiscoveryFeed />
 
-      {/* Tab Navigation + Content */}
-      <div className="max-w-7xl mx-auto px-6 pt-10 pb-20">
-        {/* Tab Bar */}
-        <div className="relative flex items-center gap-1 border-b border-slate-200 mb-8 overflow-x-auto scrollbar-hide">
-          {(
-            [
-              { id: 'visi' as TabId, label: 'Visi' },
-              { id: 'jaunaki' as TabId, label: 'Jaunākie' },
-              { id: 'popularaki' as TabId, label: 'Populārākie' },
-              { id: 'ieteiktie' as TabId, label: 'Ieteiktie' },
-              { id: 'sekotie' as TabId, label: 'Sekojamie' },
-            ] as const
-          ).map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "relative shrink-0 px-5 py-3 text-sm font-bold transition-colors whitespace-nowrap",
-                activeTab === tab.id ? "text-slate-900" : "text-slate-400 hover:text-slate-600"
-              )}
-            >
-              {tab.label}
-              {activeTab === tab.id && (
-                <motion.div
-                  layoutId="tab-underline"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#E64415] rounded-full"
-                />
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Visi tab */}
-        {activeTab === 'visi' && (() => {
-          const featuredListings = listings.filter(l => l.is_highlighted).slice(0, 5);
-          const newestListings = listings.filter(l => !l.is_highlighted).slice(0, 8);
-          return (
-            <motion.div
-              key="visi"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              {/* Featured horizontal scroll — shown during loading or when highlighted listings exist */}
-              {(loading || featuredListings.length > 0) && (
-                <div className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-xl font-black text-slate-900 tracking-tight">Top</h2>
-                      <Badge className="bg-orange-100 text-[#E64415] hover:bg-orange-100 border-none font-black text-sm px-2.5 py-0.5 rounded-full italic">DEALS</Badge>
-                    </div>
-                    <Button variant="link" onClick={() => navigate('/search')} className="text-[#E64415] font-bold text-sm p-0 h-auto">
-                      Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </div>
-                  <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
-                    {loading
-                      ? Array(4).fill(0).map((_, i) => (
-                          <div key={i} className="flex flex-col gap-2 shrink-0 w-64">
-                            <Skeleton className="aspect-[4/3] rounded-xl w-64" />
-                            <Skeleton className="h-4 w-1/2" />
-                            <Skeleton className="h-5 w-3/4" />
-                          </div>
-                        ))
-                      : featuredListings.map(listing => (
-                          <div key={listing.id} className="shrink-0 w-64">
-                            {renderListingCard(listing)}
-                          </div>
-                        ))
-                    }
-                  </div>
+      <div className="max-w-7xl mx-auto px-6 py-12 space-y-20">
+        {/* Premium Listings */}
+        <section>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">Top</h2>
+              <Badge className="bg-orange-100 text-[#E64415] hover:bg-orange-100 border-none font-black text-lg px-3 py-1 rounded-full italic">DEALS</Badge>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">for you</h2>
+            </div>
+            <Button variant="link" onClick={() => navigate('/search')} className="text-[#E64415] font-bold text-lg">
+              Show all
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {loading ? (
+              Array(4).fill(0).map((_, i) => (
+                <div key={i} className="flex flex-col gap-3">
+                  <Skeleton className="aspect-[4/3] rounded-xl" />
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-1/3 mt-auto" />
                 </div>
-              )}
+              ))
+            ) : (
+              listings.slice(0, 4).map(renderListingCard)
+            )}
+          </div>
+        </section>
 
-              {/* 728×90 Ad Banner Slot */}
-              <div className="w-full h-[90px] bg-slate-50 border border-dashed border-slate-200 rounded-2xl flex items-center justify-center mb-8">
-                <span className="text-slate-400 text-xs font-semibold tracking-wide uppercase">Reklāmas vieta · 728×90</span>
+        {/* Latest Listings */}
+        <section>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <SectionHeader 
+              title={feedType === 'following' ? 'Sekoto pārdevēju sludinājumi' : t('home.latest.title')}
+              description=""
+              className="mb-0"
+            />
+            {user && (
+              <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
+                <button
+                  onClick={() => setFeedType('all')}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${feedType === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Visi sludinājumi
+                </button>
+                <button
+                  onClick={() => setFeedType('following')}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${feedType === 'following' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Sekotie
+                </button>
               </div>
-
-              {/* Newest listings grid */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Jaunākie sludinājumi</h2>
-                <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-sm p-0 h-auto">
-                  Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {loading
-                  ? Array(8).fill(0).map((_, i) => (
-                      <div key={i} className="flex flex-col gap-3">
-                        <Skeleton className="aspect-[4/3] rounded-xl" />
-                        <Skeleton className="h-4 w-1/4" />
-                        <Skeleton className="h-5 w-3/4" />
-                        <Skeleton className="h-5 w-1/3 mt-auto" />
-                      </div>
-                    ))
-                  : newestListings.map(renderListingCard)
-                }
-              </div>
-            </motion.div>
-          );
-        })()}
-
-        {/* Jaunākie / Populārākie / Ieteiktie / Sekojamie tabs */}
-        {activeTab !== 'visi' && (() => {
-          const tabMeta: Record<Exclude<TabId, 'visi'>, { title: string; emptyMsg: string }> = {
-            jaunaki:    { title: 'Jaunākie sludinājumi',   emptyMsg: 'Nav jaunāko sludinājumu.' },
-            popularaki: { title: 'Populārākie sludinājumi', emptyMsg: 'Nav populāru sludinājumu.' },
-            ieteiktie:  { title: 'Ieteiktie tev',           emptyMsg: 'Nav ieteikto sludinājumu.' },
-            sekotie:    { title: 'Sekoto pārdevēju sludinājumi', emptyMsg: 'Seko pārdevējiem, lai redzētu viņu jaunākos sludinājumus.' },
-          };
-
-          const meta = tabMeta[activeTab as Exclude<TabId, 'visi'>];
-
-          return (
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              {!(activeTab === 'sekotie' && !user) && (
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">{meta.title}</h2>
-                  <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-sm p-0 h-auto">
-                    Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {loading ? (
+              Array(8).fill(0).map((_, i) => (
+                <div key={i} className="flex flex-col gap-3">
+                  <Skeleton className="aspect-[4/3] rounded-xl" />
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-1/3 mt-auto" />
                 </div>
-              )}
+              ))
+            ) : (
+              listings.filter(l => !l.is_highlighted).slice(0, 8).map(renderListingCard)
+            )}
+          </div>
+          
+          <div className="mt-12 text-center">
+            <Button size="lg" onClick={() => navigate('/search')} className="rounded-full px-8">
+              {t('home.viewAll')}
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
+        </section>
 
-              {/* Auth gate for Sekojamie */}
-              {activeTab === 'sekotie' && !user ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <Lock className="w-10 h-10 text-slate-300 mb-4" />
-                  <h3 className="text-lg font-bold text-slate-700 mb-2">Pierakstieties, lai redzētu sekoto pārdevēju sludinājumus</h3>
-                  <Button onClick={() => navigate('/login')} className="bg-[#E64415] hover:bg-[#d13d13] text-white rounded-full px-6 mt-2">
-                    Pierakstīties
-                  </Button>
+        {/* Latest Listings */}
+        <section>
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Jaunākie sludinājumi</h2>
+            <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-lg">
+              Skatīt visus
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {loading ? (
+              Array(8).fill(0).map((_, i) => (
+                <div key={i} className="flex flex-col gap-3">
+                  <Skeleton className="aspect-[4/3] rounded-xl" />
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-1/3 mt-auto" />
                 </div>
-              ) : tabLoading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {Array(8).fill(0).map((_, i) => (
-                    <div key={i} className="flex flex-col gap-3">
-                      <Skeleton className="aspect-[4/3] rounded-xl" />
-                      <Skeleton className="h-4 w-1/4" />
-                      <Skeleton className="h-5 w-3/4" />
-                      <Skeleton className="h-5 w-1/3 mt-auto" />
-                    </div>
-                  ))}
-                </div>
-              ) : tabListings.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <ImageIcon className="w-10 h-10 text-slate-300 mb-4" />
-                  <p className="text-slate-500 font-medium">{meta.emptyMsg}</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {tabListings.map(renderListingCard)}
-                </div>
-              )}
-            </motion.div>
-          );
-        })()}
+              ))
+            ) : (
+              listings.slice(4, 12).map(renderListingCard)
+            )}
+          </div>
+        </section>
       </div>
 
       {/* Footer */}
