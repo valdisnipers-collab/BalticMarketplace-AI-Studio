@@ -875,8 +875,85 @@ export default function ListingDetails() {
 
           {/* Right Column: Transaction Sidebar */}
           <div className="lg:col-span-5">
-            <div className="sticky top-32 space-y-10">
-              
+            <div className="sticky top-32 space-y-6">
+
+              {/* Listing Identity Header */}
+              <div className="space-y-3">
+                {/* Badges row */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary" className="bg-primary-50 text-primary-700 hover:bg-primary-100 font-semibold px-2.5 py-1">
+                    {listing.category}
+                  </Badge>
+                  {listing.ai_trust_score !== undefined && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "font-bold px-2.5 py-1 gap-1.5",
+                        listing.ai_trust_score >= 80 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                        listing.ai_trust_score >= 50 ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        "bg-red-50 text-red-700 border-red-200"
+                      )}
+                    >
+                      <ShieldCheck className={cn("w-3.5 h-3.5", listing.ai_trust_score < 50 && "text-red-500")} />
+                      AI Drošība: {listing.ai_trust_score}%
+                    </Badge>
+                  )}
+                  <span className="text-xs font-medium text-slate-400 flex items-center">
+                    <Clock className="w-3.5 h-3.5 mr-1" />
+                    {formatDate(listing.created_at)}
+                  </span>
+                </div>
+
+                {/* Title */}
+                <h1 className="text-2xl font-bold text-slate-900 leading-snug">
+                  {listing.title}
+                </h1>
+
+                {/* Location */}
+                <div className="flex items-center text-sm text-slate-500 font-medium">
+                  <MapPin className="w-4 h-4 mr-1.5 text-[#E64415] flex-shrink-0" />
+                  {listing.location || 'Rīga, Latvija'}
+                </div>
+
+                {/* Auto spec pills */}
+                {isAutoCategory(listing.category) && parsedAttributes && (() => {
+                  const a = parsedAttributes;
+                  const pills: string[] = [];
+                  if (a.year_month || a.year) pills.push(String(a.year_month || a.year));
+                  if (a.mileage) pills.push(`${Number(a.mileage).toLocaleString('lv-LV')} km`);
+                  if (a.fuel) pills.push(String(a.fuel));
+                  if (a.transmission) pills.push(String(a.transmission));
+                  if (a.condition) pills.push(String(a.condition));
+                  if (pills.length === 0) return null;
+                  return (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {pills.map(pill => (
+                        <span key={pill} className="px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
+                          {pill}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* Non-auto attribute pills */}
+                {!isAutoCategory(listing.category) && parsedAttributes && (() => {
+                  const entries = Object.entries(parsedAttributes)
+                    .filter(([k, v]) => !['features', 'saleType', 'subcategory'].includes(k) && v)
+                    .slice(0, 4);
+                  if (entries.length === 0) return null;
+                  return (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {entries.map(([, value]) => (
+                        <span key={String(value)} className="px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
+                          {String(value)}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Valuation & CTA */}
               <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl">
                 {isAuction ? (
