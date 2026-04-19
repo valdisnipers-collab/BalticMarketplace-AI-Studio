@@ -34,6 +34,8 @@ import {
   Heart,
   ShieldAlert,
   Zap,
+  Gauge,
+  Fuel,
   ExternalLink,
   LayoutGrid,
   BarChart2
@@ -668,40 +670,74 @@ export default function ListingDetails() {
             </div>
 
             {/* Technical Specifications */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-slate-100">
-              {parsedAttributes && Object.entries(parsedAttributes).map(([key, value]) => {
-                if (['features', 'saleType', 'subcategory'].includes(key) || !value) return null;
+            {parsedAttributes && (
+              listing.category === 'auto' ? (
+                /* Auto: mobile.de-style icon + label + value */
+                (() => {
+                  const a = parsedAttributes;
+                  const specs = [
+                    { icon: <Gauge className="w-6 h-6" aria-hidden="true" />, label: 'Nobraukums', value: a.mileage ? `${Number(a.mileage).toLocaleString('lv-LV')} km` : null },
+                    { icon: <Zap className="w-6 h-6" aria-hidden="true" />, label: 'Jauda', value: a.engine || a.power || null },
+                    { icon: <Fuel className="w-6 h-6" aria-hidden="true" />, label: 'Degviela', value: a.fuel || null },
+                    { icon: <Settings className="w-6 h-6" aria-hidden="true" />, label: 'Ātrumkārba', value: a.transmission || null },
+                    { icon: <Calendar className="w-6 h-6" aria-hidden="true" />, label: 'Gads', value: a.year_month ? String(a.year_month) : a.year ? String(a.year) : null },
+                    { icon: <ShieldCheck className="w-6 h-6" aria-hidden="true" />, label: 'Stāvoklis', value: a.condition || null },
+                  ].filter((s): s is { icon: React.JSX.Element; label: string; value: string } => s.value !== null);
 
-                const ATTR_LV: Record<string, string> = {
-                  make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Gads',
-                  mileage: 'Nobraukums', fuel: 'Degviela', transmission: 'Ātrumkārba',
-                  engine: 'Dzinējs', power: 'Jauda', bodyType: 'Virsbūves tips', color: 'Krāsa',
-                  condition: 'Stāvoklis', type: 'Tips', area: 'Platība', rooms: 'Istabas',
-                  floor: 'Stāvs', total_floors: 'Kopā stāvi', series: 'Sērija',
-                  storage: 'Atmiņa', size: 'Izmērs', experience: 'Pieredze',
-                  availability: 'Pieejamība', age_from: 'Vecums no', age_group: 'Vecuma grupa',
-                  frameSize: 'Rāmja izmērs', length: 'Garums', berths: 'Gultas vietas',
-                  weight: 'Svars', material: 'Materiāls',
-                };
+                  if (specs.length === 0) return null;
 
-                let label = ATTR_LV[key] || key;
-                const categorySchema = CATEGORY_SCHEMAS[listing.category];
-                if (categorySchema) {
-                  const subcategorySchema = categorySchema.subcategories[parsedAttributes.subcategory || ''];
-                  if (subcategorySchema) {
-                    const field = subcategorySchema.fields.find((f: { name: string; label: string }) => f.name === key);
-                    if (field) label = field.label;
-                  }
-                }
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-6 py-8 border-y border-slate-100">
+                      {specs.map((spec, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className="text-[#E64415] mt-0.5 flex-shrink-0">{spec.icon}</div>
+                          <div>
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{spec.label}</p>
+                            <p className="text-lg font-bold text-slate-900">{spec.value}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()
+              ) : (
+                /* Other categories: original generic grid */
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-slate-100">
+                  {Object.entries(parsedAttributes).map(([key, value]) => {
+                    if (['features', 'saleType', 'subcategory'].includes(key) || !value) return null;
 
-                return (
-                  <div key={key} className="space-y-1">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</div>
-                    <div className="text-lg font-bold text-slate-900">{value as string}</div>
-                  </div>
-                );
-              })}
-            </div>
+                    const ATTR_LV: Record<string, string> = {
+                      make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Gads',
+                      mileage: 'Nobraukums', fuel: 'Degviela', transmission: 'Ātrumkārba',
+                      engine: 'Dzinējs', power: 'Jauda', bodyType: 'Virsbūves tips', color: 'Krāsa',
+                      condition: 'Stāvoklis', type: 'Tips', area: 'Platība', rooms: 'Istabas',
+                      floor: 'Stāvs', total_floors: 'Kopā stāvi', series: 'Sērija',
+                      storage: 'Atmiņa', size: 'Izmērs', experience: 'Pieredze',
+                      availability: 'Pieejamība', age_from: 'Vecums no', age_group: 'Vecuma grupa',
+                      frameSize: 'Rāmja izmērs', length: 'Garums', berths: 'Gultas vietas',
+                      weight: 'Svars', material: 'Materiāls',
+                    };
+
+                    let label = ATTR_LV[key] || key;
+                    const categorySchema = CATEGORY_SCHEMAS[listing.category];
+                    if (categorySchema) {
+                      const subcategorySchema = categorySchema.subcategories[parsedAttributes.subcategory || ''];
+                      if (subcategorySchema) {
+                        const field = subcategorySchema.fields.find((f: { name: string; label: string }) => f.name === key);
+                        if (field) label = field.label;
+                      }
+                    }
+
+                    return (
+                      <div key={key} className="space-y-1">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</div>
+                        <div className="text-lg font-bold text-slate-900">{value as string}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
 
             {/* Narrative Description */}
             <div className="space-y-6">
