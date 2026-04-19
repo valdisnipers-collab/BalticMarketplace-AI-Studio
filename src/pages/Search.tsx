@@ -38,6 +38,49 @@ interface Listing {
 
 const categories = ['Visi', ...CATEGORY_NAMES];
 
+function FilterSection({
+  isOpen, onToggle, label, badge, children,
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+  label: string;
+  badge?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-b border-slate-100 last:border-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between py-3.5 text-sm font-semibold text-slate-800 hover:text-[#E64415] transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          {label}
+          {badge ? (
+            <span className="w-4 h-4 rounded-full bg-[#E64415] text-white text-[9px] font-bold flex items-center justify-center leading-none">
+              {badge}
+            </span>
+          ) : null}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="pb-4">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function Search() {
   const { t, lang } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -67,6 +110,8 @@ export default function Search() {
   const [attributeFilters, setAttributeFilters] = useState<Record<string, string>>(initialAttributes);
   const [showFilters, setShowFilters] = useState(false);
   const [aiSummary, setAiSummary] = useState('');
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ search: true, category: true, price: false, attributes: true });
+  const toggleSection = (key: string) => setOpenSections(p => ({ ...p, [key]: !p[key] }));
 
   // Sync local state with URL params when they change externally (e.g., back navigation, links)
   useEffect(() => {
@@ -101,6 +146,12 @@ export default function Search() {
       setAttributeFilters({});
     }
   }, [subcategory, searchParams]);
+
+  useEffect(() => {
+    if (subcategory && CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields.length > 0) {
+      setOpenSections(p => ({ ...p, attributes: true }));
+    }
+  }, [subcategory, category]);
 
   const fetchListings = async () => {
     setLoading(true);
@@ -285,151 +336,198 @@ export default function Search() {
 
       {/* Sidebar Filters */}
       <div className={`
-        fixed inset-0 z-[110] bg-white md:bg-transparent md:static md:w-80 flex-shrink-0 border-r border-slate-200 md:z-0
+        fixed inset-0 z-[110] bg-white md:bg-transparent md:static md:w-72 flex-shrink-0 md:z-0
         transform transition-transform duration-300 ease-in-out
         ${showFilters ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        <div className="h-full overflow-y-auto p-6 md:p-8">
-          <div className="flex justify-between items-center mb-8 md:hidden">
-            <h2 className="text-xl font-bold text-slate-900">{t('search.filters')}</h2>
-            <Button variant="ghost" size="icon" onClick={() => setShowFilters(false)}>
-              <X className="w-5 h-5" />
-            </Button>
+        <div className="h-full flex flex-col md:rounded-2xl md:border md:border-slate-200 md:shadow-sm md:bg-white md:sticky md:top-24 md:max-h-[calc(100vh-7rem)] overflow-hidden">
+
+          {/* Mobile header */}
+          <div className="flex justify-between items-center px-5 py-4 border-b border-slate-100 md:hidden flex-shrink-0">
+            <h2 className="text-lg font-bold text-slate-900">Filtri</h2>
+            <button
+              type="button"
+              onClick={() => setShowFilters(false)}
+              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          <form onSubmit={handleSearch} className="space-y-8">
-            {/* Search Input */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">{t('home.search.placeholder').replace('...', '')}</label>
-              <div className="relative">
-                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t('home.search.placeholder')}
-                  className="pl-9"
-                />
-              </div>
-            </div>
+          {/* Scrollable filter sections */}
+          <div className="flex-1 overflow-y-auto">
+            <form id="search-filter-form" onSubmit={handleSearch}>
+              <div className="px-5 py-1">
 
-            {/* Location Input */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">{t('search.location')}</label>
-              <Input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Pilsēta vai novads..."
-              />
-            </div>
-
-            {/* Category */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">{t('home.categories.title')}</label>
-              <RadioGroup value={category} onValueChange={setCategory} className="space-y-2.5">
-                {categories.map(cat => (
-                  <div key={cat} className="flex items-center space-x-3">
-                    <RadioGroupItem value={cat} id={`cat-${cat}`} />
-                    <label htmlFor={`cat-${cat}`} className="text-sm text-slate-600 cursor-pointer hover:text-slate-900 transition-colors">
-                      {cat === 'Visi' ? (lang === 'EN' ? 'All' : lang === 'RU' ? 'Все' : lang === 'LT' ? 'Visi' : lang === 'EE' ? 'Kõik' : 'Visi') : cat}
-                    </label>
+                {/* Search + Location */}
+                <FilterSection
+                  isOpen={openSections.search}
+                  onToggle={() => toggleSection('search')}
+                  label="Meklēšana"
+                  badge={(query || location) ? [query, location].filter(Boolean).length : undefined}
+                >
+                  <div className="space-y-2 mt-1">
+                    <div className="relative">
+                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Input
+                        type="text"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder={t('home.search.placeholder')}
+                        className="pl-9 bg-slate-50 border-slate-200 focus:bg-white h-9 text-sm"
+                      />
+                    </div>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Input
+                        type="text"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        placeholder="Pilsēta vai novads..."
+                        className="pl-9 bg-slate-50 border-slate-200 focus:bg-white h-9 text-sm"
+                      />
+                    </div>
                   </div>
-                ))}
-              </RadioGroup>
-            </div>
+                </FilterSection>
 
-            {/* Subcategory */}
-            {category !== 'Visi' && CATEGORY_SCHEMAS[category]?.subcategories && Object.keys(CATEGORY_SCHEMAS[category].subcategories).length > 0 && (
-              <div className="space-y-3">
-                <label className="block text-sm font-semibold text-slate-900">{t('add.step2')}</label>
-                <Select value={subcategory || 'all'} onValueChange={(value) => setSubcategory(value === 'all' ? '' : value)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Visas">
-                      {subcategory || 'Visas'}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Visas</SelectItem>
-                    {Object.keys(CATEGORY_SCHEMAS[category].subcategories).map(subcat => (
-                      <SelectItem key={subcat} value={subcat}>{subcat}</SelectItem>
+                {/* Category chips */}
+                <FilterSection
+                  isOpen={openSections.category}
+                  onToggle={() => toggleSection('category')}
+                  label={t('home.categories.title')}
+                  badge={category !== 'Visi' ? 1 : undefined}
+                >
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {categories.map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setCategory(cat)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                          category === cat
+                            ? 'bg-[#E64415] border-[#E64415] text-white shadow-sm'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-[#E64415] hover:text-[#E64415]'
+                        }`}
+                      >
+                        {cat === 'Visi'
+                          ? (lang === 'EN' ? 'All' : lang === 'RU' ? 'Все' : lang === 'LT' ? 'Visi' : lang === 'EE' ? 'Kõik' : 'Visi')
+                          : cat}
+                      </button>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+                  </div>
 
-            {/* Price Range */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-900">{t('listing.price')} (€)</label>
-              <div className="flex items-center space-x-3">
-                <Input
-                  type="number"
-                  placeholder={t('search.minPrice')}
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(e.target.value)}
-                />
-                <span className="text-slate-400">-</span>
-                <Input
-                  type="number"
-                  placeholder={t('search.maxPrice')}
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(e.target.value)}
-                />
-              </div>
-            </div>
+                  {/* Subcategory — inline below chips */}
+                  {category !== 'Visi' && CATEGORY_SCHEMAS[category]?.subcategories && Object.keys(CATEGORY_SCHEMAS[category].subcategories).length > 0 && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t('add.step2')}</label>
+                      <Select value={subcategory || 'all'} onValueChange={(value) => setSubcategory(value === 'all' ? '' : value)}>
+                        <SelectTrigger className="w-full bg-slate-50 border-slate-200 h-9 text-sm">
+                          <SelectValue placeholder="Visas">{subcategory || 'Visas'}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Visas</SelectItem>
+                          {Object.keys(CATEGORY_SCHEMAS[category].subcategories).map(subcat => (
+                            <SelectItem key={subcat} value={subcat}>{subcat}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </FilterSection>
 
-            {/* Dynamic Attributes */}
-            {category !== 'Visi' && subcategory && CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields.map(field => (
-              <div key={field.name} className="space-y-3">
-                <label className="block text-sm font-semibold text-slate-900">{field.label}</label>
-                {field.type === 'select' ? (
-                  <Select 
-                    value={attributeFilters[field.name] || 'all'} 
-                    onValueChange={(value) => setAttributeFilters(prev => ({ ...prev, [field.name]: value === 'all' ? '' : value }))}
+                {/* Price range */}
+                <FilterSection
+                  isOpen={openSections.price}
+                  onToggle={() => toggleSection('price')}
+                  label={`${t('listing.price')} (€)`}
+                  badge={(minPrice || maxPrice) ? 1 : undefined}
+                >
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input
+                      type="number"
+                      placeholder={t('search.minPrice')}
+                      value={minPrice}
+                      onChange={(e) => setMinPrice(e.target.value)}
+                      className="bg-slate-50 border-slate-200 h-9 text-sm"
+                    />
+                    <span className="text-slate-300 font-light flex-shrink-0">—</span>
+                    <Input
+                      type="number"
+                      placeholder={t('search.maxPrice')}
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(e.target.value)}
+                      className="bg-slate-50 border-slate-200 h-9 text-sm"
+                    />
+                  </div>
+                </FilterSection>
+
+                {/* Dynamic attributes — shown only when subcategory with fields is selected */}
+                {category !== 'Visi' && subcategory && CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields.length > 0 && (
+                  <FilterSection
+                    isOpen={openSections.attributes}
+                    onToggle={() => toggleSection('attributes')}
+                    label="Papildu filtri"
+                    badge={Object.values(attributeFilters).filter(Boolean).length || undefined}
                   >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Visi">
-                        {attributeFilters[field.name] || 'Visi'}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Visi</SelectItem>
-                      {field.options?.map(opt => (
-                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    <div className="space-y-3 mt-1">
+                      {CATEGORY_SCHEMAS[category].subcategories[subcategory].fields.map(field => (
+                        <div key={field.name}>
+                          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{field.label}</label>
+                          {field.type === 'select' ? (
+                            <Select
+                              value={attributeFilters[field.name] || 'all'}
+                              onValueChange={(value) => setAttributeFilters(prev => ({ ...prev, [field.name]: value === 'all' ? '' : value }))}
+                            >
+                              <SelectTrigger className="w-full bg-slate-50 border-slate-200 h-9 text-sm">
+                                <SelectValue placeholder="Visi">{attributeFilters[field.name] || 'Visi'}</SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Visi</SelectItem>
+                                {field.options?.map(opt => (
+                                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              type={field.type === 'number' ? 'number' : 'text'}
+                              placeholder={field.placeholder || 'Jebkāds'}
+                              value={attributeFilters[field.name] || ''}
+                              onChange={(e) => setAttributeFilters(prev => ({ ...prev, [field.name]: e.target.value }))}
+                              className="bg-slate-50 border-slate-200 h-9 text-sm"
+                            />
+                          )}
+                        </div>
                       ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    type={field.type === 'number' ? 'number' : 'text'}
-                    placeholder={field.placeholder || 'Jebkāds'}
-                    value={attributeFilters[field.name] || ''}
-                    onChange={(e) => setAttributeFilters(prev => ({ ...prev, [field.name]: e.target.value }))}
-                  />
+                    </div>
+                  </FilterSection>
                 )}
-              </div>
-            ))}
 
-            <div className="space-y-3 pt-4">
-              <Button 
-                type="submit"
-                className="w-full"
-                size="lg"
-                onClick={() => setShowFilters(false)}
-              >
-                {t('search.apply')}
-              </Button>
-              <Button 
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={clearFilters}
-              >
-                {t('search.reset')}
-              </Button>
-            </div>
-          </form>
+              </div>
+            </form>
+          </div>
+
+          {/* Sticky apply button — always visible */}
+          <div className="flex-shrink-0 px-5 py-4 border-t border-slate-100 bg-white">
+            <Button
+              type="submit"
+              form="search-filter-form"
+              className="w-full bg-[#E64415] hover:bg-[#CC3A10] border-0 text-white font-semibold"
+              size="lg"
+              onClick={() => setShowFilters(false)}
+            >
+              <SearchIcon className="w-4 h-4 mr-2" />
+              Meklēt
+            </Button>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="w-full mt-2 py-1.5 text-sm text-slate-400 hover:text-[#E64415] transition-colors"
+            >
+              Notīrīt filtrus
+            </button>
+          </div>
+
         </div>
       </div>
 
