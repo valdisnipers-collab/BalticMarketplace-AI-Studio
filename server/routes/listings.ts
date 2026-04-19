@@ -1275,9 +1275,10 @@ Atbildi TIKAI JSON formātā (bez markdown):
       }
 
       res.json(result);
-    } catch (error) {
-      console.error('[COMPARE]', error);
-      res.status(500).json({ error: 'Salīdzināšana neizdevās' });
+    } catch (error: any) {
+      const msg = error?.message || String(error);
+      console.error('[COMPARE]', msg);
+      res.status(500).json({ error: `Salīdzināšana neizdevās: ${msg}` });
     }
   });
 
