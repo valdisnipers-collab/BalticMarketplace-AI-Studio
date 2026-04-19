@@ -317,15 +317,32 @@ export default function Search() {
     }
   };
 
+  const removeActiveFilter = (filterKey: string) => {
+    const params = new URLSearchParams(searchParams);
+    if (filterKey === 'category') {
+      params.delete('category');
+      params.delete('subcategory');
+      Object.keys(attributeFilters).forEach(k => params.delete(`attr_${k}`));
+    } else if (filterKey === 'subcategory') {
+      params.delete('subcategory');
+      Object.keys(attributeFilters).forEach(k => params.delete(`attr_${k}`));
+    } else if (['minPrice', 'maxPrice', 'location'].includes(filterKey)) {
+      params.delete(filterKey);
+    } else {
+      params.delete(`attr_${filterKey}`);
+    }
+    setSearchParams(params);
+  };
+
   const activeFilters = [
-    category !== 'Visi' ? { key: 'category', label: category, onRemove: () => setCategory('Visi') } : null,
-    subcategory ? { key: 'subcategory', label: subcategory, onRemove: () => setSubcategory('') } : null,
-    minPrice ? { key: 'minPrice', label: `no €${minPrice}`, onRemove: () => setMinPrice('') } : null,
-    maxPrice ? { key: 'maxPrice', label: `līdz €${maxPrice}`, onRemove: () => setMaxPrice('') } : null,
-    location ? { key: 'location', label: location, onRemove: () => setLocation('') } : null,
+    category !== 'Visi' ? { key: 'category', label: category, onRemove: () => removeActiveFilter('category') } : null,
+    subcategory ? { key: 'subcategory', label: subcategory, onRemove: () => removeActiveFilter('subcategory') } : null,
+    minPrice ? { key: 'minPrice', label: `no €${minPrice}`, onRemove: () => removeActiveFilter('minPrice') } : null,
+    maxPrice ? { key: 'maxPrice', label: `līdz €${maxPrice}`, onRemove: () => removeActiveFilter('maxPrice') } : null,
+    location ? { key: 'location', label: location, onRemove: () => removeActiveFilter('location') } : null,
     ...Object.entries(attributeFilters)
       .filter(([, v]) => v)
-      .map(([k, v]) => ({ key: k, label: v, onRemove: () => setAttributeFilters(p => ({ ...p, [k]: '' })) })),
+      .map(([k, v]) => ({ key: k, label: v, onRemove: () => removeActiveFilter(k) })),
   ].filter((f): f is { key: string; label: string; onRemove: () => void } => f !== null);
 
   const totalActiveFilterCount = activeFilters.length;
@@ -591,7 +608,7 @@ export default function Search() {
               <FilterPill
                 key={f.key}
                 label={f.label}
-                onRemove={() => { f.onRemove(); setTimeout(() => handleSearch(), 0); }}
+                onRemove={f.onRemove}
               />
             ))}
             <button
