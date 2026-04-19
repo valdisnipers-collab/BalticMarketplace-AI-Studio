@@ -164,6 +164,10 @@ Atbildes formāts (TIKAI JSON, bez markdown):
       contents: prompt,
     });
     const text = (response.text || '').trim().replace(/```json|```/g, '').trim();
+    if (!text) {
+      console.warn('[AI SEARCH] empty response from Gemini, falling back');
+      return { ...fallback, keywords: raw };
+    }
     const parsed = JSON.parse(text) as ParsedQuery;
     console.log(`[AI SEARCH] "${raw}" →`, parsed);
     return {
@@ -171,7 +175,7 @@ Atbildes formāts (TIKAI JSON, bez markdown):
       category: KNOWN_CATEGORIES.includes(parsed.category ?? '') ? parsed.category : null,
       minPrice: typeof parsed.minPrice === 'number' ? parsed.minPrice : null,
       maxPrice: typeof parsed.maxPrice === 'number' ? parsed.maxPrice : null,
-      location: parsed.location || null,
+      location: parsed.location ? String(parsed.location).substring(0, 80) : null,
       summary: parsed.summary || '',
     };
   } catch (e) {
