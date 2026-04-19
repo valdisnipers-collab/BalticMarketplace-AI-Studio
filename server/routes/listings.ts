@@ -4,6 +4,7 @@ import fs from 'fs';
 import jwt from 'jsonwebtoken';
 import db from '../pg';
 import { requireAuth, JWT_SECRET } from '../utils/auth';
+import { createDraftsRouter } from './drafts';
 import { getGenAI } from '../utils/ai';
 import { geocodeLocation } from '../utils/geocode';
 import { hasEarlyAccess } from '../utils/earlyAccess';
@@ -335,6 +336,9 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
       res.status(500).json({ error: 'Server error while creating listing' });
     }
   });
+
+  // Draft endpoints (must be before /:id)
+  router.use('/', createDraftsRouter());
 
   // GET /api/listings/:id
   router.get('/:id', async (req, res) => {

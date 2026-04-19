@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
+import { useListingDraft } from '../hooks/useListingDraft';
+import { DraftRecoveryBanner } from '../components/DraftRecoveryBanner';
+import { ListingQualityMeter } from '../components/ListingQualityMeter';
 import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
@@ -136,6 +139,12 @@ export default function AddListing() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
+
+  const draftFormData = useMemo(() => ({
+    title, description, price, location, category, subcategory, attributes
+  }), [title, description, price, location, category, subcategory, attributes]);
+
+  const { clearDraft } = useListingDraft(draftFormData, !!user);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -351,6 +360,7 @@ export default function AddListing() {
         throw new Error(data.error || 'Neizdevās pievienot sludinājumu');
       }
 
+      clearDraft();
       navigate('/');
     } catch (err: any) {
       setError(err.message);
@@ -392,6 +402,20 @@ export default function AddListing() {
             <p className="text-sm text-slate-400 mt-2">Izvēlieties kategoriju un pievienojiet informāciju</p>
           </div>
         )}
+
+        <DraftRecoveryBanner
+          isLoggedIn={!!user}
+          onRestore={(draftData) => {
+            if (draftData.title) setTitle(draftData.title);
+            if (draftData.description) setDescription(draftData.description);
+            if (draftData.price) setPrice(draftData.price);
+            if (draftData.location) setLocation(draftData.location);
+            if (draftData.category) setCategory(draftData.category);
+            if (draftData.subcategory) setSubcategory(draftData.subcategory);
+            if (draftData.attributes) setAttributes(draftData.attributes);
+          }}
+          onDiscard={() => {}}
+        />
 
         {/* 2-soļu progress — tikai soļiem 1–2, pirms auto formas */}
         {step <= 2 && (
@@ -927,6 +951,15 @@ export default function AddListing() {
                         placeholder="City, Region..."
                       />
                     </div>
+
+                    <ListingQualityMeter
+                      title={title}
+                      description={description}
+                      imageCount={imageUrls.length}
+                      attributesFilled={Object.values(attributes).filter(v => v && v !== '').length}
+                      price={Number(price) || 0}
+                      location={location}
+                    />
 
                     <div className="bg-amber-50 rounded-3xl p-6 flex items-start space-x-4">
                       <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
