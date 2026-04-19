@@ -6,6 +6,8 @@ import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrustScoreBadge } from '../components/TrustScoreBadge';
+import LoyaltyBadge from '../components/LoyaltyBadge';
+import ReferralWidget from '../components/ReferralWidget';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -720,6 +722,7 @@ export default function Profile() {
                   <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                   {user.points} Punkti
                 </Badge>
+                <LoyaltyBadge points={user.points || 0} />
               </div>
               {badges.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
@@ -947,6 +950,13 @@ export default function Profile() {
                 <div className="mb-8">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Pieejamie punkti</p>
                   <p className="text-4xl font-bold text-slate-900">{user?.points || 0}</p>
+                  <div className="mt-2">
+                    <LoyaltyBadge points={user?.points || 0} />
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <ReferralWidget />
                 </div>
 
                 <div className="mb-8 p-6 bg-amber-50 rounded-2xl border border-amber-100 relative overflow-hidden">

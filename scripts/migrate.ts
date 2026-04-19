@@ -37,7 +37,24 @@ async function main() {
     CREATE INDEX IF NOT EXISTS user_strikes_user_idx ON user_strikes(user_id)
   `);
 
-  console.log('[MIGRATE] Phase 2 + Phase 6 migrations applied successfully');
+  // Phase 9: referral_codes + referred_by
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS referral_codes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      code VARCHAR(16) NOT NULL UNIQUE,
+      uses INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS referral_codes_code_idx ON referral_codes(code)
+  `);
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+  `);
+
+  console.log('[MIGRATE] Phase 2 + Phase 6 + Phase 9 migrations applied successfully');
   await pool.end();
   process.exit(0);
 }

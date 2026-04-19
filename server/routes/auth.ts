@@ -203,18 +203,30 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
   });
 
   router.post("/register", authLimiter, validateBody(registerSchema), async (req, res) => {
-    const { email, password, name, phone, user_type, company_name, company_reg_number, company_vat } = req.body;
+    const { email, password, name, phone, user_type, company_name, company_reg_number, company_vat, ref } = req.body;
     try {
       const hash = await bcrypt.hash(password, 10);
       const role = email === 'valdis.nipers@gmail.com' ? 'admin' : 'user';
       const uType = user_type === 'b2b' ? 'b2b' : 'c2c';
       const info = await db.run('INSERT INTO users (email, password_hash, name, phone, user_type, role, company_name, company_reg_number, company_vat, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [email, hash, name, phone || null, uType, role, company_name || null, company_reg_number || null, company_vat || null, 50]);
 
-      const userId = info.lastInsertRowid;
+      const userId = info.lastInsertRowid as number;
       await db.run('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [userId, 50, 'Reģistrācijas bonuss']);
 
-      const token = jwt.sign({ userId: info.lastInsertRowid }, JWT_SECRET, { expiresIn: '7d' });
-      res.json({ token, user: { id: info.lastInsertRowid, email, name, phone, user_type: uType, role, points: 50, early_access_until: null, company_name, company_reg_number, company_vat, is_verified: 0 } });
+      // Apply referral code if provided
+      if (ref) {
+        const refRow = await db.get('SELECT user_id FROM referral_codes WHERE code = $1', [ref]) as any;
+        if (refRow && refRow.user_id !== userId) {
+          await db.run('UPDATE users SET referred_by = $1 WHERE id = $2', [refRow.user_id, userId]);
+          await db.run('UPDATE referral_codes SET uses = uses + 1 WHERE user_id = $1', [refRow.user_id]);
+          await db.run('UPDATE users SET points = points + 50 WHERE id IN ($1, $2)', [userId, refRow.user_id]);
+          await db.run("INSERT INTO points_history (user_id, points, reason) VALUES ($1, 50, 'Referral bonuss — jauns lietotājs')", [userId]);
+          await db.run("INSERT INTO points_history (user_id, points, reason) VALUES ($1, 50, 'Referral bonuss — uzaicināts lietotājs')", [refRow.user_id]);
+        }
+      }
+
+      const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ token, user: { id: userId, email, name, phone, user_type: uType, role, points: 50, early_access_until: null, company_name, company_reg_number, company_vat, is_verified: 0 } });
     } catch (error: any) {
       if (error.code === '23505') {
         res.status(400).json({ error: 'Email already exists' });

@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SectionHeader } from '@/components/ui/section-header';
 import { cn } from '@/lib/utils';
 import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
+import DiscoveryFeed from '../components/DiscoveryFeed';
 
 const mainCategories = [
   { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'text-[#E64415]', subcategories: [
@@ -1111,6 +1112,8 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
+
+      <DiscoveryFeed />
 
       <div className="max-w-7xl mx-auto px-6 py-12 space-y-20">
         {/* Premium Listings */}

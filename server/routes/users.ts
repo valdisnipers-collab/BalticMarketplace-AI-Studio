@@ -6,6 +6,12 @@ import { checkAndAwardBadges, BADGE_DEFINITIONS, recalculateTrustScore } from '.
 import { hasEarlyAccess } from '../utils/earlyAccess';
 import type { Server as SocketIOServer } from 'socket.io';
 
+function generateReferralCode(userId: number): string {
+  const base = userId.toString(36).toUpperCase();
+  const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
+  return `BM${base}${rand}`.substring(0, 10);
+}
+
 export function createUsersRouter(deps: { io: SocketIOServer }) {
   const router = Router();
 
@@ -525,6 +531,59 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
     } catch (error) {
       console.error("Error adding review:", error);
       res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /api/users/me/referral — get or create referral code
+  router.get('/me/referral', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const userId = decoded.userId;
+      let row = await db.get('SELECT code, uses FROM referral_codes WHERE user_id = $1', [userId]) as any;
+      if (!row) {
+        const code = generateReferralCode(userId);
+        await db.run('INSERT INTO referral_codes (user_id, code) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, code]);
+        row = { code, uses: 0 };
+      }
+      res.json(row);
+    } catch {
+      res.status(401).json({ error: 'Invalid token' });
+    }
+  });
+
+  // POST /api/users/me/referral/apply — apply a referral code (called during/after registration)
+  router.post('/me/referral/apply', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Code required' });
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const userId = decoded.userId;
+
+      const me = await db.get('SELECT referred_by FROM users WHERE id = $1', [userId]) as any;
+      if (me?.referred_by) return res.status(400).json({ error: 'Referral already applied' });
+
+      const ref = await db.get('SELECT user_id FROM referral_codes WHERE code = $1', [code]) as any;
+      if (!ref) return res.status(404).json({ error: 'Invalid referral code' });
+      if (ref.user_id === userId) return res.status(400).json({ error: 'Cannot use own code' });
+
+      await db.run('UPDATE users SET referred_by = $1 WHERE id = $2', [ref.user_id, userId]);
+      await db.run('UPDATE referral_codes SET uses = uses + 1 WHERE user_id = $1', [ref.user_id]);
+
+      // +50 points to both
+      await db.run('UPDATE users SET points = points + 50 WHERE id = $1', [userId]);
+      await db.run('UPDATE users SET points = points + 50 WHERE id = $1', [ref.user_id]);
+      await db.run("INSERT INTO points_history (user_id, points, reason) VALUES ($1, 50, 'Referral bonuss — jauns lietotājs')", [userId]);
+      await db.run("INSERT INTO points_history (user_id, points, reason) VALUES ($1, 50, 'Referral bonuss — uzaicināts lietotājs')", [ref.user_id]);
+
+      res.json({ ok: true });
+    } catch {
+      res.status(401).json({ error: 'Invalid token' });
     }
   });
 

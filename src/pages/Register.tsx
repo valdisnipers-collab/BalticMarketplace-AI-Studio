@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { UserPlus, AlertCircle, Phone, KeyRound, Building2, User, Mail, Lock, ArrowLeft, Fingerprint } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -42,6 +42,8 @@ export default function Register() {
   
   const navigate = useNavigate();
   const { signIn } = useAuth();
+  const [searchParams] = useSearchParams();
+  const refCode = searchParams.get('ref') || '';
 
   const validateCommonFields = () => {
     if (name.length < 2) {
@@ -208,7 +210,8 @@ export default function Register() {
           user_type: userType,
           company_name: userType === 'b2b' ? companyName : undefined,
           company_reg_number: userType === 'b2b' ? companyRegNumber : undefined,
-          company_vat: userType === 'b2b' ? companyVat : undefined
+          company_vat: userType === 'b2b' ? companyVat : undefined,
+          ref: refCode || undefined
         })
       });
       

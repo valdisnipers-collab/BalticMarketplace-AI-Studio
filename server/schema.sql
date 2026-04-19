@@ -340,3 +340,17 @@ CREATE TABLE IF NOT EXISTS user_strikes (
 );
 
 CREATE INDEX IF NOT EXISTS user_strikes_user_idx ON user_strikes(user_id);
+
+-- Referral codes (Phase 9)
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  code VARCHAR(16) NOT NULL UNIQUE,
+  uses INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS referral_codes_code_idx ON referral_codes(code);
+
+-- referred_by column on users (Phase 9)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
