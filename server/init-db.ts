@@ -11,12 +11,41 @@ if (process.env.NODE_ENV === 'production') {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+async function runMigrations() {
+  // listing_drafts (Phase 2)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS listing_drafts (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      data JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS listing_drafts_user_idx ON listing_drafts(user_id)
+  `);
+
+  // quality_score uz listings (Phase 2)
+  await pool.query(`
+    ALTER TABLE listings ADD COLUMN IF NOT EXISTS quality_score INTEGER DEFAULT 0
+  `);
+
+  // trust_score uz users (Phase 2)
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 50
+  `);
+
+  console.log('[MIGRATION] Phase 2 schema additions applied');
+}
+
 async function initDb() {
   console.log('Initializing PostgreSQL schema...');
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
   try {
     await pool.query(schema);
     console.log('✓ Schema created successfully');
+    await runMigrations();
   } catch (error) {
     console.error('Schema error:', error);
     process.exit(1);
