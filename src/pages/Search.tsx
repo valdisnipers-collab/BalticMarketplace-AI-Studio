@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FilterPill } from '@/components/ui/filter-pill';
 import {
   Select,
   SelectContent,
@@ -316,6 +317,19 @@ export default function Search() {
     }
   };
 
+  const activeFilters = [
+    category !== 'Visi' ? { key: 'category', label: category, onRemove: () => setCategory('Visi') } : null,
+    subcategory ? { key: 'subcategory', label: subcategory, onRemove: () => setSubcategory('') } : null,
+    minPrice ? { key: 'minPrice', label: `no €${minPrice}`, onRemove: () => setMinPrice('') } : null,
+    maxPrice ? { key: 'maxPrice', label: `līdz €${maxPrice}`, onRemove: () => setMaxPrice('') } : null,
+    location ? { key: 'location', label: location, onRemove: () => setLocation('') } : null,
+    ...Object.entries(attributeFilters)
+      .filter(([, v]) => v)
+      .map(([k, v]) => ({ key: k, label: v, onRemove: () => setAttributeFilters(p => ({ ...p, [k]: '' })) })),
+  ].filter((f): f is { key: string; label: string; onRemove: () => void } => f !== null);
+
+  const totalActiveFilterCount = activeFilters.length;
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 flex flex-col md:flex-row">
       <Helmet>
@@ -569,6 +583,26 @@ export default function Search() {
             </Select>
           </div>
         </div>
+
+        {/* Active filter pills */}
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {activeFilters.map(f => (
+              <FilterPill
+                key={f.key}
+                label={f.label}
+                onRemove={() => { f.onRemove(); setTimeout(() => handleSearch(), 0); }}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="px-3 py-1.5 text-xs text-slate-400 hover:text-[#E64415] underline underline-offset-2 transition-colors"
+            >
+              Notīrīt visu
+            </button>
+          </div>
+        )}
 
         {/* AI interpretation banner */}
         {aiSummary && !loading && (
