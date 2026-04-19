@@ -405,6 +405,43 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
   // Draft endpoints (must be before /:id)
   router.use('/', createDraftsRouter());
 
+  // GET /api/listings/discovery — personalized feed (must be before /:id)
+  router.get('/discovery', async (req: any, res) => {
+    try {
+      let categoryFilter = '';
+      const params: any[] = [];
+
+      if (req.userId) {
+        const history = await db.all(
+          `SELECT l.category, COUNT(*) as cnt
+           FROM favorites f JOIN listings l ON f.listing_id = l.id
+           WHERE f.user_id = $1
+           GROUP BY l.category ORDER BY cnt DESC LIMIT 3`,
+          [req.userId]
+        ) as any[];
+        if (history.length > 0) {
+          const cats = history.map((h: any) => h.category);
+          categoryFilter = `AND l.category = ANY($1::text[])`;
+          params.push(cats);
+        }
+      }
+
+      const rows = await db.all(
+        `SELECT l.id, l.title, l.price, l.image_url, l.category, l.location, l.quality_score, l.created_at
+         FROM listings l
+         WHERE l.status = 'active' ${categoryFilter}
+         ORDER BY l.quality_score DESC, l.created_at DESC
+         LIMIT 12`,
+        params
+      ) as any[];
+
+      res.json(rows);
+    } catch (e) {
+      console.error('[DISCOVERY]', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // GET /api/listings/:id
   router.get('/:id', async (req, res) => {
     try {
@@ -971,43 +1008,6 @@ Return ONLY valid JSON, no markdown.`;
     } catch (error) {
       console.error('VIN decode error:', error);
       res.status(500).json({ error: 'Neizdevās atšifrēt VIN numuru' });
-    }
-  });
-
-  // GET /api/listings/discovery — personalized feed based on user's favorite categories
-  router.get('/discovery', async (req: any, res) => {
-    try {
-      let categoryFilter = '';
-      const params: any[] = [];
-
-      if (req.userId) {
-        const history = await db.all(
-          `SELECT l.category, COUNT(*) as cnt
-           FROM favorites f JOIN listings l ON f.listing_id = l.id
-           WHERE f.user_id = $1
-           GROUP BY l.category ORDER BY cnt DESC LIMIT 3`,
-          [req.userId]
-        ) as any[];
-        if (history.length > 0) {
-          const cats = history.map((h: any) => h.category);
-          categoryFilter = `AND l.category = ANY($1::text[])`;
-          params.push(cats);
-        }
-      }
-
-      const rows = await db.all(
-        `SELECT l.id, l.title, l.price, l.image_url, l.category, l.location, l.quality_score, l.created_at
-         FROM listings l
-         WHERE l.status = 'active' ${categoryFilter}
-         ORDER BY l.quality_score DESC, l.created_at DESC
-         LIMIT 12`,
-        params
-      ) as any[];
-
-      res.json(rows);
-    } catch (e) {
-      console.error('[DISCOVERY]', e);
-      res.status(500).json({ error: 'Server error' });
     }
   });
 
