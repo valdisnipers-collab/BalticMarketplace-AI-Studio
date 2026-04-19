@@ -534,7 +534,7 @@ export default function ListingDetails() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
           
           {/* Left Column: Media & Details */}
-          <div className="lg:col-span-8 space-y-16">
+          <div className="lg:col-span-7 space-y-12">
             
             {/* Main Visual */}
             <motion.div 
@@ -969,7 +969,7 @@ export default function ListingDetails() {
           </div>
 
           {/* Right Column: Transaction Sidebar */}
-          <div className="lg:col-span-4">
+          <div className="lg:col-span-5">
             <div className="sticky top-32 space-y-10">
               
               {/* Valuation & CTA */}
