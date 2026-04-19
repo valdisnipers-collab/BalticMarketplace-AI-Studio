@@ -704,7 +704,7 @@ export default function Home() {
         className="group bg-white rounded-2xl overflow-hidden transition-all duration-300 flex flex-col"
       >
         <Link to={`/listing/${listing.id}`} className="block flex-grow">
-          <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
+          <div className={`relative ${listing.category === 'auto' ? 'aspect-[16/9]' : 'aspect-[4/3]'} overflow-hidden rounded-xl`}>
             {listing.image_url ? (
               <img 
                 src={listing.image_url} 
@@ -781,9 +781,9 @@ export default function Home() {
               type AttrItem = { icon: React.ReactNode; value: string };
               let items: AttrItem[] = [];
               if (cat === 'auto') {
-                if (attrs.year || attrs.year_month) items.push({ icon: <Calendar className="w-3.5 h-3.5 text-slate-400" />, value: attrs.year_month || attrs.year });
+                if (attrs.year || attrs.year_month) items.push({ icon: <Calendar className="w-3.5 h-3.5 text-slate-400" />, value: String(attrs.year_month || attrs.year) });
+                if (attrs.mileage) items.push({ icon: <Zap className="w-3.5 h-3.5 text-slate-400" />, value: `${Number(attrs.mileage).toLocaleString()} km` });
                 if (attrs.fuel) items.push({ icon: <Fuel className="w-3.5 h-3.5 text-slate-400" />, value: attrs.fuel });
-                if (attrs.engine || attrs.power) items.push({ icon: <Zap className="w-3.5 h-3.5 text-slate-400" />, value: attrs.engine || attrs.power });
                 if (attrs.transmission) items.push({ icon: <Settings className="w-3.5 h-3.5 text-slate-400" />, value: attrs.transmission });
               } else if (cat === 'nekustamais-ipasums' || cat === 'majai') {
                 if (attrs.rooms) items.push({ icon: <HomeIcon className="w-3.5 h-3.5 text-slate-400" />, value: `${attrs.rooms} ist.` });
