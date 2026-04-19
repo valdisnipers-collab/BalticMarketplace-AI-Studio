@@ -116,19 +116,67 @@ async function checkSavedSearchesAndNotify(listingId: number | bigint, listingDa
   }
 }
 
-async function preprocessSearchQuery(query: string): Promise<string> {
-  if (!query || query.length < 10 || !process.env.GEMINI_API_KEY) return query;
+export interface ParsedQuery {
+  keywords: string;        // 2-5 search keywords, space-separated
+  category: string | null; // exact category name or null
+  minPrice: number | null;
+  maxPrice: number | null;
+  location: string | null; // city or region, or null
+  summary: string;         // one Latvian sentence describing what was understood
+}
+
+const KNOWN_CATEGORIES = [
+  'Transports', 'Nekustamais īpašums', 'Elektronika',
+  'Darbs', 'Mājai', 'Mode', 'Bērniem', 'Sports', 'Dzīvnieki',
+];
+
+async function aiParseQuery(raw: string): Promise<ParsedQuery> {
+  const fallback: ParsedQuery = {
+    keywords: raw,
+    category: null,
+    minPrice: null,
+    maxPrice: null,
+    location: null,
+    summary: '',
+  };
+  if (!raw || raw.length < 3 || !process.env.GEMINI_API_KEY) return fallback;
+
   try {
     const ai = getGenAI();
-    const prompt = `Pārvērt šo dabiskās valodas meklēšanas frāzi īsā meklēšanas vaicājumā (2-4 atslēgvārdi latviešu/angļu).
-Frāze: "${query}"
-Atbilde: tikai atslēgvārdi, atdalīti ar atstarpēm, bez paskaidrojumiem.`;
-    const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-    const processed = (response.text || query).trim().replace(/\n/g, ' ');
-    console.log(`[AI SEARCH] "${query}" → "${processed}"`);
-    return processed;
-  } catch {
-    return query;
+    const prompt = `Esi meklēšanas parsētājs Latvijas sludinājumu platformā. Izanalizē šo meklēšanas vaicājumu un atbildi TIKAI ar JSON.
+
+Vaicājums: "${raw}"
+
+Pieejamās kategorijas: ${KNOWN_CATEGORIES.join(', ')}
+
+Atbildes formāts (TIKAI JSON, bez markdown):
+{
+  "keywords": "2-5 atslēgvārdi latviešu/angļu valodā meklēšanai",
+  "category": "precīzs kategorijas nosaukums no saraksta vai null",
+  "minPrice": minimālā cena kā skaitlis vai null,
+  "maxPrice": maksimālā cena kā skaitlis vai null,
+  "location": "pilsēta vai reģions vai null",
+  "summary": "viena teikuma apraksts latviešu valodā — ko AI saprata"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    const text = (response.text || '').trim().replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(text) as ParsedQuery;
+    console.log(`[AI SEARCH] "${raw}" →`, parsed);
+    return {
+      keywords: parsed.keywords || raw,
+      category: KNOWN_CATEGORIES.includes(parsed.category ?? '') ? parsed.category : null,
+      minPrice: typeof parsed.minPrice === 'number' ? parsed.minPrice : null,
+      maxPrice: typeof parsed.maxPrice === 'number' ? parsed.maxPrice : null,
+      location: parsed.location || null,
+      summary: parsed.summary || '',
+    };
+  } catch (e) {
+    console.warn('[AI SEARCH] parse failed, falling back to raw query', e);
+    return { ...fallback, keywords: raw };
   }
 }
 
@@ -197,7 +245,8 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
 
       const rawQuery = query as string;
       const isNL = rawQuery.length > 10 && rawQuery.includes(' ');
-      const searchQuery = isNL ? await preprocessSearchQuery(rawQuery) : rawQuery;
+      const parsed = isNL ? await aiParseQuery(rawQuery) : { keywords: rawQuery, category: null, minPrice: null, maxPrice: null, location: null, summary: '' };
+      const searchQuery = parsed.keywords;
 
       const filter: string[] = ['status = "active"'];
       if (category) filter.push(`category = "${(category as string).replace(/"/g, '\\"')}"`);
