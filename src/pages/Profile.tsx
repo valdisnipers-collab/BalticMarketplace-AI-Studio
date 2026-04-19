@@ -528,7 +528,7 @@ export default function Profile() {
   const handleRemoveFavorite = async (id: number) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/favorites/${id}`, {
+      const res = await fetch(`/api/users/me/favorites/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

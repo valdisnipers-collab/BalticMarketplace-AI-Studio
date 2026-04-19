@@ -143,7 +143,7 @@ export default function Search() {
     const token = localStorage.getItem('auth_token');
     
     try {
-      const res = await fetch(`/api/favorites/${listingId}`, {
+      const res = await fetch(`/api/users/me/favorites/${listingId}`, {
         method: isFavorite ? 'DELETE' : 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

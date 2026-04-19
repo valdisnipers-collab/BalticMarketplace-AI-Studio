@@ -439,7 +439,7 @@ export default function Home() {
 
     try {
       if (isFavorite) {
-        await fetch(`/api/favorites/${listingId}`, {
+        await fetch(`/api/users/me/favorites/${listingId}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -449,7 +449,7 @@ export default function Home() {
           return next;
         });
       } else {
-        await fetch(`/api/favorites/${listingId}`, {
+        await fetch(`/api/users/me/favorites/${listingId}`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
         });
