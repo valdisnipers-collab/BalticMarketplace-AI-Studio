@@ -11,7 +11,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-    (req as any).userId = decoded.userId;
+    req.userId = decoded.userId;
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -22,14 +22,19 @@ export async function isAdmin(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'No token' });
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : authHeader.split(' ')[1];
+  let decoded: { userId: number };
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+    decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  try {
     const user = await db.get('SELECT role FROM users WHERE id = $1', [decoded.userId]) as { role: string } | null;
     if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Forbidden: Admins only' });
-    (req as any).userId = decoded.userId;
+    req.userId = decoded.userId;
     next();
   } catch {
-    res.status(401).json({ error: 'Invalid token' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 
