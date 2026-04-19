@@ -74,4 +74,5 @@ jobs:
             docker system prune -f
             sleep 5
             docker compose exec -T app npx tsx scripts/migrate.ts
+            docker compose exec -T app npx tsx scripts/reindex.ts
             echo "Deploy complete: $(date)"
