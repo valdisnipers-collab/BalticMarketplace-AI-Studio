@@ -37,6 +37,12 @@ async function runMigrations() {
   `);
 
   console.log('[MIGRATION] Phase 2 schema additions applied');
+
+  // view_count for popular sort (Phase 3)
+  await pool.query(`
+    ALTER TABLE listings ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0
+  `);
+  console.log('[MIGRATION] view_count column added');
 }
 
 async function initDb() {
