@@ -44,7 +44,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Helmet } from 'react-helmet-async';
 import useEmblaCarousel from 'embla-carousel-react';
-import { CATEGORY_SCHEMAS } from '../lib/categories';
+import { CATEGORY_SCHEMAS, isAutoCategory } from '../lib/categories';
 
 const ATTR_LV: Record<string, string> = {
   make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Reģistrācijas gads',
@@ -622,7 +622,7 @@ export default function ListingDetails() {
               </div>
 
               {/* Thumbnail strip — auto category only */}
-              {listing.category === 'auto' && imageUrls.length > 1 && (
+              {isAutoCategory(listing.category) && imageUrls.length > 1 && (
                 <div className="scrollbar-hide flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}>
                   {imageUrls.map((url, index) => (
                     <button
@@ -687,7 +687,7 @@ export default function ListingDetails() {
 
             {/* Technical Specifications */}
             {parsedAttributes && (
-              listing.category === 'auto' ? (
+              isAutoCategory(listing.category) ? (
                 /* Auto: mobile.de-style icon + label + value */
                 (() => {
                   const a = parsedAttributes;
@@ -758,7 +758,7 @@ export default function ListingDetails() {
             </div>
 
             {/* Technical Data Table — auto only */}
-            {listing.category === 'auto' && parsedAttributes && (() => {
+            {isAutoCategory(listing.category) && parsedAttributes && (() => {
               const rows = Object.entries(parsedAttributes)
                 .filter(([k, v]) => !['features', 'saleType', 'subcategory'].includes(k) && v)
                 .map(([k, v]) => ({ label: ATTR_LV[k] || k, value: String(v) }));
@@ -793,7 +793,7 @@ export default function ListingDetails() {
             })()}
 
             {/* Features Checklist — auto only, only if features array present */}
-            {listing.category === 'auto' && parsedAttributes?.features && Array.isArray(parsedAttributes.features) && parsedAttributes.features.length > 0 && (() => {
+            {isAutoCategory(listing.category) && parsedAttributes?.features && Array.isArray(parsedAttributes.features) && parsedAttributes.features.length > 0 && (() => {
               const features: string[] = parsedAttributes.features;
               const visibleFeatures = showAllFeatures ? features : features.slice(0, 12);
 

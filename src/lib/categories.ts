@@ -1041,3 +1041,7 @@ export const CATEGORY_SCHEMAS: Record<string, CategorySchema> = {
 };
 
 export const CATEGORY_NAMES = Object.keys(CATEGORY_SCHEMAS);
+
+// 'Transports' is the canonical category for vehicle listings.
+// Legacy test data used 'auto' — check both for compatibility.
+export const isAutoCategory = (cat: string) => cat === 'auto' || cat === 'Transports';

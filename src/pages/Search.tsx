@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
+import { CATEGORY_SCHEMAS, CATEGORY_NAMES, isAutoCategory } from '../lib/categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -500,7 +500,7 @@ export default function Search() {
                   to={`/listing/${listing.id}`}
                   className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${listing.is_highlighted ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-primary-300'}`}
                 >
-                  <div className={`relative ${listing.category === 'auto' ? 'aspect-[16/9]' : 'aspect-[4/3]'} overflow-hidden rounded-t-2xl bg-slate-100`}>
+                  <div className={`relative ${isAutoCategory(listing.category) ? 'aspect-[16/9]' : 'aspect-[4/3]'} overflow-hidden rounded-t-2xl bg-slate-100`}>
                     {listing.image_url ? (
                       <img
                         src={listing.image_url}
@@ -559,7 +559,7 @@ export default function Search() {
                     <p className="text-xl font-extrabold text-primary-600 mb-1">
                       € {listing.price.toFixed(2)}
                     </p>
-                    {listing.category === 'auto' && (() => {
+                    {isAutoCategory(listing.category) && (() => {
                       let attrs: Record<string, string> = {};
                       try { attrs = JSON.parse(listing.attributes || '{}'); } catch { return null; }
                       const parts: string[] = [];
@@ -581,7 +581,7 @@ export default function Search() {
                         {listing.location || 'Latvija'}
                       </div>
                     </div>
-                    {listing.category === 'auto' && (
+                    {isAutoCategory(listing.category) && (
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -596,7 +596,7 @@ export default function Search() {
                     )}
                   </div>
                 </Link>
-                {listing.category === 'auto' && (
+                {isAutoCategory(listing.category) && (
                   <SmartExpandDrawer
                     listingId={listing.id}
                     isOpen={openExpandId === listing.id}

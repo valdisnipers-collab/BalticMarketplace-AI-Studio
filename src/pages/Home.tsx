@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { CarMakeDropdown, CarModelDropdown } from '../components/CarDropdown';
 import DiscoveryFeed from '../components/DiscoveryFeed';
 import { SmartExpandDrawer } from '../components/SmartExpandDrawer';
+import { isAutoCategory } from '../lib/categories';
 
 const mainCategories = [
   { id: 'nekustamais-ipasums', name: 'Īpašumi', icon: HomeIcon, color: 'text-[#E64415]', subcategories: [
@@ -713,7 +714,7 @@ export default function Home() {
         className="group bg-white rounded-2xl overflow-hidden transition-all duration-300 flex flex-col"
       >
         <Link to={`/listing/${listing.id}`} className="block flex-grow">
-          <div className={`relative ${listing.category === 'auto' ? 'aspect-[16/9]' : 'aspect-[4/3]'} overflow-hidden rounded-xl`}>
+          <div className={`relative ${isAutoCategory(listing.category) ? 'aspect-[16/9]' : 'aspect-[4/3]'} overflow-hidden rounded-xl`}>
             {listing.image_url ? (
               <img 
                 src={listing.image_url} 
@@ -805,7 +806,7 @@ export default function Home() {
               const cat = listing.category || '';
               type AttrItem = { icon: React.ReactNode; value: string };
               let items: AttrItem[] = [];
-              if (cat === 'auto') {
+              if (isAutoCategory(cat)) {
                 if (attrs.year || attrs.year_month) items.push({ icon: <Calendar className="w-3.5 h-3.5 text-slate-400" />, value: String(attrs.year_month || attrs.year) });
                 if (attrs.mileage) items.push({ icon: <Zap className="w-3.5 h-3.5 text-slate-400" />, value: `${Number(attrs.mileage).toLocaleString()} km` });
                 if (attrs.fuel) items.push({ icon: <Fuel className="w-3.5 h-3.5 text-slate-400" />, value: attrs.fuel });
@@ -858,7 +859,7 @@ export default function Home() {
               <span>{listing.location || 'Rīga, Latvija'}</span>
             </div>
 
-            {listing.category === 'auto' && (
+            {isAutoCategory(listing.category) && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -874,7 +875,7 @@ export default function Home() {
           </div>
         </Link>
 
-        {listing.category === 'auto' && (
+        {isAutoCategory(listing.category) && (
           <SmartExpandDrawer
             listingId={listing.id}
             isOpen={openExpandId === listing.id}
