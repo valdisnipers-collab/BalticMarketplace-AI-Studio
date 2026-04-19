@@ -122,7 +122,7 @@ export async function searchListings(params: {
   sort?: string[];
 }): Promise<SearchableListing[]> {
   if (!searchIndex) return searchListingsPostgres(params.parsed, params.filter, params.sort);
-  const result = await searchIndex.search<SearchableListing>(params.parsed.keywords, {
+  const result = await searchIndex.search<SearchableListing>(params.parsed.keywords ?? null, {
     filter: params.filter,
     sort: params.sort ?? ['created_at:desc'],
     limit: 50,

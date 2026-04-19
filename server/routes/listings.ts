@@ -264,7 +264,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       else if (sort === 'price_desc') sortArr.push('price:desc');
       else sortArr.push('created_at:desc');
 
-      let hits = await searchListings({ q: searchQuery, filter, sort: sortArr });
+      let hits = await searchListings({ parsed, filter, sort: sortArr });
 
       if (!hasAccess) {
         const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
