@@ -675,13 +675,14 @@ export default function ListingDetails() {
                 /* Auto: mobile.de-style icon + label + value */
                 (() => {
                   const a = parsedAttributes;
+                  const ic = "w-6 h-6";
                   const specs = [
-                    { icon: <Gauge className="w-6 h-6" aria-hidden="true" />, label: 'Nobraukums', value: a.mileage ? `${Number(a.mileage).toLocaleString('lv-LV')} km` : null },
-                    { icon: <Zap className="w-6 h-6" aria-hidden="true" />, label: 'Jauda', value: a.engine || a.power || null },
-                    { icon: <Fuel className="w-6 h-6" aria-hidden="true" />, label: 'Degviela', value: a.fuel || null },
-                    { icon: <Settings className="w-6 h-6" aria-hidden="true" />, label: 'Ātrumkārba', value: a.transmission || null },
-                    { icon: <Calendar className="w-6 h-6" aria-hidden="true" />, label: 'Gads', value: a.year_month ? String(a.year_month) : a.year ? String(a.year) : null },
-                    { icon: <ShieldCheck className="w-6 h-6" aria-hidden="true" />, label: 'Stāvoklis', value: a.condition || null },
+                    { icon: <Gauge className={ic} aria-hidden="true" />, label: 'Nobraukums', value: a.mileage ? `${Number(a.mileage).toLocaleString('lv-LV')} km` : null },
+                    { icon: <Zap className={ic} aria-hidden="true" />, label: 'Jauda', value: a.engine || a.power || null },
+                    { icon: <Fuel className={ic} aria-hidden="true" />, label: 'Degviela', value: a.fuel || null },
+                    { icon: <Settings className={ic} aria-hidden="true" />, label: 'Ātrumkārba', value: a.transmission || null },
+                    { icon: <Calendar className={ic} aria-hidden="true" />, label: 'Gads', value: a.year_month ? String(a.year_month) : a.year ? String(a.year) : null },
+                    { icon: <ShieldCheck className={ic} aria-hidden="true" />, label: 'Stāvoklis', value: a.condition || null },
                   ].filter((s): s is { icon: React.JSX.Element; label: string; value: string } => s.value !== null);
 
                   if (specs.length === 0) return null;
