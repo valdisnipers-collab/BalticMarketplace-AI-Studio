@@ -2,21 +2,13 @@ import 'dotenv/config';
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
 import db from "./server/pg";
-import { GoogleGenAI } from "@google/genai";
-import twilio from "twilio";
-import fs from "fs";
 import Stripe from "stripe";
-import { sendEmail, emailTemplates } from './server/services/email';
-import { cached, invalidate, invalidatePattern, TTL, checkRateLimit } from './server/services/redis';
-import { sendPushToUser, vapidPublicKey } from './server/services/push';
-import { initSearchIndex, syncListing, removeListing, searchListings } from './server/services/search';
+import { checkRateLimit } from './server/services/redis';
+import { initSearchIndex } from './server/services/search';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 import { corsMiddleware, helmetMiddleware, generalLimiter, authLimiter, uploadLimiter } from './server/middleware/security';
-import { validateBody, registerSchema, loginSchema, listingSchema } from './server/middleware/validate';
 import { createAuthRouter } from './server/routes/auth';
 import { createUploadsRouter } from './server/routes/uploads';
 import { createListingsRouter } from './server/routes/listings';
@@ -45,19 +37,6 @@ function getStripe(): Stripe {
   return stripeClient;
 }
 
-// Configure Multer for file uploads
-const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-
-// Twilio Configuration
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
-const twilioClient = TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) : null;
-
 async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
@@ -69,7 +48,7 @@ async function startServer() {
 
   const PORT = 3000;
   const httpServer = http.createServer(app);
-  
+
   const SOCKET_ORIGINS = process.env.NODE_ENV === 'production'
     ? ['https://balticmarket.net', 'https://www.balticmarket.net']
     : ['http://localhost:5173', 'http://localhost:3000'];
@@ -85,7 +64,7 @@ async function startServer() {
   // Socket.io logic
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);
-    
+
     socket.on("join", (userId) => {
       socket.join(`user_${userId}`);
       console.log(`User ${userId} joined room user_${userId}`);
@@ -186,7 +165,7 @@ async function startServer() {
     console.log(`Server is starting...`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Server running on http://localhost:${PORT}`);
-    
+
     // Start background task for auctions
     setInterval(checkEndedAuctions, 60 * 1000); // Check every minute
     checkEndedAuctions(); // Run once on startup
