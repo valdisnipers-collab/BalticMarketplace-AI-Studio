@@ -1385,7 +1385,7 @@ export default function ListingDetails() {
 
             {/* Close button — fixed just below the header, always visible */}
             <button
-              className="absolute top-[76px] right-4 z-10 w-11 h-11 rounded-full bg-white hover:bg-slate-100 text-slate-800 flex items-center justify-center transition-colors shadow-lg text-lg font-bold"
+              className="absolute top-[76px] right-3 z-10 w-10 h-10 rounded-full bg-white text-slate-900 flex items-center justify-center shadow-lg hover:bg-slate-100 transition-colors text-lg font-bold"
               onClick={() => setShowGrid(false)}
               aria-label="Aizvērt"
             >
