@@ -32,6 +32,7 @@ interface Listing {
   is_highlighted?: number;
   ai_trust_score?: number;
   ai_moderation_status?: string;
+  attributes?: string;
 }
 
 const categories = ['Visi', ...CATEGORY_NAMES];
@@ -497,11 +498,11 @@ export default function Search() {
                   to={`/listing/${listing.id}`}
                   className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group flex flex-col h-full ${listing.is_highlighted ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-primary-300'}`}
                 >
-                  <div className="aspect-[4/3] bg-slate-100 relative overflow-hidden">
+                  <div className={`relative ${listing.category === 'auto' ? 'aspect-[16/9]' : 'aspect-[4/3]'} overflow-hidden rounded-t-2xl bg-slate-100`}>
                     {listing.image_url ? (
-                      <img 
-                        src={listing.image_url} 
-                        alt={listing.title} 
+                      <img
+                        src={listing.image_url}
+                        alt={listing.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         referrerPolicy="no-referrer"
                       />
@@ -557,9 +558,20 @@ export default function Search() {
                     <h3 className="text-lg font-bold text-slate-900 mb-1 line-clamp-2 group-hover:text-primary-600 transition-colors">
                       {listing.title}
                     </h3>
-                    <p className="text-xl font-extrabold text-primary-600 mb-4">
+                    <p className="text-xl font-extrabold text-primary-600 mb-1">
                       € {listing.price.toFixed(2)}
                     </p>
+                    {listing.category === 'auto' && (() => {
+                      let attrs: Record<string, string> = {};
+                      try { attrs = JSON.parse(listing.attributes || '{}'); } catch { return null; }
+                      const parts: string[] = [];
+                      if (attrs.year_month || attrs.year) parts.push(String(attrs.year_month || attrs.year));
+                      if (attrs.mileage) parts.push(`${Number(attrs.mileage).toLocaleString()} km`);
+                      if (attrs.fuel) parts.push(attrs.fuel);
+                      if (attrs.transmission) parts.push(attrs.transmission);
+                      if (parts.length === 0) return null;
+                      return <p className="text-xs text-slate-500 mb-3 truncate">{parts.join(' • ')}</p>;
+                    })()}
                     
                     <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                       <div className="flex items-center">
