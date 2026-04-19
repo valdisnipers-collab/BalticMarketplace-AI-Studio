@@ -112,7 +112,10 @@ export default function Home() {
   const [activeCategoryId, setActiveCategoryId] = useState(''); // Empty means universal search is active
 
   const [searchFilters, setSearchFilters] = useState<Record<string, string>>({});
-  const [feedType, setFeedType] = useState<'all' | 'following'>('all');
+  type TabId = 'visi' | 'jaunaki' | 'popularaki' | 'ieteiktie' | 'sekotie';
+  const [activeTab, setActiveTab] = useState<TabId>('visi');
+  const [tabListings, setTabListings] = useState<Listing[]>([]);
+  const [tabLoading, setTabLoading] = useState(false);
   const [showHeroText, setShowHeroText] = useState(true);
   const [openExpandId, setOpenExpandId] = useState<number | null>(null);
 
@@ -395,25 +398,39 @@ export default function Home() {
     setLocationQuery('');
   };
 
+  // Fetch base listings for Visi tab (runs once on mount)
   useEffect(() => {
     setLoading(true);
-    const endpoint = feedType === 'following' && user ? '/api/users/me/following/listings' : '/api/listings';
+    fetch('/api/listings')
+      .then(res => res.json())
+      .then(data => { setListings(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  // Fetch tab-specific listings when active tab changes (skip Visi — uses listings state)
+  useEffect(() => {
+    if (activeTab === 'visi') return;
+
+    setTabLoading(true);
+    const token = localStorage.getItem('auth_token');
+
+    const endpoints: Record<Exclude<TabId, 'visi'>, string> = {
+      jaunaki: '/api/listings',
+      popularaki: '/api/listings?sort=popular',
+      ieteiktie: '/api/listings/discovery',
+      sekotie: '/api/users/me/following/listings',
+    };
+
     const headers: Record<string, string> = {};
-    if (feedType === 'following' && user) {
-      headers['Authorization'] = `Bearer ${localStorage.getItem('auth_token')}`;
+    if (activeTab === 'sekotie' && token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
-    fetch(endpoint, { headers })
+    fetch(endpoints[activeTab], { headers })
       .then(res => res.json())
-      .then(data => {
-        setListings(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to fetch listings", err);
-        setLoading(false);
-      });
-  }, [feedType, user]);
+      .then(data => { setTabListings(Array.isArray(data) ? data.slice(0, 12) : []); setTabLoading(false); })
+      .catch(() => { setTabListings([]); setTabLoading(false); });
+  }, [activeTab, user]);
 
   useEffect(() => {
     if (user) {
@@ -1190,109 +1207,40 @@ export default function Home() {
 
       <DiscoveryFeed />
 
-      <div className="max-w-7xl mx-auto px-6 py-12 space-y-20">
-        {/* Premium Listings */}
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">Top</h2>
-              <Badge className="bg-orange-100 text-[#E64415] hover:bg-orange-100 border-none font-black text-lg px-3 py-1 rounded-full italic">DEALS</Badge>
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">for you</h2>
-            </div>
-            <Button variant="link" onClick={() => navigate('/search')} className="text-[#E64415] font-bold text-lg">
-              Show all
-            </Button>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {loading ? (
-              Array(4).fill(0).map((_, i) => (
-                <div key={i} className="flex flex-col gap-3">
-                  <Skeleton className="aspect-[4/3] rounded-xl" />
-                  <Skeleton className="h-4 w-1/4" />
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-5 w-1/3 mt-auto" />
-                </div>
-              ))
-            ) : (
-              listings.slice(0, 4).map(renderListingCard)
-            )}
-          </div>
-        </section>
+      {/* Tab Navigation + Content */}
+      <div className="max-w-7xl mx-auto px-6 pt-10 pb-20">
+        {/* Tab Bar */}
+        <div className="relative flex items-center gap-1 border-b border-slate-200 mb-8 overflow-x-auto scrollbar-hide">
+          {(
+            [
+              { id: 'visi' as TabId, label: 'Visi' },
+              { id: 'jaunaki' as TabId, label: 'Jaunākie' },
+              { id: 'popularaki' as TabId, label: 'Populārākie' },
+              { id: 'ieteiktie' as TabId, label: 'Ieteiktie' },
+              { id: 'sekotie' as TabId, label: 'Sekojamie' },
+            ] as const
+          ).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "relative shrink-0 px-5 py-3 text-sm font-bold transition-colors whitespace-nowrap",
+                activeTab === tab.id ? "text-slate-900" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              {tab.label}
+              {activeTab === tab.id && (
+                <motion.div
+                  layoutId="tab-underline"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#E64415] rounded-full"
+                />
+              )}
+            </button>
+          ))}
+        </div>
 
-        {/* Latest Listings */}
-        <section>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-            <SectionHeader 
-              title={feedType === 'following' ? 'Sekoto pārdevēju sludinājumi' : t('home.latest.title')}
-              description=""
-              className="mb-0"
-            />
-            {user && (
-              <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
-                <button
-                  onClick={() => setFeedType('all')}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${feedType === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  Visi sludinājumi
-                </button>
-                <button
-                  onClick={() => setFeedType('following')}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${feedType === 'following' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  Sekotie
-                </button>
-              </div>
-            )}
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {loading ? (
-              Array(8).fill(0).map((_, i) => (
-                <div key={i} className="flex flex-col gap-3">
-                  <Skeleton className="aspect-[4/3] rounded-xl" />
-                  <Skeleton className="h-4 w-1/4" />
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-5 w-1/3 mt-auto" />
-                </div>
-              ))
-            ) : (
-              listings.filter(l => !l.is_highlighted).slice(0, 8).map(renderListingCard)
-            )}
-          </div>
-          
-          <div className="mt-12 text-center">
-            <Button size="lg" onClick={() => navigate('/search')} className="rounded-full px-8">
-              {t('home.viewAll')}
-              <ChevronRight className="w-4 h-4 ml-2" />
-            </Button>
-          </div>
-        </section>
-
-        {/* Latest Listings */}
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Jaunākie sludinājumi</h2>
-            <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-lg">
-              Skatīt visus
-            </Button>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {loading ? (
-              Array(8).fill(0).map((_, i) => (
-                <div key={i} className="flex flex-col gap-3">
-                  <Skeleton className="aspect-[4/3] rounded-xl" />
-                  <Skeleton className="h-4 w-1/4" />
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-5 w-1/3 mt-auto" />
-                </div>
-              ))
-            ) : (
-              listings.slice(4, 12).map(renderListingCard)
-            )}
-          </div>
-        </section>
+        {/* Tab content rendered in Tasks 3 and 4 */}
+        {/* PLACEHOLDER — replaced in next tasks */}
       </div>
 
       {/* Footer */}
