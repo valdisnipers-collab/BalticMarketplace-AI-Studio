@@ -927,8 +927,8 @@ export default function ListingDetails() {
                   if (pills.length === 0) return null;
                   return (
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {pills.map(pill => (
-                        <span key={pill} className="px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
+                      {pills.map((pill, i) => (
+                        <span key={i} className="px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
                           {pill}
                         </span>
                       ))}
@@ -944,8 +944,8 @@ export default function ListingDetails() {
                   if (entries.length === 0) return null;
                   return (
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {entries.map(([, value]) => (
-                        <span key={String(value)} className="px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
+                      {entries.map(([k, value]) => (
+                        <span key={k} className="px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
                           {String(value)}
                         </span>
                       ))}
