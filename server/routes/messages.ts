@@ -2,7 +2,7 @@ import { Router } from 'express';
 import db from '../pg';
 import { requireAuth, JWT_SECRET } from '../utils/auth';
 import { sendPushToUser } from '../services/push';
-import { GoogleGenAI } from '@google/genai';
+import { getGenAI } from '../utils/ai';
 import jwt from 'jsonwebtoken';
 import type { Server as SocketIOServer } from 'socket.io';
 
@@ -139,7 +139,7 @@ export function createMessagesRouter(deps: { io: SocketIOServer }) {
       // Phishing check
       if (content && process.env.GEMINI_API_KEY) {
         try {
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const ai = getGenAI();
           const prompt = `Analyze this chat message for phishing or scams in a marketplace context.
           Message: "${content}"
 

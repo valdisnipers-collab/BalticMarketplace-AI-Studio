@@ -6,7 +6,7 @@ import db from '../pg';
 import { requireAuth, JWT_SECRET } from '../utils/auth';
 import { getGenAI } from '../utils/ai';
 import { geocodeLocation } from '../utils/geocode';
-import { GoogleGenAI } from '@google/genai';
+import { hasEarlyAccess } from '../utils/earlyAccess';
 import { cached, invalidate, invalidatePattern } from '../services/redis';
 import { syncListing, removeListing, searchListings } from '../services/search';
 import { sendEmail, emailTemplates } from '../services/email';
@@ -17,30 +17,11 @@ const uploadsDir = path.join(process.cwd(), 'uploads');
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-export async function hasEarlyAccess(req: any): Promise<{ hasAccess: boolean; userId: number | null }> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return { hasAccess: false, userId: null };
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-    const user = await db.get('SELECT early_access_until FROM users WHERE id = ?', [decoded.userId]) as any;
-    if (user && user.early_access_until) {
-      const earlyAccessUntil = new Date(user.early_access_until);
-      if (earlyAccessUntil > new Date()) {
-        return { hasAccess: true, userId: decoded.userId };
-      }
-    }
-    return { hasAccess: false, userId: decoded.userId };
-  } catch (e) {
-    return { hasAccess: false, userId: null };
-  }
-}
-
 async function moderateListing(listingId: number | bigint, title: string, description: string, price: number) {
   try {
     if (!process.env.GEMINI_API_KEY) return;
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = getGenAI();
 
     const prompt = `Esi pieredzējis sludinājumu portāla moderators un krāpniecības apkarošanas eksperts. Analizē šo sludinājumu un sniedz detalizētu drošības novērtējumu.
 
@@ -666,7 +647,7 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
       jwt.verify(token, JWT_SECRET);
       const { category, title, ...attributes } = req.body;
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = getGenAI();
 
       let attributesText = '';
       for (const [key, value] of Object.entries(attributes)) {
@@ -706,7 +687,7 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
         return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
       }
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = getGenAI();
 
       let attributesText = '';
       if (attributes) {
@@ -770,7 +751,7 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
         mimeType = filename.endsWith('.png') ? 'image/png' : 'image/jpeg';
       }
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = getGenAI();
 
       const imagePart = {
         inlineData: {
@@ -823,7 +804,7 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
         return res.status(400).json({ error: 'Nepareizs VIN numurs (jābūt 17 simboliem)' });
       }
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = getGenAI();
 
       const prompt = `You are an automotive expert. Decode this VIN number: ${vin}
 

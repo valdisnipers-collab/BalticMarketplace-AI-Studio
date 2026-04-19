@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import db from '../pg';
 import { JWT_SECRET } from '../utils/auth';
 import { checkAndAwardBadges, BADGE_DEFINITIONS } from '../utils/badges';
-import { hasEarlyAccess } from './listings';
+import { hasEarlyAccess } from '../utils/earlyAccess';
 import type { Server as SocketIOServer } from 'socket.io';
 
 export function createUsersRouter(deps: { io: SocketIOServer }) {
