@@ -1352,20 +1352,25 @@ export default function ListingDetails() {
             transition={{ duration: 0.2 }}
             className="fixed inset-0 z-[200]"
           >
-            {/* Header — sits at very top, above the scroll area */}
-            <div className="absolute top-0 left-0 right-0 h-16 z-10 bg-white/40 backdrop-blur-md border-b border-slate-200/30">
-              <div className="flex items-center gap-3 h-full px-4 max-w-7xl mx-auto">
-                {/* Logo */}
-                <div className="flex items-center shrink-0">
-                  <div className="w-9 h-9 bg-[#E64415] rounded-md flex items-center justify-center">
-                    <span className="text-white font-black text-xl italic">b</span>
+            {/* Header — identical to site navbar, h-20, same logo */}
+            <div className="absolute top-0 left-0 right-0 h-20 z-10 bg-white/40 backdrop-blur-md border-b border-slate-200/60">
+              <div className="flex justify-between h-20 items-center px-4 lg:px-6 max-w-7xl mx-auto">
+                {/* Logo — identical to Navbar */}
+                <div className="flex items-center space-x-3 shrink-0">
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 bg-[#E64415] rounded-md flex items-center justify-center">
+                      <span className="text-white font-black text-2xl italic">b</span>
+                    </div>
+                    <div className="ml-1 flex flex-col justify-center">
+                      <span className="text-2xl font-bold tracking-tighter text-[#2D1152] leading-none">balticmarket</span>
+                      <span className="text-[10px] font-medium text-slate-500 leading-none mt-0.5 hidden sm:block">Baltijas lielākais sludinājumu portāls</span>
+                    </div>
                   </div>
-                  <span className="ml-2 text-lg font-bold tracking-tighter text-[#2D1152] hidden sm:block">balticmarket</span>
                 </div>
 
-                <div className="h-7 w-px bg-slate-300/60 hidden sm:block" />
+                <div className="h-7 w-px bg-slate-300/60 mx-4 hidden sm:block" />
 
-                {/* Title */}
+                {/* Listing title + photo count */}
                 <div className="flex-1 min-w-0">
                   <p className="text-slate-800 font-semibold text-sm truncate leading-tight">{listing?.title}</p>
                   <p className="text-slate-500 text-xs mt-0.5">{imageUrls.length} attēli</p>
@@ -1373,28 +1378,27 @@ export default function ListingDetails() {
 
                 {/* Price */}
                 {listing?.price != null && (
-                  <div className="shrink-0 text-right hidden sm:block">
+                  <div className="shrink-0 text-right hidden sm:block ml-4">
                     <span className="text-slate-900 font-bold text-lg">
                       {listing.price.toLocaleString('lv-LV')} €
                     </span>
                   </div>
                 )}
-
               </div>
             </div>
 
-            {/* Close button — fixed just below the header, always visible */}
+            {/* Close button — just below the header */}
             <button
-              className="absolute top-[76px] right-3 z-10 w-10 h-10 rounded-full bg-white text-slate-900 flex items-center justify-center shadow-lg hover:bg-slate-100 transition-colors text-lg font-bold"
+              className="absolute top-[88px] right-3 z-10 w-10 h-10 rounded-full bg-white text-slate-900 flex items-center justify-center shadow-lg hover:bg-slate-100 transition-colors text-lg font-bold"
               onClick={() => setShowGrid(false)}
               aria-label="Aizvērt"
             >
               ✕
             </button>
 
-            {/* Scrollable grid — starts exactly below the header, can never go above it */}
+            {/* Scrollable grid — starts exactly below the header (h-20 = 80px) */}
             <div
-              className="absolute top-16 left-0 right-0 bottom-0 overflow-y-auto bg-black/90 backdrop-blur-sm"
+              className="absolute top-20 left-0 right-0 bottom-0 overflow-y-auto bg-black/90 backdrop-blur-sm"
               onClick={() => setShowGrid(false)}
             >
               <div
