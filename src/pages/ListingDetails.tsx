@@ -1350,15 +1350,11 @@ export default function ListingDetails() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm overflow-y-auto"
-            onClick={() => setShowGrid(false)}
+            className="fixed inset-0 z-[200]"
           >
-            {/* Header */}
-            <div
-              className="sticky top-0 z-[50] bg-white/40 backdrop-blur-md border-b border-slate-200/30"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 h-16 px-4 max-w-7xl mx-auto">
+            {/* Header — sits at very top, above the scroll area */}
+            <div className="absolute top-0 left-0 right-0 h-16 z-10 bg-white/40 backdrop-blur-md border-b border-slate-200/30">
+              <div className="flex items-center gap-3 h-full px-4 max-w-7xl mx-auto">
                 {/* Logo */}
                 <div className="flex items-center shrink-0">
                   <div className="w-9 h-9 bg-[#E64415] rounded-md flex items-center justify-center">
@@ -1395,26 +1391,31 @@ export default function ListingDetails() {
               </div>
             </div>
 
-            {/* Grid */}
+            {/* Scrollable grid — starts exactly below the header, can never go above it */}
             <div
-              className="max-w-5xl mx-auto px-4 py-6 columns-2 md:columns-3 gap-3 space-y-3 isolate"
-              onClick={e => e.stopPropagation()}
+              className="absolute top-16 left-0 right-0 bottom-0 overflow-y-auto bg-black/90 backdrop-blur-sm"
+              onClick={() => setShowGrid(false)}
             >
-              {imageUrls.map((url, i) => (
-                <div
-                  key={i}
-                  className="break-inside-avoid cursor-pointer overflow-hidden rounded-lg group relative"
-                  onClick={() => { setShowGrid(false); setLightboxIndex(i); }}
-                >
-                  <img
-                    src={url}
-                    alt={`Attēls ${i + 1}`}
-                    className="w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg" />
-                </div>
-              ))}
+              <div
+                className="max-w-5xl mx-auto px-4 py-6 columns-2 md:columns-3 gap-3 space-y-3"
+                onClick={e => e.stopPropagation()}
+              >
+                {imageUrls.map((url, i) => (
+                  <div
+                    key={i}
+                    className="break-inside-avoid cursor-pointer overflow-hidden rounded-lg group relative"
+                    onClick={() => { setShowGrid(false); setLightboxIndex(i); }}
+                  >
+                    <img
+                      src={url}
+                      alt={`Attēls ${i + 1}`}
+                      className="w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg" />
+                  </div>
+                ))}
+              </div>
             </div>
           </motion.div>
         )}
