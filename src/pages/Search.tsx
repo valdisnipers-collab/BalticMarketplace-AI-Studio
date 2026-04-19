@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin, ShieldCheck } from 'lucide-react';
+import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
+import { SmartExpandDrawer } from '../components/SmartExpandDrawer';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Helmet } from 'react-helmet-async';
@@ -45,6 +46,7 @@ export default function Search() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
+  const [openExpandId, setOpenExpandId] = useState<number | null>(null);
 
   // Initialize attribute filters from URL
   const initialAttributes: Record<string, string> = {};
@@ -579,8 +581,27 @@ export default function Search() {
                         {listing.location || 'Latvija'}
                       </div>
                     </div>
+                    {listing.category === 'auto' && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setOpenExpandId(openExpandId === listing.id ? null : listing.id);
+                        }}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 text-[11px] font-semibold text-[#E64415] hover:text-[#c73a11] transition-colors py-1"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        {openExpandId === listing.id ? 'Aizvērt kopsavilkumu' : 'AI kopsavilkums'}
+                      </button>
+                    )}
                   </div>
                 </Link>
+                {listing.category === 'auto' && (
+                  <SmartExpandDrawer
+                    listingId={listing.id}
+                    isOpen={openExpandId === listing.id}
+                  />
+                )}
               </motion.div>
             ))}
           </motion.div>
