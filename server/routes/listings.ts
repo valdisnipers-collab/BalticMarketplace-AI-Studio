@@ -48,7 +48,7 @@ async function moderateListing(listingId: number | bigint, title: string, descri
       }`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: prompt,
     });
 
@@ -199,7 +199,7 @@ Input: "${raw}"
 Output:`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: prompt,
     });
     const text = (response.text || '').trim().replace(/```json|```/g, '').trim();
@@ -260,7 +260,7 @@ Piemēri lauku nosaukumiem: title, description, price, images, location, attribu
 Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma dimensijas un materiālu".`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: prompt,
       });
 
@@ -999,7 +999,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       Aprakstam jābūt pārliecinošam, viegli lasāmam un jāizceļ preces priekšrocības. Nelieto pārāk garus ievadus, uzreiz ķeries pie lietas.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: prompt,
       });
 
@@ -1040,7 +1040,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       Atgriez TIKAI skaitli (piemēram, 15000 vai 250). Nekādu papildu tekstu vai paskaidrojumu.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: prompt,
       });
 
@@ -1105,7 +1105,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       Return ONLY valid JSON.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: [prompt, imagePart],
       });
 
@@ -1170,7 +1170,7 @@ Exterior: "Leģēta riteņu diski", "17\" diski", "18\" diski", "19\"+ diski", "
 Return ONLY valid JSON, no markdown.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
       });
 
@@ -1257,7 +1257,7 @@ Atbildi TIKAI JSON formātā (bez markdown):
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: prompt,
       });
 
@@ -1276,9 +1276,12 @@ Atbildi TIKAI JSON formātā (bez markdown):
 
       res.json(result);
     } catch (error: any) {
-      const msg = error?.message || String(error);
-      console.error('[COMPARE]', msg);
-      res.status(500).json({ error: `Salīdzināšana neizdevās: ${msg}` });
+      console.error('[COMPARE]', error?.message || error);
+      const status = error?.status ?? error?.code;
+      if (status === 429 || String(error?.message).includes('429') || String(error?.message).includes('RESOURCE_EXHAUSTED')) {
+        return res.status(503).json({ error: 'AI pakalpojums šobrīd ir pārslogots. Mēģini vēlreiz pēc dažām sekundēm.' });
+      }
+      res.status(500).json({ error: 'Salīdzināšana neizdevās. Mēģini vēlreiz.' });
     }
   });
 
