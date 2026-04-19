@@ -410,6 +410,7 @@ export default function Home() {
   // Fetch tab-specific listings when active tab changes (skip Visi — uses listings state)
   useEffect(() => {
     if (activeTab === 'visi') return;
+    if (activeTab === 'sekotie' && !user) { setTabLoading(false); return; }
 
     setTabLoading(true);
     const token = localStorage.getItem('auth_token');
@@ -1328,12 +1329,14 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">{meta.title}</h2>
-                <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-sm p-0 h-auto">
-                  Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
-              </div>
+              {!(activeTab === 'sekotie' && !user) && (
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">{meta.title}</h2>
+                  <Button variant="link" onClick={() => navigate('/search')} className="text-slate-500 font-bold text-sm p-0 h-auto">
+                    Skatīt visus <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              )}
 
               {/* Auth gate for Sekojamie */}
               {activeTab === 'sekotie' && !user ? (
