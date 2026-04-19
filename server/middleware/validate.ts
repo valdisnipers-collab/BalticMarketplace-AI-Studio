@@ -36,7 +36,7 @@ export const listingSchema = z.object({
   description: z.string().max(5000).optional().nullable(),
   price: z.number({ error: 'Cenai jābūt skaitlim' }).min(0).max(10_000_000),
   category: z.string().min(1, 'Kategorija ir obligāta'),
-  image_url: z.string().url().optional().nullable(),
+  image_url: z.string().optional().nullable(),
   attributes: z.record(z.string(), z.unknown()).optional().nullable(),
   location: z.string().max(100).optional().nullable(),
   is_auction: z.boolean().optional(),

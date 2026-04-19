@@ -140,6 +140,7 @@ export default function AddListing() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [savedListingId, setSavedListingId] = useState<number | null>(null);
 
   const draftFormData = useMemo(() => ({
     title, description, price, location, category, subcategory, attributes
@@ -231,7 +232,7 @@ export default function AddListing() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Neizdevās pievienot sludinājumu');
-      navigate('/');
+      setSavedListingId(data.id);
     } catch (err: any) {
       setError(err.message);
       setIsSubmitting(false);
@@ -362,7 +363,7 @@ export default function AddListing() {
       }
 
       clearDraft();
-      navigate('/');
+      setSavedListingId(data.id);
     } catch (err: any) {
       setError(err.message);
       setIsSubmitting(false);
@@ -389,6 +390,49 @@ export default function AddListing() {
 
   const currentFields = CATEGORY_SCHEMAS[category]?.subcategories[subcategory]?.fields || [];
   const subcategories = Object.keys(CATEGORY_SCHEMAS[category]?.subcategories || {});
+
+  if (savedListingId !== null) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] bg-slate-50 flex items-center justify-center px-4">
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="bg-white rounded-3xl shadow-2xl p-10 max-w-sm w-full text-center border border-slate-100"
+          >
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.15, duration: 0.4, type: 'spring', stiffness: 200 }}
+              className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6"
+            >
+              <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+            </motion.div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Saglabāts!</h2>
+            <p className="text-sm text-slate-500 mb-8">
+              Tavs sludinājums ir veiksmīgi publicēts un tagad ir redzams platformā.
+            </p>
+            <div className="flex flex-col gap-3">
+              <Button
+                onClick={() => navigate(`/listing/${savedListingId}`)}
+                className="w-full bg-[#E64415] hover:bg-[#c73a11] text-white font-bold rounded-xl py-3"
+              >
+                Skatīt sludinājumu
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/')}
+                className="w-full font-semibold rounded-xl py-3"
+              >
+                Atgriezties sākumlapā
+              </Button>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 py-10 px-4 lg:px-8">
