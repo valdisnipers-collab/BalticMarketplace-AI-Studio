@@ -1153,6 +1153,18 @@ export default function ListingDetails() {
                 )}
               </div>
 
+              {/* Ad Banner Slot — 300×250 */}
+              <div
+                className="w-full rounded-2xl overflow-hidden bg-slate-50 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 py-10 text-center"
+                aria-label="Reklāmas vieta"
+              >
+                <div className="w-10 h-10 rounded-xl bg-slate-200 flex items-center justify-center">
+                  <span className="text-slate-400 text-xs font-bold tracking-wider">AD</span>
+                </div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Reklāmas vieta</p>
+                <p className="text-xs text-slate-300 font-medium">300 × 250</p>
+              </div>
+
               {/* Financial Architecture */}
               {(listing.category === 'Transports' || listing.category === 'Nekustamais īpašums') && (
                 <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
