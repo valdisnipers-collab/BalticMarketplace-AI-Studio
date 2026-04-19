@@ -130,34 +130,73 @@ const KNOWN_CATEGORIES = [
   'Darbs', 'Mājai', 'Mode', 'Bērniem', 'Sports', 'Dzīvnieki',
 ];
 
-async function aiParseQuery(raw: string): Promise<ParsedQuery> {
-  const fallback: ParsedQuery = {
-    keywords: raw,
-    category: null,
-    minPrice: null,
-    maxPrice: null,
+// Keyword hints for category detection when Gemini is unavailable
+const CATEGORY_KEYWORDS: Record<string, string> = {
+  bmw: 'Transports', mercedes: 'Transports', audi: 'Transports', toyota: 'Transports',
+  volkswagen: 'Transports', volvo: 'Transports', ford: 'Transports', honda: 'Transports',
+  auto: 'Transports', mašīna: 'Transports', automašīna: 'Transports', velo: 'Transports',
+  iphone: 'Elektronika', samsung: 'Elektronika', macbook: 'Elektronika', laptop: 'Elektronika',
+  dators: 'Elektronika', telefons: 'Elektronika', playstation: 'Elektronika', xbox: 'Elektronika',
+  dzīvoklis: 'Nekustamais īpašums', māja: 'Nekustamais īpašums', zeme: 'Nekustamais īpašums',
+  īpašums: 'Nekustamais īpašums', istaba: 'Nekustamais īpašums',
+  dīvāns: 'Mājai', galds: 'Mājai', krēsls: 'Mājai', gulta: 'Mājai', skapis: 'Mājai',
+  bērnu: 'Bērniem', ratiņi: 'Bērniem', rotaļlieta: 'Bērniem', lego: 'Bērniem',
+  darbs: 'Darbs', vakance: 'Darbs', alga: 'Darbs',
+};
+
+// Latvian filler words to strip when extracting keywords from raw query
+const FILLER_WORDS = new Set([
+  'meklēju', 'mekleju', 'gribu', 'vēlos', 'velos', 'pērku', 'perku', 'nepieciešams',
+  'vajag', 'lūdzu', 'ludzu', 'man', 'es', 'ir', 'par', 'un', 'vai', 'ar', 'uz',
+  'no', 'līdz', 'lidz', 'ap', 'apmēram', 'apmeram', 'kāds', 'kads', 'labs', 'lēts',
+  'lets', 'jauns', 'lietots', 'pārdod', 'pardod',
+]);
+
+function buildFallbackParsed(raw: string): ParsedQuery {
+  const words = raw.toLowerCase().split(/\s+/);
+  const keywords = words.filter(w => !FILLER_WORDS.has(w) && w.length > 1).join(' ') || raw;
+  const category = words.reduce<string | null>((found, w) => found ?? (CATEGORY_KEYWORDS[w] ?? null), null);
+  // Extract price hints: "līdz 5000", "no 1000", "ap 500"
+  const maxMatch = raw.match(/līdz\s+(\d[\d\s]*)/i) ?? raw.match(/max\s+(\d[\d\s]*)/i);
+  const minMatch = raw.match(/no\s+(\d[\d\s]*)/i) ?? raw.match(/min\s+(\d[\d\s]*)/i);
+  return {
+    keywords,
+    category,
+    minPrice: minMatch ? Number(minMatch[1].replace(/\s/g, '')) : null,
+    maxPrice: maxMatch ? Number(maxMatch[1].replace(/\s/g, '')) : null,
     location: null,
     summary: '',
   };
-  if (!raw || raw.length < 3 || !process.env.GEMINI_API_KEY) return fallback;
+}
+
+async function aiParseQuery(raw: string): Promise<ParsedQuery> {
+  if (!raw || raw.length < 3) return { keywords: raw, category: null, minPrice: null, maxPrice: null, location: null, summary: '' };
+  if (!process.env.GEMINI_API_KEY) return buildFallbackParsed(raw);
 
   try {
     const ai = getGenAI();
-    const prompt = `Esi meklēšanas parsētājs Latvijas sludinājumu platformā. Izanalizē šo meklēšanas vaicājumu un atbildi TIKAI ar JSON.
-
-Vaicājums: "${raw}"
+    const prompt = `Esi meklēšanas parsētājs Latvijas sludinājumu platformā. Izanalizē vaicājumu un atbildi TIKAI ar JSON (bez markdown).
 
 Pieejamās kategorijas: ${KNOWN_CATEGORIES.join(', ')}
 
-Atbildes formāts (TIKAI JSON, bez markdown):
-{
-  "keywords": "2-5 atslēgvārdi latviešu/angļu valodā meklēšanai",
-  "category": "precīzs kategorijas nosaukums no saraksta vai null",
-  "minPrice": minimālā cena kā skaitlis vai null,
-  "maxPrice": maksimālā cena kā skaitlis vai null,
-  "location": "pilsēta vai reģions vai null",
-  "summary": "viena teikuma apraksts latviešu valodā — ko AI saprata"
-}`;
+Piemēri:
+Input: "meklēju bmw vai mercedes līdz 15000"
+Output: {"keywords":"BMW Mercedes","category":"Transports","minPrice":null,"maxPrice":15000,"location":null,"summary":"Meklē BMW vai Mercedes automašīnu līdz 15 000 €"}
+
+Input: "dzīvoklis Rīgā 2 istabas ap 100k"
+Output: {"keywords":"dzīvoklis 2 istabas","category":"Nekustamais īpašums","minPrice":null,"maxPrice":100000,"location":"Rīga","summary":"Meklē 2-istabu dzīvokli Rīgā līdz 100 000 €"}
+
+Input: "iphone 13 vai 14 labs stāvoklis"
+Output: {"keywords":"iPhone 13 14","category":"Elektronika","minPrice":null,"maxPrice":null,"location":null,"summary":"Meklē iPhone 13 vai 14 labā stāvoklī"}
+
+Input: "dīvāns Rīgā lēts"
+Output: {"keywords":"dīvāns","category":"Mājai","minPrice":null,"maxPrice":null,"location":"Rīga","summary":"Meklē lētu dīvānu Rīgā"}
+
+Input: "velosipēds bērnam 6-8 gadi Salaspils"
+Output: {"keywords":"velosipēds bērnu","category":"Bērniem","minPrice":null,"maxPrice":null,"location":"Salaspils","summary":"Meklē bērnu velosipēdu 6–8 gadus vecam bērnam Salaspilī"}
+
+Input: "${raw}"
+Output:`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -165,13 +204,13 @@ Atbildes formāts (TIKAI JSON, bez markdown):
     });
     const text = (response.text || '').trim().replace(/```json|```/g, '').trim();
     if (!text) {
-      console.warn('[AI SEARCH] empty response from Gemini, falling back');
-      return { ...fallback, keywords: raw };
+      console.warn('[AI SEARCH] empty response from Gemini, using smart fallback');
+      return buildFallbackParsed(raw);
     }
     const parsed = JSON.parse(text) as ParsedQuery;
     console.log(`[AI SEARCH] "${raw}" →`, parsed);
     return {
-      keywords: parsed.keywords || raw,
+      keywords: parsed.keywords || buildFallbackParsed(raw).keywords,
       category: KNOWN_CATEGORIES.includes(parsed.category ?? '') ? parsed.category : null,
       minPrice: typeof parsed.minPrice === 'number' ? parsed.minPrice : null,
       maxPrice: typeof parsed.maxPrice === 'number' ? parsed.maxPrice : null,
@@ -179,8 +218,8 @@ Atbildes formāts (TIKAI JSON, bez markdown):
       summary: parsed.summary || '',
     };
   } catch (e) {
-    console.warn('[AI SEARCH] parse failed, falling back to raw query', e);
-    return { ...fallback, keywords: raw };
+    console.warn('[AI SEARCH] parse failed, using smart fallback', e);
+    return buildFallbackParsed(raw);
   }
 }
 

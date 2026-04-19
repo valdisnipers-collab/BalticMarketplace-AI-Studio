@@ -66,26 +66,41 @@ async function searchListingsPostgres(
   legacyFilter?: string[],
   legacySort?: string[],
 ): Promise<SearchableListing[]> {
-  let sql = `
-    SELECT l.id, l.user_id, l.title, l.description, l.category, l.price, l.location,
-           l.status, l.image_url, l.listing_type, l.is_auction, l.created_at, l.quality_score,
-           u.name as author_name, NULL as subcategory, l.lat, l.lng
-    FROM listings l
-    LEFT JOIN users u ON l.user_id = u.id
-    WHERE l.status = 'active'
-  `;
   const qp: any[] = [];
 
-  // Full-text keyword search — OR between words so "mekleju bmw" still finds BMW listings
+  // Build ts_query for keyword search — OR between words so filler words don't block results
+  let tsQueryExpr: string | null = null;
   if (parsed.keywords?.trim()) {
     const words = parsed.keywords.trim()
       .split(/\s+/)
       .map(w => w.replace(/[&|!():*'<>]/g, '').trim())
       .filter(w => w.length > 1);
     if (words.length > 0) {
-      sql += ` AND to_tsvector('simple', coalesce(l.title,'') || ' ' || coalesce(l.description,'') || ' ' || coalesce(l.category,'')) @@ to_tsquery('simple', ?)`;
-      qp.push(words.join(' | '));
+      tsQueryExpr = words.join(' | ');
     }
+  }
+
+  // Title weighted higher (A) than description (B) for relevance ranking
+  const tsvectorExpr = `(
+    setweight(to_tsvector('simple', coalesce(l.title,'')), 'A') ||
+    setweight(to_tsvector('simple', coalesce(l.description,'')), 'B') ||
+    setweight(to_tsvector('simple', coalesce(l.category,'')), 'C')
+  )`;
+
+  let sql = `
+    SELECT l.id, l.user_id, l.title, l.description, l.category, l.price, l.location,
+           l.status, l.image_url, l.listing_type, l.is_auction, l.created_at, l.quality_score,
+           u.name as author_name, NULL as subcategory, l.lat, l.lng
+           ${tsQueryExpr ? `, ts_rank(${tsvectorExpr}, to_tsquery('simple', ?)) AS _rank` : ', 0 AS _rank'}
+    FROM listings l
+    LEFT JOIN users u ON l.user_id = u.id
+    WHERE l.status = 'active'
+  `;
+  if (tsQueryExpr) qp.push(tsQueryExpr);
+
+  if (tsQueryExpr) {
+    sql += ` AND ${tsvectorExpr} @@ to_tsquery('simple', ?)`;
+    qp.push(tsQueryExpr);
   }
 
   // Structured filters from AI
@@ -116,7 +131,13 @@ async function searchListingsPostgres(
     'created_at:desc': 'l.created_at DESC',
     'created_at:asc': 'l.created_at ASC',
   };
-  const orderClause = legacySort?.map(s => sortMap[s]).filter(Boolean).join(', ') || 'l.created_at DESC';
+  const explicitSort = legacySort?.map(s => sortMap[s]).filter(Boolean).join(', ');
+  // When no explicit sort: rank by FTS relevance × quality_score, then recency
+  const orderClause = explicitSort
+    ? explicitSort
+    : tsQueryExpr
+      ? `(_rank * (1 + coalesce(l.quality_score, 0) / 100.0)) DESC, l.created_at DESC`
+      : `l.created_at DESC`;
   sql += ` ORDER BY ${orderClause} LIMIT 50`;
 
   return (await db.all(sql, qp)) as SearchableListing[];
