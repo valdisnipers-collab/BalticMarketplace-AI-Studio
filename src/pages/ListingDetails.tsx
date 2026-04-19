@@ -1380,16 +1380,17 @@ export default function ListingDetails() {
                   </div>
                 )}
 
-                {/* Close */}
-                <button
-                  className="shrink-0 w-9 h-9 rounded-full bg-slate-200/60 hover:bg-slate-300/60 text-slate-700 flex items-center justify-center transition-colors text-base font-bold"
-                  onClick={() => setShowGrid(false)}
-                  aria-label="Aizvērt"
-                >
-                  ✕
-                </button>
               </div>
             </div>
+
+            {/* Close button — fixed just below the header, always visible */}
+            <button
+              className="absolute top-[76px] right-4 z-10 w-11 h-11 rounded-full bg-white hover:bg-slate-100 text-slate-800 flex items-center justify-center transition-colors shadow-lg text-lg font-bold"
+              onClick={() => setShowGrid(false)}
+              aria-label="Aizvērt"
+            >
+              ✕
+            </button>
 
             {/* Scrollable grid — starts exactly below the header, can never go above it */}
             <div
