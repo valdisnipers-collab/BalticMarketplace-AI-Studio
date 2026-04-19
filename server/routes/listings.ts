@@ -106,7 +106,7 @@ async function checkSavedSearchesAndNotify(listingId: number | bigint, listingDa
 
         const user = await db.get('SELECT email, name FROM users WHERE id = ?', [search.user_id]) as any;
         if (user?.email) {
-          const tmpl = emailTemplates.newListingMatch(user.name || user.username, listingData.title, Number(listingData.price), Number(listingId));
+          const tmpl = emailTemplates.newListingMatch(user.name, listingData.title, Number(listingData.price), Number(listingId));
           sendEmail(user.email, tmpl.subject, tmpl.html).catch(e => console.error('Email error:', e));
         }
       }
@@ -365,8 +365,8 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       }
 
       if (process.env.MEILISEARCH_HOST) {
-        const author = await db.get<{ name: string; username: string }>(
-          'SELECT name, username FROM users WHERE id = ?', [decoded.userId],
+        const author = await db.get<{ name: string }>(
+          'SELECT name FROM users WHERE id = ?', [decoded.userId],
         );
         syncListing({
           id: Number(info.lastInsertRowid),
@@ -380,7 +380,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
           status: 'active',
           location: location || null,
           image_url: image_url || null,
-          author_name: author?.name || author?.username || '',
+          author_name: author?.name || '',
           created_at: new Date().toISOString(),
           lat: null,
           lng: null,
@@ -488,7 +488,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
 
       if (process.env.MEILISEARCH_HOST) {
         db.get<any>(
-          'SELECT l.*, u.name as author_name, u.username FROM listings l JOIN users u ON l.user_id = u.id WHERE l.id = ?',
+          'SELECT l.*, u.name as author_name FROM listings l JOIN users u ON l.user_id = u.id WHERE l.id = ?',
           [listingId],
         ).then(updatedDoc => {
           if (!updatedDoc) return;
