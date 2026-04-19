@@ -257,6 +257,7 @@ export default function Search() {
 
   async function handleCompare() {
     if (selectedIds.size < 2 || compareLoading) return;
+    console.log('[COMPARE] selectedIds:', Array.from(selectedIds), 'listings:', filteredListings.filter(l => selectedIds.has(l.id)).map(l => ({ id: l.id, title: l.title })));
     if (!user) {
       alert('Lūdzu, piesakieties, lai izmantotu AI salīdzinājumu');
       return;
