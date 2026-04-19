@@ -4,9 +4,8 @@ import rateLimit from 'express-rate-limit';
 
 const ALLOWED_ORIGINS = process.env.NODE_ENV === 'production'
   ? [
-      'https://balticmarket.lv',
-      'https://www.balticmarket.lv',
-      'http://178.104.8.77', // temporary until SSL + domain
+      'https://balticmarket.net',
+      'https://www.balticmarket.net',
     ]
   : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
 
@@ -27,11 +26,9 @@ export const helmetMiddleware = helmet({
       fontSrc: ["'self'", 'fonts.gstatic.com'],
       connectSrc: ["'self'", 'wss:', 'ws:'],
       mediaSrc: ["'self'", 'res.cloudinary.com', '*.cloudinary.com'],
-      upgradeInsecureRequests: null, // disable until SSL is configured
     },
   },
   crossOriginEmbedderPolicy: false,
-  hsts: false, // disable until SSL is configured
 });
 
 export const generalLimiter = rateLimit({
