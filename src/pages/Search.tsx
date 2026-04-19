@@ -345,6 +345,8 @@ export default function Search() {
       .map(([k, v]) => ({ key: k, label: v, onRemove: () => removeActiveFilter(k) })),
   ].filter((f): f is { key: string; label: string; onRemove: () => void } => f !== null);
 
+  const totalActiveFilterCount = activeFilters.length;
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50 flex flex-col md:flex-row">
       <Helmet>
@@ -353,17 +355,23 @@ export default function Search() {
       </Helmet>
 
       {/* Mobile filter toggle */}
-      <div className="md:hidden bg-white p-4 border-b border-slate-200 flex justify-between items-center sticky top-16 z-30 shadow-sm">
-        <span className="font-medium text-slate-700">{filteredListings.length} sludinājumi</span>
-        <Button 
-          variant="outline"
-          size="sm"
+      <div className="md:hidden bg-white px-4 py-3 border-b border-slate-100 flex justify-between items-center sticky top-20 z-30">
+        <span className="text-sm font-medium text-slate-600">
+          {filteredListings.length} sludinājumi
+        </span>
+        <button
+          type="button"
           onClick={() => setShowFilters(!showFilters)}
-          className="gap-2"
+          className="relative flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-[#E64415] hover:text-[#E64415] transition-colors"
         >
           <SlidersHorizontal className="w-4 h-4" />
-          {t('search.filters')}
-        </Button>
+          Filtri
+          {totalActiveFilterCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#E64415] text-white text-[10px] font-bold flex items-center justify-center leading-none">
+              {totalActiveFilterCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Sidebar Filters */}
