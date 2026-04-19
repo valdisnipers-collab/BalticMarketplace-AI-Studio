@@ -159,7 +159,7 @@ async function main() {
     await pool.query(
       `INSERT INTO listings
         (user_id, title, description, price, category, location, image_url, attributes, is_highlighted, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active', NOW() - (random() * interval '30 days'))`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active', NOW() - interval '2 hours' - (random() * interval '28 days'))`,
       [userId, l.title, l.description, l.price, l.category, l.location, l.image_url, l.attributes, l.is_highlighted]
     );
     console.log(`  + ${l.title}`);
