@@ -48,7 +48,7 @@ async function moderateListing(listingId: number | bigint, title: string, descri
       }`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash',
       contents: prompt,
     });
 
@@ -123,7 +123,7 @@ async function preprocessSearchQuery(query: string): Promise<string> {
     const prompt = `Pārvērt šo dabiskās valodas meklēšanas frāzi īsā meklēšanas vaicājumā (2-4 atslēgvārdi latviešu/angļu).
 Frāze: "${query}"
 Atbilde: tikai atslēgvārdi, atdalīti ar atstarpēm, bez paskaidrojumiem.`;
-    const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt });
+    const response = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt });
     const processed = (response.text || query).trim().replace(/\n/g, ' ');
     console.log(`[AI SEARCH] "${query}" → "${processed}"`);
     return processed;
@@ -165,7 +165,7 @@ Piemēri lauku nosaukumiem: title, description, price, images, location, attribu
 Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma dimensijas un materiālu".`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-1.5-flash',
         contents: prompt,
       });
 
@@ -825,7 +825,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       Aprakstam jābūt pārliecinošam, viegli lasāmam un jāizceļ preces priekšrocības. Nelieto pārāk garus ievadus, uzreiz ķeries pie lietas.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-1.5-flash',
         contents: prompt,
       });
 
@@ -866,7 +866,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       Atgriez TIKAI skaitli (piemēram, 15000 vai 250). Nekādu papildu tekstu vai paskaidrojumu.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: prompt,
       });
 
@@ -931,7 +931,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       Return ONLY valid JSON.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: [prompt, imagePart],
       });
 
@@ -996,7 +996,7 @@ Exterior: "Leģēta riteņu diski", "17\" diski", "18\" diski", "19\"+ diski", "
 Return ONLY valid JSON, no markdown.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
       });
 
