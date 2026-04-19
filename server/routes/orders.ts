@@ -4,7 +4,7 @@ import db from '../pg';
 import { JWT_SECRET } from '../utils/auth';
 import { sendPushToUser } from '../services/push';
 import { sendEmail, emailTemplates } from '../services/email';
-import { checkAndAwardBadges } from '../utils/badges';
+import { checkAndAwardBadges, recalculateTrustScore } from '../utils/badges';
 import type { Server as SocketIOServer } from 'socket.io';
 
 export function createOrdersRouter(deps: { io: SocketIOServer }) {
@@ -88,6 +88,7 @@ export function createOrdersRouter(deps: { io: SocketIOServer }) {
       }).catch(e => console.error('Push error:', e));
 
       await checkAndAwardBadges(order.seller_id);
+      recalculateTrustScore(order.seller_id).catch(() => {});
 
       const seller = await db.get('SELECT email, name FROM users WHERE id = ?', [order.seller_id]) as any;
       const completedListing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '../pg';
 import { JWT_SECRET } from '../utils/auth';
-import { checkAndAwardBadges, BADGE_DEFINITIONS } from '../utils/badges';
+import { checkAndAwardBadges, BADGE_DEFINITIONS, recalculateTrustScore } from '../utils/badges';
 import { hasEarlyAccess } from '../utils/earlyAccess';
 import type { Server as SocketIOServer } from 'socket.io';
 
@@ -518,6 +518,8 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
       }
 
       const info = await db.run('INSERT INTO reviews (reviewer_id, seller_id, order_id, rating, comment) VALUES (?, ?, ?, ?, ?)', [decoded.userId, sellerId, orderId, rating, comment]);
+
+      recalculateTrustScore(Number(req.params.id)).catch(() => {});
 
       res.json({ id: info.lastInsertRowid, message: 'Review added successfully' });
     } catch (error) {

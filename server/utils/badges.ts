@@ -43,3 +43,40 @@ export async function checkAndAwardBadges(userId: number) {
     console.error(`[badges] checkAndAwardBadges failed for user ${userId}:`, err);
   }
 }
+
+export async function recalculateTrustScore(userId: number): Promise<number> {
+  let score = 50; // bāze
+
+  // +20 ja verificēts
+  const user = await db.get('SELECT is_verified FROM users WHERE id = $1', [userId]) as any;
+  if (user?.is_verified) score += 20;
+
+  // +10 par katru 5 pabeigtu darījumu (max +30)
+  const orderRow = await db.get(
+    "SELECT COUNT(*) as c FROM orders WHERE seller_id = $1 AND status = 'completed'",
+    [userId]
+  ) as any;
+  const orderCount = Math.min(Number(orderRow?.c ?? 0), 15);
+  score += Math.floor(orderCount / 5) * 10;
+
+  // +15 ja vidējais vērtējums >= 4.5 (min 3 reviews)
+  const ratingRow = await db.get(
+    'SELECT AVG(rating) as r, COUNT(*) as c FROM reviews WHERE seller_id = $1',
+    [userId]
+  ) as any;
+  const reviewCount = Number(ratingRow?.c ?? 0);
+  const avgRating = Number(ratingRow?.r ?? 0);
+  if (reviewCount >= 3 && avgRating >= 4.5) score += 15;
+  else if (reviewCount >= 3 && avgRating >= 4.0) score += 8;
+
+  // -20 ja aktīvs disputes
+  const disputeRow = await db.get(
+    "SELECT COUNT(*) as c FROM disputes WHERE user_id = $1 AND status = 'open'",
+    [userId]
+  ) as any;
+  if (Number(disputeRow?.c ?? 0) > 0) score -= 20;
+
+  const finalScore = Math.max(0, Math.min(100, score));
+  await db.run('UPDATE users SET trust_score = $1 WHERE id = $2', [finalScore, userId]);
+  return finalScore;
+}
