@@ -154,8 +154,12 @@ export default function ListingDetails() {
   }, [lightboxIndex]);
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
+
+  useEffect(() => {
     if (!emblaApi) return;
-    
+
     emblaApi.on('select', () => {
       setSelectedIndex(emblaApi.selectedScrollSnap());
     });
