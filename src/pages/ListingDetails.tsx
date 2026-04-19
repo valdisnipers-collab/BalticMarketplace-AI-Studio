@@ -1353,34 +1353,68 @@ export default function ListingDetails() {
             className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm overflow-y-auto"
             onClick={() => setShowGrid(false)}
           >
-            <div className="min-h-full px-4 py-16">
-              <button
-                className="fixed top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
-                onClick={() => setShowGrid(false)}
-              >
-                <ChevronLeft className="w-5 h-5 rotate-180" />
-              </button>
-              <p className="text-white/60 text-sm text-center mb-6">{imageUrls.length} attēli</p>
-              <div
-                className="max-w-5xl mx-auto columns-2 md:columns-3 gap-3 space-y-3"
-                onClick={e => e.stopPropagation()}
-              >
-                {imageUrls.map((url, i) => (
-                  <div
-                    key={i}
-                    className="break-inside-avoid cursor-pointer overflow-hidden rounded-lg group relative"
-                    onClick={() => { setShowGrid(false); setLightboxIndex(i); }}
-                  >
-                    <img
-                      src={url}
-                      alt={`Attēls ${i + 1}`}
-                      className="w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg" />
+            {/* Header */}
+            <div
+              className="sticky top-0 z-10 bg-white/40 backdrop-blur-md border-b border-slate-200/30"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 h-16 px-4 max-w-7xl mx-auto">
+                {/* Logo */}
+                <div className="flex items-center shrink-0">
+                  <div className="w-9 h-9 bg-[#E64415] rounded-md flex items-center justify-center">
+                    <span className="text-white font-black text-xl italic">b</span>
                   </div>
-                ))}
+                  <span className="ml-2 text-lg font-bold tracking-tighter text-[#2D1152] hidden sm:block">balticmarket</span>
+                </div>
+
+                <div className="h-7 w-px bg-slate-300/60 hidden sm:block" />
+
+                {/* Title */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-800 font-semibold text-sm truncate leading-tight">{listing?.title}</p>
+                  <p className="text-slate-500 text-xs mt-0.5">{imageUrls.length} attēli</p>
+                </div>
+
+                {/* Price */}
+                {listing?.price != null && (
+                  <div className="shrink-0 text-right hidden sm:block">
+                    <span className="text-slate-900 font-bold text-lg">
+                      {listing.price.toLocaleString('lv-LV')} €
+                    </span>
+                  </div>
+                )}
+
+                {/* Close */}
+                <button
+                  className="shrink-0 w-9 h-9 rounded-full bg-slate-200/60 hover:bg-slate-300/60 text-slate-700 flex items-center justify-center transition-colors text-base font-bold"
+                  onClick={() => setShowGrid(false)}
+                  aria-label="Aizvērt"
+                >
+                  ✕
+                </button>
               </div>
+            </div>
+
+            {/* Grid */}
+            <div
+              className="max-w-5xl mx-auto px-4 py-6 columns-2 md:columns-3 gap-3 space-y-3"
+              onClick={e => e.stopPropagation()}
+            >
+              {imageUrls.map((url, i) => (
+                <div
+                  key={i}
+                  className="break-inside-avoid cursor-pointer overflow-hidden rounded-lg group relative"
+                  onClick={() => { setShowGrid(false); setLightboxIndex(i); }}
+                >
+                  <img
+                    src={url}
+                    alt={`Attēls ${i + 1}`}
+                    className="w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg" />
+                </div>
+              ))}
             </div>
           </motion.div>
         )}
