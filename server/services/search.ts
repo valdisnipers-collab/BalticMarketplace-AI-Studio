@@ -76,10 +76,16 @@ async function searchListingsPostgres(
   `;
   const qp: any[] = [];
 
-  // Full-text keyword search
+  // Full-text keyword search — OR between words so "mekleju bmw" still finds BMW listings
   if (parsed.keywords?.trim()) {
-    sql += ` AND to_tsvector('simple', coalesce(l.title,'') || ' ' || coalesce(l.description,'') || ' ' || coalesce(l.category,'')) @@ plainto_tsquery('simple', ?)`;
-    qp.push(parsed.keywords.trim());
+    const words = parsed.keywords.trim()
+      .split(/\s+/)
+      .map(w => w.replace(/[&|!():*'<>]/g, '').trim())
+      .filter(w => w.length > 1);
+    if (words.length > 0) {
+      sql += ` AND to_tsvector('simple', coalesce(l.title,'') || ' ' || coalesce(l.description,'') || ' ' || coalesce(l.category,'')) @@ to_tsquery('simple', ?)`;
+      qp.push(words.join(' | '));
+    }
   }
 
   // Structured filters from AI
