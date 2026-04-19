@@ -251,16 +251,19 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       const parsed = await aiParseQuery(query as string);
 
       // URL params override AI-detected price/location (user explicitly set them)
-      if (minPrice) parsed.minPrice = Number(minPrice);
-      if (maxPrice) parsed.maxPrice = Number(maxPrice);
+      const parsedMin = parseFloat(minPrice as string);
+      if (isFinite(parsedMin)) parsed.minPrice = parsedMin;
+      const parsedMax = parseFloat(maxPrice as string);
+      if (isFinite(parsedMax)) parsed.maxPrice = parsedMax;
       if (location) parsed.location = (location as string);
 
       // Build legacy filter array for Meilisearch compatibility
+      const VALID_LISTING_TYPES = new Set(['sale', 'auction', 'exchange']);
       const filter: string[] = ['status = "active"'];
       if (parsed.category) filter.push(`category = "${parsed.category.replace(/"/g, '\\"')}"`);
       if (parsed.minPrice != null) filter.push(`price >= ${parsed.minPrice}`);
       if (parsed.maxPrice != null) filter.push(`price <= ${parsed.maxPrice}`);
-      if (listingType && listingType !== 'all') filter.push(`listing_type = "${listingType}"`);
+      if (listingType && listingType !== 'all' && VALID_LISTING_TYPES.has(listingType as string)) filter.push(`listing_type = "${listingType}"`);
 
       const sortArr: string[] = [];
       if (sort === 'price_asc') sortArr.push('price:asc');
