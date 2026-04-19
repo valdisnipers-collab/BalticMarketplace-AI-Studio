@@ -1347,7 +1347,7 @@ export default function ListingDetails() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm overflow-y-auto"
+            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm overflow-y-auto"
             onClick={() => setShowGrid(false)}
           >
             <div className="min-h-full px-4 py-16">
@@ -1393,7 +1393,7 @@ export default function ListingDetails() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             ref={lightboxRef}
-            className="fixed inset-0 z-50 bg-black flex items-center justify-center cursor-zoom-out"
+            className="fixed inset-0 z-[200] bg-black flex items-center justify-center cursor-zoom-out"
             onClick={() => setLightboxIndex(null)}
             onKeyDown={e => {
               if (e.key === 'Escape') setLightboxIndex(null);
