@@ -9,6 +9,12 @@ if (process.env.NODE_ENV === 'production') {
   process.exit(1);
 }
 
+if (!process.argv.includes('--force')) {
+  console.error('FATAL: init-db DROPS ALL DATA. Run with --force flag only on an empty database.');
+  console.error('For schema migrations only, edit runMigrations() directly.');
+  process.exit(1);
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function runMigrations() {
