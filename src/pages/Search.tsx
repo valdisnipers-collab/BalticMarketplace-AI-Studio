@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, Filter, SlidersHorizontal, Heart, Clock, Image as ImageIcon, Star, X, ChevronDown, MapPin, ShieldCheck, Sparkles, Check } from 'lucide-react';
 import { SmartExpandDrawer } from '../components/SmartExpandDrawer';
@@ -251,12 +251,16 @@ export default function Search() {
 
   async function handleCompare() {
     if (selectedIds.size < 2 || compareLoading) return;
+    if (!user) return;
+    const token = localStorage.getItem('auth_token');
     setCompareLoading(true);
     try {
       const res = await fetch('/api/listings/compare', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ ids: Array.from(selectedIds) }),
       });
       if (!res.ok) throw new Error('compare failed');
@@ -264,7 +268,7 @@ export default function Search() {
       setCompareResult(data);
       setComparePanelOpen(true);
     } catch {
-      // silently fail
+      alert('Neizdevās salīdzināt sludinājumus. Lūdzu, mēģiniet vēlreiz.');
     } finally {
       setCompareLoading(false);
     }
@@ -319,6 +323,13 @@ export default function Search() {
   };
 
   const filteredListings = listings; // We now rely on server-side filtering
+
+  const selectedListingCards = useMemo(
+    () => filteredListings
+      .filter(l => selectedIds.has(l.id))
+      .map(l => ({ id: l.id, title: l.title, image_url: l.image_url, price: l.price })),
+    [filteredListings, selectedIds]
+  );
 
   const isEarlyAccess = (createdAt: string) => {
     const created = new Date(createdAt);
@@ -853,9 +864,7 @@ export default function Search() {
         )}
       </div>
       <ListingCompareBar
-        selected={filteredListings
-          .filter(l => selectedIds.has(l.id))
-          .map(l => ({ id: l.id, title: l.title, image_url: l.image_url, price: l.price }))}
+        selected={selectedListingCards}
         onRemove={(id) => setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; })}
         onClear={() => setSelectedIds(new Set())}
         onCompare={handleCompare}
@@ -865,9 +874,7 @@ export default function Search() {
         isOpen={comparePanelOpen}
         onClose={() => setComparePanelOpen(false)}
         result={compareResult}
-        listings={filteredListings
-          .filter(l => selectedIds.has(l.id))
-          .map(l => ({ id: l.id, title: l.title, image_url: l.image_url, price: l.price }))}
+        listings={selectedListingCards}
       />
     </div>
   );
