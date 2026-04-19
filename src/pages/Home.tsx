@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight, Shirt, Baby, Trophy, PawPrint, Bike, Zap, Tent, ArrowRight, Calendar, Fuel, Settings, Truck, Bus, Tractor, Ship, Anchor, Monitor, Laptop, Gamepad2, Flower2, Hammer, Wrench, Watch, Target, Bone, HardHat, Construction, Building2, Warehouse, Trees, Cpu, Gamepad, Dumbbell, FishSymbol, Waves, ChevronDown } from 'lucide-react';
+import { Search, Car, Home as HomeIcon, Smartphone, Briefcase, Sofa, MoreHorizontal, MapPin, Image as ImageIcon, Heart, Star, Sparkles, ShieldCheck, Lock, Headphones, ChevronRight, Shirt, Baby, Trophy, PawPrint, Bike, Zap, Tent, ArrowRight, Calendar, Fuel, Settings, Truck, Bus, Tractor, Ship, Anchor, Monitor, Laptop, Gamepad2, Flower2, Hammer, Wrench, Watch, Target, Bone, HardHat, Construction, Building2, Warehouse, Trees, Cpu, Gamepad, Dumbbell, FishSymbol, Waves, ChevronDown, Clock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Helmet } from 'react-helmet-async';
 import { Button } from '@/components/ui/button';
@@ -465,19 +465,26 @@ export default function Home() {
     }
   };
 
+  const isEarlyAccess = (createdAt: string) => {
+    const created = new Date(createdAt);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+    return diffMinutes <= 15;
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams();
     if (searchQuery.trim()) params.set('q', searchQuery.trim());
     if (locationQuery.trim()) params.set('location', locationQuery.trim());
-    
+
     // Add category-specific filters
     Object.entries(searchFilters).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
-    
+
     params.set('category', activeCategory.name);
-    
+
     navigate(`/search?${params.toString()}`);
   };
 
@@ -727,17 +734,33 @@ export default function Home() {
               <Heart className={`w-5 h-5 transition-colors ${isFavorite ? 'fill-[#E64415] text-[#E64415]' : 'text-slate-400'}`} />
             </Button>
 
-            {listing.ai_trust_score !== undefined && (
-              <div className={cn(
-                "absolute top-3 left-3 text-[10px] font-black px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg z-10",
-                listing.ai_trust_score >= 80 ? "bg-emerald-500 text-white" :
-                listing.ai_trust_score >= 50 ? "bg-amber-500 text-white" :
-                "bg-red-500 text-white"
-              )}>
-                <ShieldCheck className="w-3 h-3" />
-                {listing.ai_trust_score}%
-              </div>
-            )}
+            <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+              {listing.is_highlighted ? (
+                <Badge variant="default" className="bg-amber-400 text-amber-950 hover:bg-amber-500 font-bold shadow-sm text-[10px]">
+                  <Star className="w-3 h-3 mr-1 fill-current" />
+                  TOP
+                </Badge>
+              ) : isEarlyAccess(listing.created_at) ? (
+                <Badge variant="default" className="bg-indigo-500 text-white hover:bg-indigo-600 font-bold shadow-sm text-[10px]">
+                  <Clock className="w-3 h-3 mr-1" />
+                  Agrā piekļuve
+                </Badge>
+              ) : null}
+              {listing.ai_trust_score !== undefined && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "border-none font-bold shadow-sm text-[10px]",
+                    listing.ai_trust_score >= 80 ? "bg-emerald-500 text-white" :
+                    listing.ai_trust_score >= 50 ? "bg-amber-500 text-white" :
+                    "bg-red-500 text-white"
+                  )}
+                >
+                  <ShieldCheck className="w-3 h-3 mr-1" />
+                  {listing.ai_trust_score}%
+                </Badge>
+              )}
+            </div>
           </div>
           
           <div className="py-4 flex flex-col h-full">

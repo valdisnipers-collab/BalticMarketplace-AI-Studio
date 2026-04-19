@@ -511,27 +511,23 @@ export default function Search() {
                         <ImageIcon className="w-12 h-12 opacity-20" />
                       </div>
                     )}
-                    <div className="absolute top-3 left-3 flex flex-col gap-2">
+                    <div className="absolute top-3 left-3 flex flex-col gap-1.5">
                       {listing.is_highlighted ? (
-                        <Badge variant="default" className="bg-amber-400 text-amber-950 hover:bg-amber-500 font-bold shadow-sm">
+                        <Badge variant="default" className="bg-amber-400 text-amber-950 hover:bg-amber-500 font-bold shadow-sm text-[10px]">
                           <Star className="w-3 h-3 mr-1 fill-current" />
                           TOP
                         </Badge>
-                      ) : null}
-                      {isEarlyAccess(listing.created_at) && (
-                        <Badge variant="default" className="bg-indigo-500 text-white hover:bg-indigo-600 font-bold shadow-sm">
+                      ) : isEarlyAccess(listing.created_at) ? (
+                        <Badge variant="default" className="bg-indigo-500 text-white hover:bg-indigo-600 font-bold shadow-sm text-[10px]">
                           <Clock className="w-3 h-3 mr-1" />
                           Agrā piekļuve
                         </Badge>
-                      )}
-                      <Badge variant="secondary" className="bg-white/90 backdrop-blur-sm text-slate-700 hover:bg-white font-semibold shadow-sm">
-                        {listing.category}
-                      </Badge>
+                      ) : null}
                       {listing.ai_trust_score !== undefined && (
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className={cn(
-                            "border-none font-bold shadow-sm",
+                            "border-none font-bold shadow-sm text-[10px]",
                             listing.ai_trust_score >= 80 ? "bg-emerald-500 text-white" :
                             listing.ai_trust_score >= 50 ? "bg-amber-500 text-white" :
                             "bg-red-500 text-white"
