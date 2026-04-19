@@ -242,22 +242,25 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
   // GET /api/listings/search
   router.get('/search', async (req, res) => {
     try {
-      const { q: query, category, subcategory, minPrice, maxPrice, sort, location, listingType } = req.query;
-      if (!query) return res.json([]);
+      const { q: query, minPrice, maxPrice, sort, location, listingType } = req.query;
+      if (!query) return res.json({ listings: [], aiSummary: '' });
 
       const { hasAccess, userId } = await hasEarlyAccess(req);
 
-      const rawQuery = query as string;
-      const isNL = rawQuery.length > 10 && rawQuery.includes(' ');
-      const parsed = isNL ? await aiParseQuery(rawQuery) : { keywords: rawQuery, category: null, minPrice: null, maxPrice: null, location: null, summary: '' };
-      const searchQuery = parsed.keywords;
+      // AI structured parsing — always, for every query
+      const parsed = await aiParseQuery(query as string);
 
+      // URL params override AI-detected price/location (user explicitly set them)
+      if (minPrice) parsed.minPrice = Number(minPrice);
+      if (maxPrice) parsed.maxPrice = Number(maxPrice);
+      if (location) parsed.location = (location as string);
+
+      // Build legacy filter array for Meilisearch compatibility
       const filter: string[] = ['status = "active"'];
-      if (category) filter.push(`category = "${(category as string).replace(/"/g, '\\"')}"`);
-      if (subcategory) filter.push(`subcategory = "${(subcategory as string).replace(/"/g, '\\"')}"`);
+      if (parsed.category) filter.push(`category = "${parsed.category.replace(/"/g, '\\"')}"`);
+      if (parsed.minPrice != null) filter.push(`price >= ${parsed.minPrice}`);
+      if (parsed.maxPrice != null) filter.push(`price <= ${parsed.maxPrice}`);
       if (listingType && listingType !== 'all') filter.push(`listing_type = "${listingType}"`);
-      if (minPrice) filter.push(`price >= ${Number(minPrice)}`);
-      if (maxPrice) filter.push(`price <= ${Number(maxPrice)}`);
 
       const sortArr: string[] = [];
       if (sort === 'price_asc') sortArr.push('price:asc');
@@ -266,6 +269,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
 
       let hits = await searchListings({ parsed, filter, sort: sortArr });
 
+      // 15-minute early access filter
       if (!hasAccess) {
         const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
         hits = hits.filter(h => {
@@ -274,12 +278,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
         });
       }
 
-      if (location) {
-        const loc = (location as string).toLowerCase();
-        hits = hits.filter(h => h.location?.toLowerCase().includes(loc));
-      }
-
-      res.json(hits);
+      res.json({ listings: hits, aiSummary: parsed.summary });
     } catch (error) {
       console.error('Error searching listings:', error);
       res.status(500).json({ error: 'Server error searching listings' });
