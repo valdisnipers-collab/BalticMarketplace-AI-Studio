@@ -23,7 +23,21 @@ async function main() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 50
   `);
 
-  console.log('[MIGRATE] Phase 2 migrations applied successfully');
+  // Phase 6: user_strikes table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_strikes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      listing_id BIGINT REFERENCES listings(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL DEFAULT 'auction_non_payment',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS user_strikes_user_idx ON user_strikes(user_id)
+  `);
+
+  console.log('[MIGRATE] Phase 2 + Phase 6 migrations applied successfully');
   await pool.end();
   process.exit(0);
 }

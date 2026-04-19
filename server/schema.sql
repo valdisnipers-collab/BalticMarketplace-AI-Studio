@@ -329,3 +329,14 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS quality_score INTEGER DEFAULT 0;
 
 -- Trust score kolonna uz users (0-100, bāze 50)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 50;
+
+-- User strikes (auction non-payment penalties)
+CREATE TABLE IF NOT EXISTS user_strikes (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  listing_id BIGINT REFERENCES listings(id) ON DELETE SET NULL,
+  reason TEXT NOT NULL DEFAULT 'auction_non_payment',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS user_strikes_user_idx ON user_strikes(user_id);

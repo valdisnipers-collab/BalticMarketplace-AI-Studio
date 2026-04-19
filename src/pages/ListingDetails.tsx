@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { io, Socket } from 'socket.io-client';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
@@ -47,6 +48,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { parseImages } from '../lib/utils';
 import { TrustScoreBadge } from '../components/TrustScoreBadge';
+import { AuctionCountdown } from '../components/AuctionCountdown';
 
 interface ListingDetails {
   id: number;
@@ -93,6 +95,8 @@ export default function ListingDetails() {
   const [listing, setListing] = useState<ListingDetails | null>(null);
   const [sellerBadges, setSellerBadges] = useState<any[]>([]);
   const [sellerStore, setSellerStore] = useState<any>(null);
+  const [auctionEndDate, setAuctionEndDate] = useState<string | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [bids, setBids] = useState<Bid[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,6 +157,9 @@ export default function ListingDetails() {
           .catch(() => {});
 
         const parsedAttributes = data.attributes ? JSON.parse(data.attributes) : null;
+        if (parsedAttributes?.auctionEndDate) {
+          setAuctionEndDate(parsedAttributes.auctionEndDate);
+        }
         if (parsedAttributes?.saleType === 'auction') {
           const bidsRes = await fetch(`/api/listings/${id}/bids`);
           if (bidsRes.ok) {
@@ -189,6 +196,27 @@ export default function ListingDetails() {
 
     fetchListingAndReviews();
   }, [id, user]);
+
+  useEffect(() => {
+    if (!id) return;
+    const socket = io();
+    socketRef.current = socket;
+    socket.emit('join_auction', id);
+    socket.on('auction_extended', (data: any) => {
+      if (String(data.listing_id) === String(id)) {
+        setAuctionEndDate(data.new_end_date);
+      }
+    });
+    socket.on('new_bid', (data: any) => {
+      if (String(data.listing_id) === String(id)) {
+        fetch(`/api/listings/${id}/bids`)
+          .then(r => r.ok ? r.json() : [])
+          .then(setBids)
+          .catch(() => {});
+      }
+    });
+    return () => { socket.disconnect(); };
+  }, [id]);
 
   const toggleFavorite = async () => {
     if (!user) {
@@ -771,6 +799,15 @@ export default function ListingDetails() {
                         {t('listing.startingPrice')}: €{listing.price.toLocaleString()} • {bids.length} {t('listing.bids')}
                       </div>
                     </div>
+
+                    {auctionEndDate && !isAuctionEnded && (
+                      <div className="mb-4">
+                        <AuctionCountdown
+                          endDate={auctionEndDate}
+                          onExtended={setAuctionEndDate}
+                        />
+                      </div>
+                    )}
 
                     {isAuctionEnded ? (
                       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center mb-6">

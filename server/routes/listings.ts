@@ -605,6 +605,18 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
         return res.status(400).json({ error: 'This listing is not an auction' });
       }
 
+      // Strikes check — block bidding if 3+ strikes
+      const strikesRow = await db.get(
+        'SELECT COUNT(*) as c FROM user_strikes WHERE user_id = $1',
+        [decoded.userId]
+      ) as any;
+      const strikes = Number(strikesRow?.c ?? 0);
+      if (strikes >= 3) {
+        return res.status(403).json({
+          error: 'Tev ir 3 vai vairāk brīdinājumi. Sazinies ar administrāciju lai atbloķētu kontu.'
+        });
+      }
+
       const highestBid = await db.get('SELECT MAX(amount) as maxAmount FROM bids WHERE listing_id = ?', [listingId]) as { maxAmount: number | null };
       const currentHighest = highestBid.maxAmount !== null ? highestBid.maxAmount : listing.price;
 
@@ -612,15 +624,21 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
         return res.status(400).json({ error: `Bid must be higher than current highest bid: €${currentHighest}` });
       }
 
-      if (attributes.auctionEndDate) {
-        const endDate = new Date(attributes.auctionEndDate);
+      let auctionEndDate = attributes.auctionEndDate;
+      if (auctionEndDate) {
+        const endDate = new Date(auctionEndDate);
         const now = new Date();
         const timeDiffMs = endDate.getTime() - now.getTime();
 
         if (timeDiffMs > 0 && timeDiffMs < 3 * 60 * 1000) {
           const newEndDate = new Date(now.getTime() + 3 * 60 * 1000);
-          attributes.auctionEndDate = newEndDate.toISOString();
+          auctionEndDate = newEndDate.toISOString();
+          attributes.auctionEndDate = auctionEndDate;
           await db.run('UPDATE listings SET attributes = ? WHERE id = ?', [JSON.stringify(attributes), listingId]);
+          io.to(`auction_${listingId}`).emit('auction_extended', {
+            listing_id: parseInt(listingId),
+            new_end_date: auctionEndDate,
+          });
         }
       }
 
@@ -636,6 +654,12 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
       io.emit('new_bid', {
         listingId: parseInt(listingId),
         bid: newBid,
+      });
+      io.to(`auction_${listingId}`).emit('new_bid', {
+        listing_id: parseInt(listingId),
+        amount,
+        bidder_name: newBid.bidder_name,
+        auction_end_date: auctionEndDate,
       });
 
       await db.run(`

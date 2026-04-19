@@ -70,6 +70,10 @@ async function startServer() {
       console.log(`User ${userId} joined room user_${userId}`);
     });
 
+    socket.on("join_auction", (listingId) => {
+      socket.join(`auction_${listingId}`);
+    });
+
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
     });
