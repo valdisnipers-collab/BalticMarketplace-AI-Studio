@@ -636,17 +636,26 @@ export default function ListingDetails() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-slate-100">
               {parsedAttributes && Object.entries(parsedAttributes).map(([key, value]) => {
                 if (['features', 'saleType', 'subcategory'].includes(key) || !value) return null;
-                
-                // Find the label for this attribute key
-                let label = key;
+
+                const ATTR_LV: Record<string, string> = {
+                  make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Gads',
+                  mileage: 'Nobraukums', fuel: 'Degviela', transmission: 'Ātrumkārba',
+                  engine: 'Dzinējs', power: 'Jauda', bodyType: 'Virsbūves tips', color: 'Krāsa',
+                  condition: 'Stāvoklis', type: 'Tips', area: 'Platība', rooms: 'Istabas',
+                  floor: 'Stāvs', total_floors: 'Kopā stāvi', series: 'Sērija',
+                  storage: 'Atmiņa', size: 'Izmērs', experience: 'Pieredze',
+                  availability: 'Pieejamība', age_from: 'Vecums no', age_group: 'Vecuma grupa',
+                  frameSize: 'Rāmja izmērs', length: 'Garums', berths: 'Gultas vietas',
+                  weight: 'Svars', material: 'Materiāls',
+                };
+
+                let label = ATTR_LV[key] || key;
                 const categorySchema = CATEGORY_SCHEMAS[listing.category];
                 if (categorySchema) {
                   const subcategorySchema = categorySchema.subcategories[parsedAttributes.subcategory || ''];
                   if (subcategorySchema) {
-                    const field = subcategorySchema.fields.find(f => f.name === key);
-                    if (field) {
-                      label = field.label;
-                    }
+                    const field = subcategorySchema.fields.find((f: { name: string; label: string }) => f.name === key);
+                    if (field) label = field.label;
                   }
                 }
 
