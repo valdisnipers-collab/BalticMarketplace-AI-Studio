@@ -490,50 +490,47 @@ export default function ListingDetails() {
         {imageUrls.length > 0 && <meta property="og:image" content={imageUrls[0]} />}
       </Helmet>
 
-      {/* Top Navigation Bar */}
-      <div className="sticky top-16 z-40 bg-white border-b border-slate-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link to="/search" className="group flex items-center text-sm font-semibold text-slate-500 hover:text-primary-600 transition-colors">
-            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+      <div className="max-w-7xl mx-auto px-6 pt-4">
+        {/* Slim inline nav — replaces second header */}
+        <div className="flex items-center justify-between mb-5">
+          <button
+            onClick={() => navigate(-1)}
+            className="group flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
             {t('add.back')}
-          </Link>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
+          </button>
+          <div className="flex items-center gap-0.5">
+            <button
               onClick={toggleFavorite}
-              className={isFavorite ? 'bg-red-50 border-red-100 text-red-500 hover:bg-red-100 hover:text-red-600' : ''}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${isFavorite ? 'text-red-500' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+              title="Saglabāt favorītos"
             >
-              <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
+              <Heart className={`w-4.5 h-4.5 ${isFavorite ? 'fill-current' : ''}`} />
+            </button>
+            <button
               onClick={toggleCompare}
-              className={listing && compareIds.includes(listing.id) ? 'bg-violet-50 border-violet-200 text-violet-600' : ''}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${compareIds.includes(listing.id) ? 'text-violet-600' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
               title="Salīdzināt"
             >
-              <BarChart2 className="w-5 h-5" />
-            </Button>
+              <BarChart2 className="w-4.5 h-4.5" />
+            </button>
             {compareIds.length >= 2 && (
               <Link
                 to={`/compare?ids=${compareIds.join(',')}`}
-                className="text-xs px-3 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600 transition-colors font-medium"
+                className="text-xs px-3 py-1.5 bg-violet-500 text-white rounded-full hover:bg-violet-600 transition-colors font-medium ml-1"
               >
                 Salīdzināt ({compareIds.length})
               </Link>
             )}
-            <Button variant="outline" size="icon">
-              <Share2 className="w-5 h-5" />
-            </Button>
-            <Button variant="outline" size="icon" className="hover:text-red-500 hover:border-red-200">
-              <Flag className="w-5 h-5" />
-            </Button>
+            <button className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors" title="Kopīgot">
+              <Share2 className="w-4.5 h-4.5" />
+            </button>
+            <button className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Ziņot">
+              <Flag className="w-4.5 h-4.5" />
+            </button>
           </div>
         </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-6 pt-12">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
           
           {/* Left Column: Media & Details */}
