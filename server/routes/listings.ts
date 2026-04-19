@@ -1259,6 +1259,14 @@ Atbildi TIKAI JSON formātā (bez markdown):
       const text = (response.text || '').trim().replace(/```json|```/g, '').trim();
       const result = JSON.parse(text);
 
+      if (
+        result.bestPickId === undefined ||
+        result.overallSummary === undefined ||
+        !Array.isArray(result.rankings)
+      ) {
+        return res.status(500).json({ error: 'Salīdzināšana neizdevās' });
+      }
+
       res.json(result);
     } catch (e) {
       console.error('[COMPARE]', e);
