@@ -1250,8 +1250,8 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2 }}
             >
-              {/* Featured horizontal scroll — only shown when highlighted listings exist */}
-              {featuredListings.length > 0 && (
+              {/* Featured horizontal scroll — shown during loading or when highlighted listings exist */}
+              {(loading || featuredListings.length > 0) && (
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
