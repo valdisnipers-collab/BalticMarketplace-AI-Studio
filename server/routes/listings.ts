@@ -1,0 +1,873 @@
+import { Router } from 'express';
+import path from 'path';
+import fs from 'fs';
+import jwt from 'jsonwebtoken';
+import db from '../pg';
+import { requireAuth, JWT_SECRET } from '../utils/auth';
+import { getGenAI } from '../utils/ai';
+import { geocodeLocation } from '../utils/geocode';
+import { GoogleGenAI } from '@google/genai';
+import { cached, invalidate, invalidatePattern } from '../services/redis';
+import { syncListing, removeListing, searchListings } from '../services/search';
+import { sendEmail, emailTemplates } from '../services/email';
+import { validateBody, listingSchema } from '../middleware/validate';
+import type { Server as SocketIOServer } from 'socket.io';
+
+const uploadsDir = path.join(process.cwd(), 'uploads');
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+export async function hasEarlyAccess(req: any): Promise<{ hasAccess: boolean; userId: number | null }> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return { hasAccess: false, userId: null };
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+    const user = await db.get('SELECT early_access_until FROM users WHERE id = ?', [decoded.userId]) as any;
+    if (user && user.early_access_until) {
+      const earlyAccessUntil = new Date(user.early_access_until);
+      if (earlyAccessUntil > new Date()) {
+        return { hasAccess: true, userId: decoded.userId };
+      }
+    }
+    return { hasAccess: false, userId: decoded.userId };
+  } catch (e) {
+    return { hasAccess: false, userId: null };
+  }
+}
+
+async function moderateListing(listingId: number | bigint, title: string, description: string, price: number) {
+  try {
+    if (!process.env.GEMINI_API_KEY) return;
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const prompt = `Esi pieredzējis sludinājumu portāla moderators un krāpniecības apkarošanas eksperts. Analizē šo sludinājumu un sniedz detalizētu drošības novērtējumu.
+
+      Virsraksts: ${title}
+      Apraksts: ${description}
+      Cena: ${price} EUR
+
+      Pārbaudi šādus riskus:
+      1. Krāpniecības pazīmes (pārāk zema cena, aizdomīgi kontakti, steidzamība).
+      2. Phishing saites vai aizdomīgi ārējie resursi.
+      3. Aizliegts saturs (narkotikas, ieroči, lamuvārdi, naida runa).
+      4. Neadekvāta cena attiecībā pret aprakstīto preci.
+      5. Maldinoša informācija.
+
+      Atbildi TIKAI JSON formātā:
+      {
+        "isFlagged": boolean,
+        "reason": "īss, profesionāls paskaidrojums latviešu valodā",
+        "trustScore": number (0-100, kur 100 ir pilnīgi drošs),
+        "status": "approved" | "flagged" | "pending_review"
+      }`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+    });
+
+    const resultText = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || '{}';
+    const result = JSON.parse(resultText);
+
+    await db.run(`
+      UPDATE listings
+      SET ai_trust_score = ?,
+          ai_moderation_status = ?,
+          ai_moderation_reason = ?,
+          status = CASE WHEN ? = 'flagged' THEN 'flagged' ELSE status END
+      WHERE id = ?
+    `, [
+      result.trustScore || 100,
+      result.status || 'approved',
+      result.reason || null,
+      result.status,
+      listingId,
+    ]);
+
+    if (result.isFlagged || result.status === 'flagged') {
+      console.log(`[AI MODERATION] Listing ${listingId} flagged. Reason: ${result.reason}`);
+      await db.run(`
+        INSERT INTO reports (reporter_id, listing_id, reason, status)
+        VALUES (1, ?, ?, 'pending')
+      `, [listingId, `AI Moderācija: ${result.reason} (Uzticamība: ${result.trustScore}%)`]);
+    }
+  } catch (error) {
+    console.error('Error in AI moderation:', error);
+  }
+}
+
+async function checkSavedSearchesAndNotify(listingId: number | bigint, listingData: any) {
+  try {
+    const savedSearches = await db.all('SELECT * FROM saved_searches', []) as any[];
+
+    for (const search of savedSearches) {
+      let match = true;
+
+      if (search.category && search.category !== listingData.category) match = false;
+      if (match && search.min_price && listingData.price < search.min_price) match = false;
+      if (match && search.max_price && listingData.price > search.max_price) match = false;
+      if (match && search.query && !listingData.title.toLowerCase().includes(search.query.toLowerCase())) match = false;
+
+      if (match) {
+        await db.run(`
+          INSERT INTO notifications (user_id, type, title, message, link)
+          VALUES (?, 'saved_search_match', 'Jauns sludinājums jūsu meklējumam', ?, ?)
+        `, [
+          search.user_id,
+          `Atrasts jauns sludinājums "${listingData.title}" par €${listingData.price}.`,
+          `/listing/${listingId}`,
+        ]);
+
+        const user = await db.get('SELECT email, name FROM users WHERE id = ?', [search.user_id]) as any;
+        if (user?.email) {
+          const tmpl = emailTemplates.newListingMatch(user.name || user.username, listingData.title, Number(listingData.price), Number(listingId));
+          sendEmail(user.email, tmpl.subject, tmpl.html).catch(e => console.error('Email error:', e));
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking saved searches:', error);
+  }
+}
+
+// ── router factory ───────────────────────────────────────────────────────────
+
+export function createListingsRouter(deps: { io: SocketIOServer }) {
+  const { io } = deps;
+  const router = Router();
+
+  // GET /api/listings/search
+  router.get('/search', async (req, res) => {
+    try {
+      const { q: query, category, subcategory, minPrice, maxPrice, sort, location, listingType } = req.query;
+      if (!query) return res.json([]);
+
+      const { hasAccess, userId } = await hasEarlyAccess(req);
+
+      const filter: string[] = ['status = "active"'];
+      if (category) filter.push(`category = "${(category as string).replace(/"/g, '\\"')}"`);
+      if (subcategory) filter.push(`subcategory = "${(subcategory as string).replace(/"/g, '\\"')}"`);
+      if (listingType && listingType !== 'all') filter.push(`listing_type = "${listingType}"`);
+      if (minPrice) filter.push(`price >= ${Number(minPrice)}`);
+      if (maxPrice) filter.push(`price <= ${Number(maxPrice)}`);
+
+      const sortArr: string[] = [];
+      if (sort === 'price_asc') sortArr.push('price:asc');
+      else if (sort === 'price_desc') sortArr.push('price:desc');
+      else sortArr.push('created_at:desc');
+
+      let hits = await searchListings({ q: query as string, filter, sort: sortArr });
+
+      if (!hasAccess) {
+        const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        hits = hits.filter(h => {
+          if (userId && h.user_id === userId) return true;
+          return h.created_at <= fifteenMinAgo;
+        });
+      }
+
+      if (location) {
+        const loc = (location as string).toLowerCase();
+        hits = hits.filter(h => h.location?.toLowerCase().includes(loc));
+      }
+
+      res.json(hits);
+    } catch (error) {
+      console.error('Error searching listings:', error);
+      res.status(500).json({ error: 'Server error searching listings' });
+    }
+  });
+
+  // GET /api/listings
+  router.get('/', async (req, res) => {
+    try {
+      const { category, subcategory, minPrice, maxPrice, sort, location, listingType, lat, lng, radius, ...restQuery } = req.query;
+      const { hasAccess, userId } = await hasEarlyAccess(req);
+
+      let query = `
+        SELECT listings.*, users.name as author_name
+        FROM listings
+        JOIN users ON listings.user_id = users.id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (!hasAccess) {
+        if (userId) {
+          query += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
+          params.push(userId);
+        } else {
+          query += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
+        }
+      }
+
+      if (category) {
+        query += ` AND category = ?`;
+        params.push(category);
+      }
+      if (subcategory) {
+        query += ` AND (attributes::json)->>'subcategory' = ?`;
+        params.push(subcategory);
+      }
+      if (listingType && listingType !== 'all') {
+        query += ` AND listing_type = ?`;
+        params.push(listingType);
+      }
+      if (minPrice) {
+        query += ` AND price >= ?`;
+        params.push(Number(minPrice));
+      }
+      if (maxPrice) {
+        query += ` AND price <= ?`;
+        params.push(Number(maxPrice));
+      }
+      if (location) {
+        query += ` AND location ILIKE ?`;
+        params.push(`%${location}%`);
+      }
+      if (lat && lng && radius) {
+        const latF = parseFloat(lat as string);
+        const lngF = parseFloat(lng as string);
+        const radiusKm = parseFloat(radius as string);
+        const latDelta = radiusKm / 111.0;
+        const lngDelta = radiusKm / (111.0 * Math.cos(latF * Math.PI / 180));
+        query += ` AND lat BETWEEN ${latF - latDelta} AND ${latF + latDelta}`;
+        query += ` AND lng BETWEEN ${lngF - lngDelta} AND ${lngF + lngDelta}`;
+      }
+
+      for (const [key, value] of Object.entries(restQuery)) {
+        if (key.startsWith('attr_') && value) {
+          const attrName = key.replace('attr_', '');
+          query += ` AND (attributes::json)->>? = ?`;
+          params.push(attrName, value);
+        }
+      }
+
+      if (sort === 'price_asc') {
+        query += ` ORDER BY listings.is_highlighted DESC, listings.price ASC`;
+      } else if (sort === 'price_desc') {
+        query += ` ORDER BY listings.is_highlighted DESC, listings.price DESC`;
+      } else {
+        query += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
+      }
+
+      const listings = await db.all(query, params);
+      res.json(listings);
+    } catch (error) {
+      console.error('Error fetching listings:', error);
+      res.status(500).json({ error: 'Server error fetching listings' });
+    }
+  });
+
+  // POST /api/listings
+  router.post('/', requireAuth, validateBody(listingSchema), async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url } = req.body;
+
+      if (!title || price === undefined || !category) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      const info = await db.run(
+        'INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, video_url || null],
+      );
+
+      const listingId = info.lastInsertRowid;
+
+      try {
+        await db.run('UPDATE users SET points = points + 50 WHERE id = ?', [decoded.userId]);
+        await db.run('INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, 50, 'Sludinājuma pievienošana']);
+      } catch (pointsError) {
+        console.error('Error rewarding points for listing:', pointsError);
+      }
+
+      setTimeout(() => {
+        checkSavedSearchesAndNotify(listingId as number, { title, price, category, attributes }).catch(e => console.error('[saved-search-notify]', e));
+      }, 0);
+
+      setTimeout(() => {
+        moderateListing(listingId as number, title, description, price).catch(e => console.error('[moderate-listing]', e));
+      }, 0);
+
+      if (location) {
+        geocodeLocation(location).then(async coords => {
+          if (coords) {
+            await db.run('UPDATE listings SET lat = ?, lng = ? WHERE id = ?', [coords.lat, coords.lng, listingId]);
+          }
+        }).catch(e => console.error('[geocode]', e));
+      }
+
+      if (process.env.MEILISEARCH_HOST) {
+        const author = await db.get<{ name: string; username: string }>(
+          'SELECT name, username FROM users WHERE id = ?', [decoded.userId],
+        );
+        syncListing({
+          id: Number(info.lastInsertRowid),
+          user_id: decoded.userId,
+          title,
+          description: description || '',
+          price: Number(price),
+          category,
+          subcategory: (attributes && typeof attributes === 'object' ? (attributes as any).subcategory : null) || null,
+          listing_type: listing_type || 'sale',
+          status: 'active',
+          location: location || null,
+          image_url: image_url || null,
+          author_name: author?.name || author?.username || '',
+          created_at: new Date().toISOString(),
+          lat: null,
+          lng: null,
+        }).catch(e => console.error('[SEARCH SYNC CREATE]', e));
+      }
+
+      invalidatePattern('listings:home:*').catch(e => console.error('Cache invalidation error:', e));
+      res.json({ id: listingId, message: 'Listing created successfully' });
+    } catch (error) {
+      console.error('Error creating listing:', error);
+      res.status(500).json({ error: 'Server error while creating listing' });
+    }
+  });
+
+  // GET /api/listings/:id
+  router.get('/:id', async (req, res) => {
+    try {
+      const { hasAccess, userId } = await hasEarlyAccess(req);
+
+      let sql = `
+        SELECT listings.*, users.name as author_name, users.email as author_email
+        FROM listings
+        JOIN users ON listings.user_id = users.id
+        WHERE listings.id = ?
+      `;
+      const params: any[] = [req.params.id];
+
+      if (!hasAccess) {
+        if (userId) {
+          sql += ` AND (listings.created_at <= NOW() - INTERVAL '15 minutes' OR listings.user_id = ?)`;
+          params.push(userId);
+        } else {
+          sql += ` AND listings.created_at <= NOW() - INTERVAL '15 minutes'`;
+        }
+      }
+
+      const listing = await db.get(sql, params);
+
+      if (!listing) return res.status(404).json({ error: 'Listing not found or not available yet' });
+      res.json(listing);
+    } catch (error) {
+      console.error('Error fetching listing:', error);
+      res.status(500).json({ error: 'Server error fetching listing' });
+    }
+  });
+
+  // PUT /api/listings/:id
+  router.put('/:id', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const listingId = req.params.id;
+      const { title, description, price, category, image_url, location, is_auction, auction_end_date, listing_type, exchange_for } = req.body;
+
+      const listing = await db.get('SELECT user_id, price, title FROM listings WHERE id = ?', [listingId]) as { user_id: number; price: number; title: string } | undefined;
+
+      if (!listing) return res.status(404).json({ error: 'Listing not found' });
+      if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to edit this listing' });
+
+      await db.run(`
+        UPDATE listings
+        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?, listing_type = ?, exchange_for = ?
+        WHERE id = ?
+      `, [title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, listingId]);
+
+      if (price < listing.price) {
+        const favoritedUsers = await db.all('SELECT user_id FROM favorites WHERE listing_id = ?', [listingId]) as { user_id: number }[];
+        const message = `Great news! The price for "${listing.title}" has dropped from €${listing.price} to €${price}.`;
+        const link = `/listing/${listingId}`;
+
+        await db.transaction(async (client) => {
+          for (const user of favoritedUsers) {
+            await db.clientRun(client, `
+              INSERT INTO notifications (user_id, type, title, message, link)
+              VALUES (?, 'system', 'Price Drop Alert!', ?, ?)
+            `, [user.user_id, message, link]);
+          }
+        });
+      }
+
+      if (process.env.MEILISEARCH_HOST) {
+        db.get<any>(
+          'SELECT l.*, u.name as author_name, u.username FROM listings l JOIN users u ON l.user_id = u.id WHERE l.id = ?',
+          [listingId],
+        ).then(updatedDoc => {
+          if (!updatedDoc) return;
+          const attrs = updatedDoc.attributes
+            ? (typeof updatedDoc.attributes === 'string' ? JSON.parse(updatedDoc.attributes) : updatedDoc.attributes)
+            : {};
+          syncListing({
+            id: Number(listingId),
+            user_id: updatedDoc.user_id,
+            title: updatedDoc.title,
+            description: updatedDoc.description || '',
+            price: Number(updatedDoc.price),
+            category: updatedDoc.category,
+            subcategory: attrs.subcategory || null,
+            listing_type: updatedDoc.listing_type,
+            status: updatedDoc.status || 'active',
+            location: updatedDoc.location || null,
+            image_url: updatedDoc.image_url || null,
+            author_name: updatedDoc.author_name || updatedDoc.username || '',
+            created_at: updatedDoc.created_at,
+            lat: updatedDoc.lat || null,
+            lng: updatedDoc.lng || null,
+          }).catch(e => console.error('[SEARCH SYNC UPDATE]', e));
+        }).catch(e => console.error('[SEARCH SYNC UPDATE FETCH]', e));
+      }
+
+      res.json({ message: 'Listing updated successfully' });
+    } catch (error) {
+      console.error('Error updating listing:', error);
+      res.status(500).json({ error: 'Server error updating listing' });
+    }
+  });
+
+  // DELETE /api/listings/:id
+  router.delete('/:id', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const listingId = req.params.id;
+
+      const listing = await db.get('SELECT user_id FROM listings WHERE id = ?', [listingId]) as { user_id: number } | undefined;
+
+      if (!listing) return res.status(404).json({ error: 'Listing not found' });
+      if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to delete this listing' });
+
+      await db.run('DELETE FROM listings WHERE id = ?', [listingId]);
+      if (process.env.MEILISEARCH_HOST) {
+        removeListing(Number(listingId)).catch(e => console.error('[SEARCH SYNC DELETE]', e));
+      }
+      invalidatePattern('listings:home:*').catch(e => console.error('Cache invalidation error:', e));
+      invalidate(`listing:${listingId}`).catch(e => console.error('Cache invalidation error:', e));
+      res.json({ message: 'Listing deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting listing:', error);
+      res.status(500).json({ error: 'Server error while deleting listing' });
+    }
+  });
+
+  // POST /api/listings/:id/highlight
+  router.post('/:id/highlight', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const listingId = req.params.id;
+
+      const listing = await db.get('SELECT user_id, is_highlighted FROM listings WHERE id = ?', [listingId]) as any;
+
+      if (!listing) return res.status(404).json({ error: 'Listing not found' });
+      if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
+      if (listing.is_highlighted) return res.status(400).json({ error: 'Listing is already highlighted' });
+
+      const user = await db.get('SELECT points FROM users WHERE id = ?', [decoded.userId]) as any;
+      if (!user || user.points < 100) {
+        return res.status(400).json({ error: 'Nepietiekams punktu skaits (nepieciešami 100 punkti)' });
+      }
+
+      await db.transaction(async (client) => {
+        await db.clientRun(client, 'UPDATE users SET points = points - 100 WHERE id = ?', [decoded.userId]);
+        await db.clientRun(client, 'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, -100, `Sludinājuma #${listingId} izcelšana`]);
+        await db.clientRun(client, 'UPDATE listings SET is_highlighted = 1 WHERE id = ?', [listingId]);
+      });
+
+      const updatedUser = await db.get('SELECT points FROM users WHERE id = ?', [decoded.userId]) as any;
+      res.json({ message: 'Sludinājums izcelts veiksmīgi', points: updatedUser.points });
+    } catch (error) {
+      console.error('Error highlighting listing:', error);
+      res.status(500).json({ error: 'Server error highlighting listing' });
+    }
+  });
+
+  // POST /api/listings/:id/offers
+  router.post('/:id/offers', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const senderId = decoded.userId;
+      const listingId = req.params.id;
+      const { amount, buyerId: providedBuyerId } = req.body;
+
+      if (!amount || isNaN(amount)) {
+        return res.status(400).json({ error: 'Invalid offer amount' });
+      }
+
+      const listing = await db.get('SELECT user_id, title FROM listings WHERE id = ?', [listingId]) as any;
+      if (!listing) return res.status(404).json({ error: 'Listing not found' });
+
+      const isSeller = listing.user_id === senderId;
+      const buyerId = isSeller ? providedBuyerId : senderId;
+      const receiverId = isSeller ? buyerId : listing.user_id;
+
+      if (!buyerId) {
+        return res.status(400).json({ error: 'Buyer ID is required for counter-offers' });
+      }
+
+      const info = await db.run('INSERT INTO offers (listing_id, buyer_id, sender_id, amount) VALUES (?, ?, ?, ?)', [listingId, buyerId, senderId, amount]);
+      const offerId = info.lastInsertRowid;
+
+      await db.run(
+        'INSERT INTO messages (sender_id, receiver_id, listing_id, offer_id, content) VALUES (?, ?, ?, ?, ?)',
+        [senderId, receiverId, listingId, offerId, isSeller ? `Es piedāvāju pretcenu €${amount}.` : `Es piedāvāju €${amount} par šo preci.`],
+      );
+
+      await db.run(`
+        INSERT INTO notifications (user_id, type, title, message, link)
+        VALUES (?, 'new_offer', ?, ?, ?)
+      `, [
+        receiverId,
+        isSeller ? 'Saņemts pretpiedāvājums' : 'Jauns piedāvājums',
+        isSeller
+          ? `Pārdevējs izteica pretpiedāvājumu €${amount} sludinājumam "${listing.title}".`
+          : `Saņemts jauns piedāvājums €${amount} sludinājumam "${listing.title}".`,
+        `/chat?userId=${senderId}&listingId=${listingId}`,
+      ]);
+
+      res.json({ id: offerId, message: 'Offer sent successfully' });
+    } catch (error) {
+      console.error('Error sending offer:', error);
+      res.status(500).json({ error: 'Server error sending offer' });
+    }
+  });
+
+  // POST /api/listings/:id/bids
+  router.post('/:id/bids', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const listingId = req.params.id;
+      const { amount } = req.body;
+
+      if (!amount || isNaN(amount)) {
+        return res.status(400).json({ error: 'Invalid bid amount' });
+      }
+
+      const listing = await db.get('SELECT price, attributes, user_id, status FROM listings WHERE id = ?', [listingId]) as any;
+      if (!listing) return res.status(404).json({ error: 'Listing not found' });
+
+      if (listing.status !== 'active') {
+        return res.status(400).json({ error: 'This auction has ended' });
+      }
+
+      if (listing.user_id === decoded.userId) {
+        return res.status(400).json({ error: 'Cannot bid on your own listing' });
+      }
+
+      const attributes = listing.attributes ? JSON.parse(listing.attributes) : {};
+      if (attributes.saleType !== 'auction') {
+        return res.status(400).json({ error: 'This listing is not an auction' });
+      }
+
+      const highestBid = await db.get('SELECT MAX(amount) as maxAmount FROM bids WHERE listing_id = ?', [listingId]) as { maxAmount: number | null };
+      const currentHighest = highestBid.maxAmount !== null ? highestBid.maxAmount : listing.price;
+
+      if (amount <= currentHighest) {
+        return res.status(400).json({ error: `Bid must be higher than current highest bid: €${currentHighest}` });
+      }
+
+      if (attributes.auctionEndDate) {
+        const endDate = new Date(attributes.auctionEndDate);
+        const now = new Date();
+        const timeDiffMs = endDate.getTime() - now.getTime();
+
+        if (timeDiffMs > 0 && timeDiffMs < 3 * 60 * 1000) {
+          const newEndDate = new Date(now.getTime() + 3 * 60 * 1000);
+          attributes.auctionEndDate = newEndDate.toISOString();
+          await db.run('UPDATE listings SET attributes = ? WHERE id = ?', [JSON.stringify(attributes), listingId]);
+        }
+      }
+
+      const info = await db.run('INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)', [listingId, decoded.userId, amount]);
+
+      const newBid = await db.get(`
+        SELECT b.id, b.user_id, b.amount, b.created_at, u.name as bidder_name
+        FROM bids b
+        JOIN users u ON b.user_id = u.id
+        WHERE b.id = ?
+      `, [info.lastInsertRowid]) as any;
+
+      io.emit('new_bid', {
+        listingId: parseInt(listingId),
+        bid: newBid,
+      });
+
+      await db.run(`
+        INSERT INTO notifications (user_id, type, title, message, link)
+        VALUES (?, 'new_bid', 'Jauns solījums jūsu izsolē', ?, ?)
+      `, [
+        listing.user_id,
+        `Lietotājs ${newBid.bidder_name} veica solījumu €${amount} jūsu izsolē.`,
+        `/listing/${listingId}`,
+      ]);
+
+      res.json(newBid);
+    } catch (error) {
+      console.error('Error placing bid:', error);
+      res.status(500).json({ error: 'Server error while placing bid' });
+    }
+  });
+
+  // GET /api/listings/:id/bids
+  router.get('/:id/bids', async (req, res) => {
+    try {
+      const listingId = req.params.id;
+      const bids = await db.all(`
+        SELECT bids.*, users.name as bidder_name
+        FROM bids
+        JOIN users ON bids.user_id = users.id
+        WHERE listing_id = ?
+        ORDER BY amount DESC
+      `, [listingId]);
+      res.json(bids);
+    } catch (error) {
+      console.error('Error fetching bids:', error);
+      res.status(500).json({ error: 'Server error fetching bids' });
+    }
+  });
+
+  // POST /api/listings/generate-description  (was /api/generate-description)
+  router.post('/generate-description', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+
+    try {
+      jwt.verify(token, JWT_SECRET);
+      const { category, title, ...attributes } = req.body;
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+      let attributesText = '';
+      for (const [key, value] of Object.entries(attributes)) {
+        if (value) attributesText += `${key}: ${value}\n`;
+      }
+
+      const prompt = `Izveido profesionālu, pievilcīgu un strukturētu pārdošanas aprakstu latviešu valodā šādam sludinājumam:
+      Kategorija: ${category}
+      Virsraksts: ${title || 'Nav norādīts'}
+
+      Detaļas:
+      ${attributesText || 'Nav norādītas papildus detaļas'}
+
+      Aprakstam jābūt pārliecinošam, viegli lasāmam un jāizceļ preces priekšrocības. Nelieto pārāk garus ievadus, uzreiz ķeries pie lietas.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      res.json({ description: response.text });
+    } catch (error) {
+      console.error('Error generating description:', error);
+      res.status(500).json({ error: 'Server error generating description' });
+    }
+  });
+
+  // POST /api/listings/recommend-price  (was /api/recommend-price)
+  router.post('/recommend-price', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      const { category, title, attributes } = req.body;
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
+      }
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+      let attributesText = '';
+      if (attributes) {
+        for (const [key, value] of Object.entries(attributes)) {
+          if (value) attributesText += `${key}: ${value}\n`;
+        }
+      }
+
+      const prompt = `Kā eksperts tirgus analītiķis, iesaki reālistisku pārdošanas cenu (eiro) šādam sludinājumam Latvijas tirgū.
+      Kategorija: ${category}
+      Virsraksts: ${title}
+      Parametri:
+      ${attributesText}
+
+      Atgriez TIKAI skaitli (piemēram, 15000 vai 250). Nekādu papildu tekstu vai paskaidrojumu.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      const recommendedPrice = parseInt(response.text?.replace(/[^0-9]/g, '') || '0', 10);
+      res.json({ price: recommendedPrice });
+    } catch (error) {
+      console.error('Error recommending price:', error);
+      res.status(500).json({ error: 'Server error recommending price' });
+    }
+  });
+
+  // POST /api/listings/ai/generate-listing  (was /api/ai/generate-listing)
+  router.post('/ai/generate-listing', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
+      }
+
+      const { imageUrl } = req.body;
+      if (!imageUrl) {
+        return res.status(400).json({ error: 'No image URL provided' });
+      }
+
+      let imageBuffer: Buffer;
+      let mimeType = 'image/jpeg';
+
+      if (imageUrl.startsWith('http')) {
+        const imageRes = await fetch(imageUrl);
+        if (!imageRes.ok) throw new Error('Failed to fetch image');
+        const arrayBuffer = await imageRes.arrayBuffer();
+        imageBuffer = Buffer.from(arrayBuffer);
+        mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
+      } else {
+        const filename = imageUrl.split('/').pop();
+        const filePath = path.join(uploadsDir, filename);
+        if (!fs.existsSync(filePath)) {
+          return res.status(404).json({ error: 'Image not found' });
+        }
+        imageBuffer = fs.readFileSync(filePath);
+        mimeType = filename.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      }
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+      const imagePart = {
+        inlineData: {
+          data: imageBuffer.toString('base64'),
+          mimeType: mimeType,
+        },
+      };
+
+      const prompt = `Analyze this image and generate a listing for a marketplace in Latvia.
+      Return a JSON object with the following fields:
+      - title: A catchy, descriptive title in Latvian.
+      - description: A detailed description in Latvian.
+      - category: One of the following categories: 'vehicles', 'real-estate', 'electronics', 'home', 'fashion', 'services', 'other'.
+      - price: A realistic estimated price in EUR (number only).
+
+      Return ONLY valid JSON.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [prompt, imagePart],
+      });
+
+      let jsonText = response.text || '{}';
+      if (jsonText.startsWith('\`\`\`json')) {
+        jsonText = jsonText.replace(/\`\`\`json\n?/, '').replace(/\`\`\`$/, '');
+      } else if (jsonText.startsWith('\`\`\`')) {
+        jsonText = jsonText.replace(/\`\`\`\n?/, '').replace(/\`\`\`$/, '');
+      }
+
+      const listingData = JSON.parse(jsonText);
+      res.json(listingData);
+    } catch (error) {
+      console.error('Error generating listing from image:', error);
+      res.status(500).json({ error: 'Server error generating listing' });
+    }
+  });
+
+  // POST /api/listings/ai/decode-vin  (was /api/ai/decode-vin)
+  router.post('/ai/decode-vin', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
+      }
+
+      const { vin } = req.body;
+      if (!vin || vin.length !== 17) {
+        return res.status(400).json({ error: 'Nepareizs VIN numurs (jābūt 17 simboliem)' });
+      }
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+      const prompt = `You are an automotive expert. Decode this VIN number: ${vin}
+
+Return ONLY a valid JSON object with these fields:
+{
+  "make": "car brand",
+  "model": "car model",
+  "year": 2020,
+  "bodyType": "Sedans|Universāls|Apvidus (SUV)|Hečbeks|Kupeja|Minivens|Pikaps|Cits",
+  "engine": "e.g. 2.0 TDI",
+  "engineCc": 1968,
+  "powerKw": 110,
+  "fuelType": "Dīzelis|Benzīns|Elektriskais|Hibrīds (PHEV)|Hibrīds (HEV)|Gāze (LPG)|Gāze (CNG)",
+  "transmission": "Automāts|Manuāla|Robots (DSG/CVT)",
+  "drive": "Priekšas (FWD)|Aizmugures (RWD)|Pilnpiedziņa (4x4/AWD)",
+  "doors": 4,
+  "seats": 5,
+  "equipment": ["list of standard and common optional equipment for this specific model/trim"],
+  "confidence": "high|medium|low"
+}
+
+For equipment array, include all standard and typical optional features for this specific variant in Latvian. Use these exact names where applicable:
+Safety: "ABS", "ESP (stabilitātes kontrole)", "Priekšējais gaisa spilvens", "Sānu gaisa spilveni", "Galvas gaisa spilveni", "Joslu maiņas brīdinājums", "Akls punkts (BSD)", "Aizmugures satiksmes brīdinājums", "Avārijas bremzēšana (AEB)", "Adaptīvais kruīza kontrols", "Joslas turēšanas asistents", "Noguruma brīdinājums", "Naktsvīzija", "Imobilaizers", "Centrālā slēdzene"
+Comfort: "Gaisa kondicionēšana", "Klimata kontrole (1 zona)", "Klimata kontrole (2 zonas)", "Sēdekļu apsilde priekšā", "Sēdekļu apsilde aizmugurē", "Sēdekļu ventilācija", "Elektriski regulējami sēdekļi", "Masāžas sēdekļi", "Ādas sēdekļi", "Panorāmas jumts", "Elektrisks aizmugures bagāžnieks", "Bezkontakta atslēga (Keyless)", "Start/Stop sistēma", "Apkures apsilde (Webasto)", "Stūres apsilde", "Vējstikla apsilde", "Parkošanās sensori priekšā", "Parkošanās sensori aizmugurē", "Atpakaļgaitas kamera", "360° kamera", "Automātiskā stāvvieta", "Kruīza kontrols", "Adaptīvais kruīza kontrols", "Elektriski regulējami spoguļi", "Elektriski salocāmi spoguļi", "Augstuma regulēšana (pnevmatiskā)", "Pievares kontrole"
+Multimedia: "AM/FM Radio", "CD/DVD atskaņotājs", "Iebūvētā navigācija", "Apple CarPlay", "Android Auto", "Bluetooth", "Brīvroku komplekts", "USB ports", "Induktīvā uzlāde", "Heads-Up displejs (HUD)", "Premium skaļruņu sistēma", "Digitālais radio (DAB+)", "Wi-Fi hotspot", "Aizmugures izklaides sistēma"
+Exterior: "Leģēta riteņu diski", "17\" diski", "18\" diski", "19\"+ diski", "Panorāmas jumts", "Jumta stieņi", "Piekabes āķis", "LED priekšējie lukturi", "Matrix LED lukturi", "Adaptīvie lukturi", "Xenon lukturi", "Miglas lukturi", "Tonēti stikli", "Rezerves ritenis", "Riepu spiediena kontrole (TPMS)", "Ziemas riepu komplekts"
+
+Return ONLY valid JSON, no markdown.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+
+      let jsonText = response.text || '{}';
+      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+      const vinData = JSON.parse(jsonText);
+      res.json(vinData);
+    } catch (error) {
+      console.error('VIN decode error:', error);
+      res.status(500).json({ error: 'Neizdevās atšifrēt VIN numuru' });
+    }
+  });
+
+  return router;
+}
