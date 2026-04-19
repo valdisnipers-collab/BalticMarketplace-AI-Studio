@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -47,11 +46,14 @@ function FilterSection({
   badge?: number;
   children: React.ReactNode;
 }) {
+  const sectionId = `filter-section-${label.replace(/\s+/g, '-').toLowerCase()}`;
   return (
     <div className="border-b border-slate-100 last:border-0">
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-controls={sectionId}
         className="w-full flex items-center justify-between py-3.5 text-sm font-semibold text-slate-800 hover:text-[#E64415] transition-colors"
       >
         <span className="flex items-center gap-2">
@@ -67,6 +69,7 @@ function FilterSection({
       <AnimatePresence initial={false}>
         {isOpen && (
           <motion.div
+            id={sectionId}
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -347,6 +350,7 @@ export default function Search() {
             <h2 className="text-lg font-bold text-slate-900">Filtri</h2>
             <button
               type="button"
+              aria-label="Aizvērt filtrus"
               onClick={() => setShowFilters(false)}
               className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors"
             >
@@ -402,6 +406,7 @@ export default function Search() {
                       <button
                         key={cat}
                         type="button"
+                        aria-pressed={category === cat}
                         onClick={() => setCategory(cat)}
                         className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
                           category === cat
