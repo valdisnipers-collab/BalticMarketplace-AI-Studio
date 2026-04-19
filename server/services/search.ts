@@ -179,6 +179,10 @@ export async function reindexAllListings() {
     return;
   }
 
+  // Clear stale documents before re-indexing
+  await client.index('listings').deleteAllDocuments();
+  console.log('[SEARCH] Veci dokumenti notīrīti');
+
   const BATCH = 100;
   for (let i = 0; i < listings.length; i += BATCH) {
     const batch = listings.slice(i, i + BATCH);

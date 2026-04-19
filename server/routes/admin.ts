@@ -4,6 +4,7 @@ import db from '../pg';
 import { isAdmin, JWT_SECRET } from '../utils/auth';
 import { sendEmail, emailTemplates } from '../services/email';
 import { cached, TTL } from '../services/redis';
+import { reindexAllListings } from '../services/search';
 import type { Server as SocketIOServer } from 'socket.io';
 
 export function createAdminRouter(deps: { io: SocketIOServer }) {
@@ -171,6 +172,17 @@ export function createAdminRouter(deps: { io: SocketIOServer }) {
     } catch (error) {
       console.error("Error updating report:", error);
       res.status(500).json({ error: 'Server error updating report' });
+    }
+  });
+
+  // POST /admin/reindex — notīra un atkārtoti indeksē Meilisearch
+  router.post('/admin/reindex', isAdmin, async (req, res) => {
+    try {
+      await reindexAllListings();
+      res.json({ ok: true, message: 'Reindex pabeigts' });
+    } catch (error) {
+      console.error('[ADMIN] Reindex kļūda:', error);
+      res.status(500).json({ error: 'Reindex neizdevās' });
     }
   });
 
