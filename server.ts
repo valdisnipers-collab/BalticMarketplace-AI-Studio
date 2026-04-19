@@ -5,7 +5,7 @@ import path from "path";
 import db from "./server/pg";
 import Stripe from "stripe";
 import { checkRateLimit } from './server/services/redis';
-import { initSearchIndex } from './server/services/search';
+import { initSearchIndex, reindexAllListings } from './server/services/search';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 import { corsMiddleware, helmetMiddleware, generalLimiter, authLimiter, uploadLimiter } from './server/middleware/security';
@@ -80,9 +80,11 @@ async function startServer() {
     });
   });
 
-  // Initialize Meilisearch
+  // Initialize Meilisearch and sync all listings from PostgreSQL
   if (process.env.MEILISEARCH_HOST) {
-    initSearchIndex().catch(e => console.error('[SEARCH INIT ERROR]', e));
+    initSearchIndex()
+      .then(() => reindexAllListings())
+      .catch(e => console.error('[SEARCH INIT ERROR]', e));
   }
 
   // Payments router — webhook MUST be mounted BEFORE express.json()
