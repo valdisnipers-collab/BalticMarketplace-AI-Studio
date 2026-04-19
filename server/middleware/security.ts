@@ -33,7 +33,7 @@ export const helmetMiddleware = helmet({
 
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 1000,
   message: { error: 'Pārāk daudz pieprasījumu. Mēģiniet vēlāk.' },
   standardHeaders: true,
   legacyHeaders: false,
