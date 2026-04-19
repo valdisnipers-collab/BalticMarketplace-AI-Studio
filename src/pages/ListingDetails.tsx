@@ -45,6 +45,20 @@ import { cn } from '@/lib/utils';
 import { Helmet } from 'react-helmet-async';
 import useEmblaCarousel from 'embla-carousel-react';
 import { CATEGORY_SCHEMAS } from '../lib/categories';
+
+const ATTR_LV: Record<string, string> = {
+  make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Reģistrācijas gads',
+  mileage: 'Nobraukums', fuel: 'Degviela', transmission: 'Ātrumkārba',
+  engine: 'Dzinējs', power: 'Jauda', bodyType: 'Virsbūves tips', color: 'Krāsa',
+  condition: 'Stāvoklis', doors: 'Durvju skaits', seats: 'Sēdvietu skaits',
+  drivetrain: 'Piedziņa', emission_class: 'Emisiju klase', previous_owners: 'Iepriekšējie īpašnieki',
+  type: 'Tips', area: 'Platība', rooms: 'Istabas',
+  floor: 'Stāvs', total_floors: 'Kopā stāvi', series: 'Sērija',
+  storage: 'Atmiņa', size: 'Izmērs', experience: 'Pieredze',
+  availability: 'Pieejamība', age_from: 'Vecums no', age_group: 'Vecuma grupa',
+  frameSize: 'Rāmja izmērs', length: 'Garums', berths: 'Gultas vietas',
+  weight: 'Svars', material: 'Materiāls',
+};
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -709,18 +723,6 @@ export default function ListingDetails() {
                   {Object.entries(parsedAttributes).map(([key, value]) => {
                     if (['features', 'saleType', 'subcategory'].includes(key) || !value) return null;
 
-                    const ATTR_LV: Record<string, string> = {
-                      make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Gads',
-                      mileage: 'Nobraukums', fuel: 'Degviela', transmission: 'Ātrumkārba',
-                      engine: 'Dzinējs', power: 'Jauda', bodyType: 'Virsbūves tips', color: 'Krāsa',
-                      condition: 'Stāvoklis', type: 'Tips', area: 'Platība', rooms: 'Istabas',
-                      floor: 'Stāvs', total_floors: 'Kopā stāvi', series: 'Sērija',
-                      storage: 'Atmiņa', size: 'Izmērs', experience: 'Pieredze',
-                      availability: 'Pieejamība', age_from: 'Vecums no', age_group: 'Vecuma grupa',
-                      frameSize: 'Rāmja izmērs', length: 'Garums', berths: 'Gultas vietas',
-                      weight: 'Svars', material: 'Materiāls',
-                    };
-
                     let label = ATTR_LV[key] || key;
                     const categorySchema = CATEGORY_SCHEMAS[listing.category];
                     if (categorySchema) {
@@ -757,13 +759,6 @@ export default function ListingDetails() {
 
             {/* Technical Data Table — auto only */}
             {listing.category === 'auto' && parsedAttributes && (() => {
-              const ATTR_LV: Record<string, string> = {
-                make: 'Marka', brand: 'Marka', model: 'Modelis', year: 'Gads', year_month: 'Reģistrācijas gads',
-                mileage: 'Nobraukums', fuel: 'Degviela', transmission: 'Ātrumkārba',
-                engine: 'Dzinējs', power: 'Jauda', bodyType: 'Virsbūves tips', color: 'Krāsa',
-                condition: 'Stāvoklis', doors: 'Durvju skaits', seats: 'Sēdvietu skaits',
-                drivetrain: 'Piedziņa', emission_class: 'Emisiju klase', previous_owners: 'Iepriekšējie īpašnieki',
-              };
               const rows = Object.entries(parsedAttributes)
                 .filter(([k, v]) => !['features', 'saleType', 'subcategory'].includes(k) && v)
                 .map(([k, v]) => ({ label: ATTR_LV[k] || k, value: String(v) }));
@@ -776,7 +771,7 @@ export default function ListingDetails() {
                   <h2 className="text-2xl font-bold text-slate-900">Tehniskā informācija</h2>
                   <div className="rounded-2xl border border-slate-100 overflow-hidden">
                     {visibleRows.map((row, i) => (
-                      <div key={i} className={cn(
+                      <div key={row.label} className={cn(
                         "grid grid-cols-2 px-5 py-3.5 text-sm",
                         i % 2 === 0 ? "bg-slate-50" : "bg-white"
                       )}>
@@ -808,7 +803,7 @@ export default function ListingDetails() {
                   <div className="rounded-2xl border border-slate-100 overflow-hidden">
                     <div className="grid grid-cols-2 gap-0">
                       {visibleFeatures.map((feature, i) => (
-                        <div key={i} className={cn(
+                        <div key={feature} className={cn(
                           "flex items-center gap-3 px-5 py-3 text-sm font-semibold text-slate-700 border-b border-slate-100",
                           Math.floor(i / 2) % 2 === 0 ? "bg-slate-50" : "bg-white"
                         )}>
