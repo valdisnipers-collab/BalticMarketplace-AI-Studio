@@ -139,7 +139,7 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
   const router = Router();
 
   // Run once at startup — safe to re-run
-  db.query(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS ai_card_summary TEXT`)
+  db.run(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS ai_card_summary TEXT`)
     .catch(() => {}); // ignore if column already exists
 
   // POST /api/listings/ai-suggestions
@@ -461,10 +461,15 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
 
       // Return cached summary if available
       if (listing.ai_card_summary) {
-        return res.json(JSON.parse(listing.ai_card_summary));
+        try {
+          return res.json(JSON.parse(listing.ai_card_summary));
+        } catch {
+          // corrupt cache — fall through to regeneration
+        }
       }
 
       // Generate via Gemini
+      if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'AI nav pieejams' });
       const ai = getGenAI();
       if (!ai) return res.status(503).json({ error: 'AI nav pieejams' });
 
