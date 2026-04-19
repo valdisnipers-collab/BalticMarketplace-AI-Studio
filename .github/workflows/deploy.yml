@@ -72,4 +72,6 @@ jobs:
             docker compose pull
             docker compose up -d --remove-orphans
             docker system prune -f
+            sleep 5
+            docker compose exec -T app npx tsx scripts/migrate.ts
             echo "Deploy complete: $(date)"
