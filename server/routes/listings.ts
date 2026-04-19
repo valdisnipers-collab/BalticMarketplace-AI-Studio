@@ -1185,5 +1185,86 @@ Return ONLY valid JSON, no markdown.`;
     }
   });
 
+  // POST /api/listings/compare
+  router.post('/compare', requireAuth, async (req: any, res) => {
+    try {
+      const { ids } = req.body as { ids: number[] };
+      if (!Array.isArray(ids) || ids.length < 2 || ids.length > 4) {
+        return res.status(400).json({ error: 'Nepieciešami 2–4 sludinājumi salīdzināšanai' });
+      }
+      const sanitizedIds = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
+      if (sanitizedIds.length !== ids.length) {
+        return res.status(400).json({ error: 'Nederīgi sludinājumu ID' });
+      }
+
+      const placeholders = sanitizedIds.map(() => '?').join(', ');
+      const listings = await db.all(
+        `SELECT l.id, l.title, l.description, l.price, l.category, l.location,
+                l.image_url, l.attributes, l.quality_score, u.name as author_name
+         FROM listings l
+         LEFT JOIN users u ON l.user_id = u.id
+         WHERE l.id IN (${placeholders}) AND l.status = 'active'`,
+        sanitizedIds
+      ) as any[];
+
+      if (listings.length < 2) {
+        return res.status(400).json({ error: 'Nepietiekams aktīvo sludinājumu skaits' });
+      }
+
+      const ai = getGenAI();
+
+      const listingsText = listings.map((l: any, i: number) => {
+        let attrsText = '';
+        try {
+          const attrs = JSON.parse(l.attributes || '{}');
+          attrsText = Object.entries(attrs)
+            .filter(([, v]) => v && v !== '')
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ');
+        } catch {}
+        return `Sludinājums ${i + 1} (ID: ${l.id}):
+  Virsraksts: ${l.title}
+  Cena: €${l.price}
+  Kategorija: ${l.category}
+  Atrašanās vieta: ${l.location || 'nav norādīta'}
+  Apraksts: ${(l.description || '').substring(0, 300)}
+  Papildu info: ${attrsText || 'nav'}`;
+      }).join('\n\n');
+
+      const prompt = `Tu esi pieredzējis tirgus analītiķis. Salīdzini šos ${listings.length} sludinājumus un sniedi objektīvu novērtējumu latviešu valodā.
+
+${listingsText}
+
+Atbildi TIKAI JSON formātā (bez markdown):
+{
+  "bestPickId": <labākā sludinājuma ID kā skaitlis>,
+  "overallSummary": "<2–3 teikumu kopsavilkums latviešu valodā>",
+  "rankings": [
+    {
+      "id": <sludinājuma ID kā skaitlis>,
+      "rank": <1 = labākais>,
+      "verdict": "<viens teikums — ko šis piedāvā>",
+      "pros": ["<priekšrocība 1>", "<priekšrocība 2>"],
+      "cons": ["<trūkums 1>"],
+      "valueScore": <0–100, cena/kvalitāte attiecība>
+    }
+  ]
+}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      const text = (response.text || '').trim().replace(/```json|```/g, '').trim();
+      const result = JSON.parse(text);
+
+      res.json(result);
+    } catch (e) {
+      console.error('[COMPARE]', e);
+      res.status(500).json({ error: 'Salīdzināšana neizdevās' });
+    }
+  });
+
   return router;
 }
