@@ -89,7 +89,7 @@ Atbildi TIKAI atbildes tekstu, bez papildu paskaidrojumiem vai pēdiņām.`;
   try {
     const info = await db.run(
       `INSERT INTO messages (sender_id, receiver_id, listing_id, content, is_phishing_warning, system_warning)
-       VALUES (?, ?, ?, ?, 0, ?)`,
+       VALUES (?, ?, ?, ?, false, ?)`,
       [receiver.id, senderId, listingId, replyText, AUTO_REPLY_MARKER],
     );
     const newMessage = await db.get(

@@ -121,8 +121,8 @@ export function createMessagesRouter(deps: { io: SocketIOServer }) {
       const receiver = await db.get('SELECT id FROM users WHERE id = ?', [receiverId]);
       if (!receiver) return res.status(404).json({ error: 'Saņēmējs nav atrasts' });
 
-      let isPhishingWarning = 0;
-      let systemWarning = null;
+      let isPhishingWarning = false;
+      let systemWarning: string | null = null;
 
       // Phishing check
       if (content && process.env.GEMINI_API_KEY) {
@@ -152,7 +152,7 @@ export function createMessagesRouter(deps: { io: SocketIOServer }) {
           if (result.action === 'block') {
             return res.status(400).json({ error: 'Ziņa bloķēta drošības apsvērumu dēļ: ' + result.reason });
           } else if (result.action === 'warn') {
-            isPhishingWarning = 1;
+            isPhishingWarning = true;
             systemWarning = result.reason;
           }
         } catch (aiError) {
