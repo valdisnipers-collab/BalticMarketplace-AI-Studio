@@ -15,6 +15,8 @@ import BottomNav from './components/BottomNav';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import AddListing from './pages/AddListing';
 import EditListing from './pages/EditListing';
 import ListingDetails from './pages/ListingDetails';
@@ -52,6 +54,8 @@ function AnimatedRoutes() {
         <Route path="/chat" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Chat /></motion.div>} />
         <Route path="/login" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Login /></motion.div>} />
         <Route path="/register" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Register /></motion.div>} />
+        <Route path="/forgot-password" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><ForgotPassword /></motion.div>} />
+        <Route path="/reset-password" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><ResetPassword /></motion.div>} />
         <Route path="/add" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><AddListing /></motion.div>} />
         <Route path="/edit/:id" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><EditListing /></motion.div>} />
         <Route path="/listing/:id" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><ListingDetails /></motion.div>} />

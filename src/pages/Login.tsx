@@ -286,6 +286,11 @@ export default function Login() {
                 </div>
               </div>
             </div>
+            <div className="flex justify-end">
+              <Link to="/forgot-password" className="text-sm text-[#E64415] hover:underline">
+                Aizmirsi paroli?
+              </Link>
+            </div>
             <Button
               type="submit" disabled={loading}
               className="w-full"
