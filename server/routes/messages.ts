@@ -1,24 +1,22 @@
 import { Router } from 'express';
 import db from '../pg';
-import { requireAuth, JWT_SECRET } from '../utils/auth';
+import { requireAuth } from '../utils/auth';
 import { sendPushToUser } from '../services/push';
 import { getGenAI } from '../utils/ai';
-import jwt from 'jsonwebtoken';
 import type { Server as SocketIOServer } from 'socket.io';
 
 export function createMessagesRouter(deps: { io: SocketIOServer }) {
   const { io } = deps;
   const router = Router();
 
-  // GET /api/messages/unread-count
-  router.get('/unread-count', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-    const token = authHeader.split(' ')[1];
+  // All message routes require a valid session — apply once instead of
+  // re-implementing JWT parsing per handler.
+  router.use(requireAuth);
 
+  // GET /api/messages/unread-count
+  router.get('/unread-count', async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const userId = decoded.userId;
+      const userId = req.userId as number;
 
       const result = await db.get(`
         SELECT COUNT(*) as count
@@ -34,14 +32,9 @@ export function createMessagesRouter(deps: { io: SocketIOServer }) {
   });
 
   // GET /api/messages/conversations
-  router.get('/conversations', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-    const token = authHeader.split(' ')[1];
-
+  router.get('/conversations', async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const userId = decoded.userId;
+      const userId = req.userId as number;
 
       const conversations = await db.all(`
         SELECT
@@ -72,14 +65,9 @@ export function createMessagesRouter(deps: { io: SocketIOServer }) {
   });
 
   // GET /api/messages/:otherUserId
-  router.get('/:otherUserId', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-    const token = authHeader.split(' ')[1];
-
+  router.get('/:otherUserId', async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const userId = decoded.userId;
+      const userId = req.userId as number;
       const otherUserId = req.params.otherUserId;
       const listingId = req.query.listingId;
 
@@ -119,19 +107,18 @@ export function createMessagesRouter(deps: { io: SocketIOServer }) {
   });
 
   // POST /api/messages
-  router.post('/', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-    const token = authHeader.split(' ')[1];
-
+  router.post('/', async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const senderId = decoded.userId;
+      const senderId = req.userId as number;
       const { receiverId, listingId, content, image_url } = req.body;
 
       if (!receiverId || (!content && !image_url)) {
         return res.status(400).json({ error: 'Receiver and content or image are required' });
       }
+
+      // Verify the recipient exists so we don't create orphaned message rows.
+      const receiver = await db.get('SELECT id FROM users WHERE id = ?', [receiverId]);
+      if (!receiver) return res.status(404).json({ error: 'Saņēmējs nav atrasts' });
 
       let isPhishingWarning = 0;
       let systemWarning = null;

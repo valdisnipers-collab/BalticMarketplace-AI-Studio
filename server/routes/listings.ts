@@ -14,6 +14,8 @@ import { syncListing, removeListing, searchListings } from '../services/search';
 import { sendEmail, emailTemplates } from '../services/email';
 import { triggerSavedSearchAlerts } from '../utils/savedSearchTrigger';
 import { validateBody, listingSchema } from '../middleware/validate';
+import { sanitizePrompt, parseFiniteNumber } from '../utils/sanitize';
+import { isSafeExternalUrl } from '../utils/urlSafety';
 import type { Server as SocketIOServer } from 'socket.io';
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -240,17 +242,20 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
       if (!title && !description) return res.json({ suggestions: [] });
 
       const ai = getGenAI();
+      const safeCategory = sanitizePrompt(category, 100);
+      const safeTitle = sanitizePrompt(title, 200);
+      const safeDescription = sanitizePrompt(description, 500);
       const filled = Object.entries(attributes || {})
         .filter(([, v]) => v && v !== '')
-        .map(([k, v]) => `${k}: ${v}`)
+        .map(([k, v]) => `${sanitizePrompt(k, 40)}: ${sanitizePrompt(v, 100)}`)
         .join(', ');
 
       const prompt = `Tu esi marketplace palīgs. Analizē šo sludinājumu un dod 3 konkrētus ieteikumus latviešu valodā kā to uzlabot.
 
 Sludinājums:
-- Kategorija: ${category || 'nav norādīta'}
-- Virsraksts: ${title || 'nav'}
-- Apraksts: ${description ? (description as string).substring(0, 200) : 'nav'}
+- Kategorija: ${safeCategory || 'nav norādīta'}
+- Virsraksts: ${safeTitle || 'nav'}
+- Apraksts: ${safeDescription || 'nav'}
 - Aizpildītie lauki: ${filled || 'nav'}
 
 Dod tieši 3 ieteikumus kā JSON masīvu formātā:
@@ -621,8 +626,9 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     try {
       const { hasAccess, userId } = await hasEarlyAccess(req);
 
+      // Do not leak the seller's email to anonymous visitors; contact goes via /api/messages.
       let sql = `
-        SELECT listings.*, users.name as author_name, users.email as author_email,
+        SELECT listings.*, users.name as author_name,
                users.trust_score as seller_trust_score, users.is_verified as seller_is_verified
         FROM listings
         JOIN users ON listings.user_id = users.id
@@ -681,6 +687,19 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         location: updatedListing.location,
       });
       await db.run('UPDATE listings SET quality_score = ? WHERE id = ?', [qualityScore, listingId]);
+
+      // Re-run AI moderation on edits so content changes can't slip past the initial check.
+      const titleChanged = updatedListing.title !== listing.title;
+      const priceChanged = Number(updatedListing.price) !== Number(listing.price);
+      const descriptionChanged = (updatedListing.description ?? '') !== (req.body?.description ?? updatedListing.description ?? '');
+      if (titleChanged || priceChanged || descriptionChanged) {
+        moderateListing(
+          Number(listingId),
+          updatedListing.title,
+          updatedListing.description || '',
+          Number(updatedListing.price) || 0,
+        ).catch(e => console.error('[moderate-listing:update]', { listingId, error: e?.message || e }));
+      }
 
       if (price < listing.price) {
         const favoritedUsers = await db.all('SELECT user_id FROM favorites WHERE listing_id = ?', [listingId]) as { user_id: number }[];
@@ -859,10 +878,10 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      const { amount } = req.body;
 
-      if (!amount || isNaN(amount)) {
-        return res.status(400).json({ error: 'Invalid bid amount' });
+      const bidAmount = parseFiniteNumber(req.body?.amount, { min: 0.01, max: 10_000_000 });
+      if (bidAmount === null) {
+        return res.status(400).json({ error: 'Nederīga solījuma summa' });
       }
 
       const listing = await db.get('SELECT price, attributes, user_id, status FROM listings WHERE id = ?', [listingId]) as any;
@@ -881,6 +900,15 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         return res.status(400).json({ error: 'This listing is not an auction' });
       }
 
+      // Guard against the race where the background auction checker has not yet
+      // flipped status to 'sold'/'expired': reject bids once the end time has passed.
+      if (attributes.auctionEndDate) {
+        const endDate = new Date(attributes.auctionEndDate);
+        if (Number.isFinite(endDate.getTime()) && endDate.getTime() <= Date.now()) {
+          return res.status(400).json({ error: 'Izsole jau ir noslēgusies' });
+        }
+      }
+
       // Strikes check — block bidding if 3+ strikes
       const strikesRow = await db.get(
         'SELECT COUNT(*) as c FROM user_strikes WHERE user_id = $1',
@@ -896,7 +924,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       const highestBid = await db.get('SELECT MAX(amount) as maxAmount FROM bids WHERE listing_id = ?', [listingId]) as { maxAmount: number | null };
       const currentHighest = highestBid.maxAmount !== null ? highestBid.maxAmount : listing.price;
 
-      if (amount <= currentHighest) {
+      if (bidAmount <= currentHighest) {
         return res.status(400).json({ error: `Bid must be higher than current highest bid: €${currentHighest}` });
       }
 
@@ -918,7 +946,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         }
       }
 
-      const info = await db.run('INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)', [listingId, decoded.userId, amount]);
+      const info = await db.run('INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)', [listingId, decoded.userId, bidAmount]);
 
       const newBid = await db.get(`
         SELECT b.id, b.user_id, b.amount, b.created_at, u.name as bidder_name
@@ -933,7 +961,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       });
       io.to(`auction_${listingId}`).emit('new_bid', {
         listing_id: parseInt(listingId),
-        amount,
+        amount: bidAmount,
         bidder_name: newBid.bidder_name,
         auction_end_date: auctionEndDate,
       });
@@ -943,7 +971,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         VALUES (?, 'new_bid', 'Jauns solījums jūsu izsolē', ?, ?)
       `, [
         listing.user_id,
-        `Lietotājs ${newBid.bidder_name} veica solījumu €${amount} jūsu izsolē.`,
+        `Lietotājs ${newBid.bidder_name} veica solījumu €${bidAmount} jūsu izsolē.`,
         `/listing/${listingId}`,
       ]);
 
@@ -1024,16 +1052,18 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
 
       const ai = getGenAI();
 
+      const safeCategory = sanitizePrompt(category, 100);
+      const safeTitle = sanitizePrompt(title, 200);
       let attributesText = '';
       if (attributes) {
         for (const [key, value] of Object.entries(attributes)) {
-          if (value) attributesText += `${key}: ${value}\n`;
+          if (value) attributesText += `${sanitizePrompt(key, 40)}: ${sanitizePrompt(value, 100)}\n`;
         }
       }
 
       const prompt = `Kā eksperts tirgus analītiķis, iesaki reālistisku pārdošanas cenu (eiro) šādam sludinājumam Latvijas tirgū.
-      Kategorija: ${category}
-      Virsraksts: ${title}
+      Kategorija: ${safeCategory}
+      Virsraksts: ${safeTitle}
       Parametri:
       ${attributesText}
 
@@ -1071,14 +1101,28 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       let mimeType = 'image/jpeg';
 
       if (imageUrl.startsWith('http')) {
+        if (!(await isSafeExternalUrl(imageUrl))) {
+          return res.status(400).json({ error: 'Nederīgs vai aizliegts attēla URL' });
+        }
         const imageRes = await fetch(imageUrl);
         if (!imageRes.ok) throw new Error('Failed to fetch image');
+        const contentLength = Number(imageRes.headers.get('content-length') || 0);
+        if (contentLength && contentLength > 10 * 1024 * 1024) {
+          return res.status(413).json({ error: 'Attēls pārāk liels (max 10 MB)' });
+        }
         const arrayBuffer = await imageRes.arrayBuffer();
+        if (arrayBuffer.byteLength > 10 * 1024 * 1024) {
+          return res.status(413).json({ error: 'Attēls pārāk liels (max 10 MB)' });
+        }
         imageBuffer = Buffer.from(arrayBuffer);
         mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
       } else {
-        const filename = imageUrl.split('/').pop();
+        // Only accept relative paths inside the uploads dir; block traversal
+        const filename = path.basename(String(imageUrl));
         const filePath = path.join(uploadsDir, filename);
+        if (path.dirname(filePath) !== uploadsDir) {
+          return res.status(400).json({ error: 'Nederīgs attēla ceļš' });
+        }
         if (!fs.existsSync(filePath)) {
           return res.status(404).json({ error: 'Image not found' });
         }
@@ -1135,13 +1179,16 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       }
 
       const { vin } = req.body;
-      if (!vin || vin.length !== 17) {
-        return res.status(400).json({ error: 'Nepareizs VIN numurs (jābūt 17 simboliem)' });
+      // VIN is a fixed-length ASCII identifier — reject anything that isn't
+      // exactly 17 allowed chars to prevent smuggling prompt text into the AI.
+      if (typeof vin !== 'string' || !/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin)) {
+        return res.status(400).json({ error: 'Nepareizs VIN numurs (17 simboli, tikai A-Z/0-9)' });
       }
+      const safeVin = vin.toUpperCase();
 
       const ai = getGenAI();
 
-      const prompt = `You are an automotive expert. Decode this VIN number: ${vin}
+      const prompt = `You are an automotive expert. Decode this VIN number: ${safeVin}
 
 Return ONLY a valid JSON object with these fields:
 {
@@ -1203,14 +1250,12 @@ Return ONLY valid JSON, no markdown.`;
                 l.image_url, l.attributes, l.quality_score, l.status, u.name as author_name
          FROM listings l
          LEFT JOIN users u ON l.user_id = u.id
-         WHERE l.id IN (${placeholders})`,
+         WHERE l.id IN (${placeholders}) AND l.status = 'active'`,
         sanitizedIds
       ) as any[];
 
-      console.log(`[COMPARE] requested ids: ${sanitizedIds}, found: ${listings.length}, statuses: ${listings.map((l: any) => l.status || 'n/a').join(',')}`);
-
       if (listings.length < 2) {
-        return res.status(400).json({ error: `Nepietiekams sludinājumu skaits (atrasti: ${listings.length} no ${sanitizedIds.length})` });
+        return res.status(400).json({ error: `Nepietiekams aktīvu sludinājumu skaits (atrasti: ${listings.length} no ${sanitizedIds.length})` });
       }
 
       if (!process.env.GEMINI_API_KEY) {
@@ -1224,15 +1269,15 @@ Return ONLY valid JSON, no markdown.`;
           const attrs = JSON.parse(l.attributes || '{}');
           attrsText = Object.entries(attrs)
             .filter(([, v]) => v && v !== '')
-            .map(([k, v]) => `${k}: ${v}`)
+            .map(([k, v]) => `${sanitizePrompt(k, 40)}: ${sanitizePrompt(v, 100)}`)
             .join(', ');
         } catch {}
         return `Sludinājums ${i + 1} (ID: ${l.id}):
-  Virsraksts: ${l.title}
-  Cena: €${l.price}
-  Kategorija: ${l.category}
-  Atrašanās vieta: ${l.location || 'nav norādīta'}
-  Apraksts: ${(l.description || '').substring(0, 300)}
+  Virsraksts: ${sanitizePrompt(l.title, 200)}
+  Cena: €${Number(l.price) || 0}
+  Kategorija: ${sanitizePrompt(l.category, 100)}
+  Atrašanās vieta: ${sanitizePrompt(l.location, 100) || 'nav norādīta'}
+  Apraksts: ${sanitizePrompt(l.description, 500)}
   Papildu info: ${attrsText || 'nav'}`;
       }).join('\n\n');
 

@@ -3,7 +3,17 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '../pg';
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-dev-key-change-in-production';
+function resolveJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (secret && secret.length >= 16) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET environment variable is required in production (min 16 chars)');
+  }
+  console.warn('[auth] JWT_SECRET not set — using dev fallback. Set JWT_SECRET before deploying.');
+  return 'super-secret-dev-key-change-in-production';
+}
+
+export const JWT_SECRET = resolveJwtSecret();
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -44,6 +54,17 @@ export function verifyTokenOptional(authHeader: string | undefined): number | nu
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
     return decoded.userId;
+  } catch {
+    return null;
+  }
+}
+
+export function verifyTokenForSocket(token: string | undefined): number | null {
+  if (!token || typeof token !== 'string') return null;
+  const raw = token.startsWith('Bearer ') ? token.slice(7) : token;
+  try {
+    const decoded = jwt.verify(raw, JWT_SECRET) as { userId: number };
+    return typeof decoded.userId === 'number' ? decoded.userId : null;
   } catch {
     return null;
   }

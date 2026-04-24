@@ -9,6 +9,7 @@ import { initSearchIndex, reindexAllListings } from './server/services/search';
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 import { corsMiddleware, helmetMiddleware, generalLimiter, authLimiter, uploadLimiter } from './server/middleware/security';
+import { verifyTokenForSocket } from './server/utils/auth';
 import { createAuthRouter } from './server/routes/auth';
 import { createUploadsRouter } from './server/routes/uploads';
 import { createListingsRouter } from './server/routes/listings';
@@ -62,21 +63,28 @@ async function startServer() {
     }
   });
 
-  // Socket.io logic
-  io.on("connection", (socket) => {
-    console.log("A user connected:", socket.id);
+  // Socket.io auth: accept a JWT in handshake.auth.token so authenticated
+  // users can be auto-joined to their private `user_<id>` room. Anonymous
+  // sockets are still allowed so visitors can subscribe to public auction
+  // rooms, but they cannot spoof a user room via a client-sent payload.
+  io.use((socket, next) => {
+    const token = (socket.handshake.auth as { token?: string } | undefined)?.token;
+    const userId = token ? verifyTokenForSocket(token) : null;
+    if (userId) (socket.data as { userId: number }).userId = userId;
+    next();
+  });
 
-    socket.on("join", (userId) => {
-      socket.join(`user_${userId}`);
-      console.log(`User ${userId} joined room user_${userId}`);
-    });
+  io.on("connection", (socket) => {
+    const userId = (socket.data as { userId?: number }).userId;
+    if (userId) socket.join(`user_${userId}`);
 
     socket.on("join_auction", (listingId) => {
-      socket.join(`auction_${listingId}`);
+      const id = Number(listingId);
+      if (Number.isInteger(id) && id > 0) socket.join(`auction_${id}`);
     });
 
     socket.on("disconnect", () => {
-      console.log("User disconnected:", socket.id);
+      // room cleanup is automatic on disconnect
     });
   });
 
@@ -179,7 +187,11 @@ async function startServer() {
     checkEndedAuctions(); // Run once on startup
   });
 
+  // Single in-flight guard: a slow DB pass must not stack up with the next tick.
+  let auctionCheckInFlight = false;
   async function checkEndedAuctions() {
+    if (auctionCheckInFlight) return;
+    auctionCheckInFlight = true;
     try {
       // Find all active listings
       const activeListings = await db.all("SELECT id, user_id, title, attributes FROM listings WHERE status = 'active'", []) as any[];
@@ -231,8 +243,8 @@ async function startServer() {
                   `/listing/${listing.id}`
                 ]);
 
-                // Emit real-time update
-                io.emit('auction_ended', {
+                // Emit real-time update to auction room subscribers only
+                io.to(`auction_${listing.id}`).emit('auction_ended', {
                   listingId: listing.id,
                   winnerId: highestBid.user_id,
                   amount: highestBid.amount
@@ -252,8 +264,8 @@ async function startServer() {
                   `/listing/${listing.id}`
                 ]);
 
-                // Emit real-time update
-                io.emit('auction_ended', {
+                // Emit real-time update to auction room subscribers only
+                io.to(`auction_${listing.id}`).emit('auction_ended', {
                   listingId: listing.id,
                   winnerId: null,
                   amount: null
@@ -267,6 +279,8 @@ async function startServer() {
       }
     } catch (error) {
       console.error('Error checking ended auctions:', error);
+    } finally {
+      auctionCheckInFlight = false;
     }
   }
 }

@@ -65,14 +65,33 @@ export function createOrdersRouter(deps: { io: SocketIOServer }) {
       if (order.buyer_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
       if (order.status !== 'shipped') return res.status(400).json({ error: 'Order is not shipped yet' });
 
-      // Begin transaction
-      await db.transaction(async (client) => {
-        // Mark order as completed
-        await db.clientRun(client, 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', orderId]);
+      // Refuse confirmation while an open dispute exists on this order — otherwise
+      // the buyer could release funds to the seller mid-dispute.
+      const openDispute = await db.get(
+        "SELECT id FROM disputes WHERE order_id = ? AND status = 'open' LIMIT 1",
+        [orderId]
+      );
+      if (openDispute) {
+        return res.status(409).json({ error: 'Pasūtījumu nevar apstiprināt, kamēr pastāv atvērts strīds' });
+      }
 
-        // Transfer funds to seller
+      // Begin transaction — use a conditional UPDATE so concurrent confirm
+      // calls cannot double-transfer funds if the request is replayed.
+      let transferred = false;
+      await db.transaction(async (client) => {
+        const result = await db.clientRun(
+          client,
+          "UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'shipped'",
+          ['completed', orderId]
+        );
+        const changed = (result as any)?.changes ?? (result as any)?.rowCount ?? 0;
+        if (!changed) return;
+        transferred = true;
         await db.clientRun(client, 'UPDATE users SET balance = balance + ? WHERE id = ?', [order.amount, order.seller_id]);
       });
+      if (!transferred) {
+        return res.status(409).json({ error: 'Pasūtījums jau ir apstiprināts vai stāvoklis mainīts' });
+      }
 
       const listing = await db.get('SELECT title FROM listings WHERE id = ?', [order.listing_id]) as any;
       io.to(`user_${order.seller_id}`).emit('order_completed', {

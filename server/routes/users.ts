@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '../pg';
-import { JWT_SECRET } from '../utils/auth';
+import { JWT_SECRET, requireAuth } from '../utils/auth';
 import { checkAndAwardBadges, BADGE_DEFINITIONS, recalculateTrustScore } from '../utils/badges';
 import { hasEarlyAccess } from '../utils/earlyAccess';
 import type { Server as SocketIOServer } from 'socket.io';
@@ -490,21 +490,18 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
   });
 
   // POST /api/users/:id/reviews
-  router.post('/:id/reviews', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
-    const token = authHeader.split(' ')[1];
+  router.post('/:id/reviews', requireAuth, async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const reviewerId = req.userId as number;
       const sellerId = req.params.id;
       const { rating, comment, orderId } = req.body;
 
-      if (decoded.userId.toString() === sellerId) {
+      if (reviewerId.toString() === sellerId) {
         return res.status(400).json({ error: 'You cannot review yourself' });
       }
 
-      if (!rating || rating < 1 || rating > 5) {
+      const numericRating = Number(rating);
+      if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
         return res.status(400).json({ error: 'Rating must be between 1 and 5' });
       }
 
@@ -512,7 +509,9 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
         return res.status(400).json({ error: 'Order ID is required to leave a review' });
       }
 
-      const order = await db.get('SELECT * FROM orders WHERE id = ? AND buyer_id = ? AND seller_id = ? AND status = ?', [orderId, decoded.userId, sellerId, 'completed']);
+      const safeComment = typeof comment === 'string' ? comment.slice(0, 2000) : '';
+
+      const order = await db.get('SELECT * FROM orders WHERE id = ? AND buyer_id = ? AND seller_id = ? AND status = ?', [orderId, reviewerId, sellerId, 'completed']);
 
       if (!order) {
         return res.status(403).json({ error: 'You can only review sellers after a completed purchase' });
@@ -523,7 +522,7 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
         return res.status(400).json({ error: 'You have already reviewed this order' });
       }
 
-      const info = await db.run('INSERT INTO reviews (reviewer_id, seller_id, order_id, rating, comment) VALUES (?, ?, ?, ?, ?)', [decoded.userId, sellerId, orderId, rating, comment]);
+      const info = await db.run('INSERT INTO reviews (reviewer_id, seller_id, order_id, rating, comment) VALUES (?, ?, ?, ?, ?)', [reviewerId, sellerId, orderId, numericRating, safeComment]);
 
       recalculateTrustScore(Number(req.params.id)).catch(() => {});
 
