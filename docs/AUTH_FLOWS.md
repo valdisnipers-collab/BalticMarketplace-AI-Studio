@@ -252,7 +252,85 @@ Ja atslēga trūkst, visi 2FA endpointi atgriež **503** ar kļūdu; esošie 2FA
 
 ---
 
-## 5. Smart-ID (simulēts)
+## 5. Google SSO (Sign in with Google)
+
+Vienviena klikšķa ienākšana caur Google OAuth 2.0. Tiek uzskatīts par savu MFA (Google pats prasa Google 2FA, ja lietotājam tas aktīvs), tāpēc mūsu TOTP solis tiek apiets — **izņemot** admin kontus, kuriem TOTP step-up joprojām prasām, lai nesasaistītu platformas kontroli ar Google identitāti.
+
+### 5.1. Uzsākšana
+
+**Endpoint:** `GET /api/auth/google`
+**Fails:** [server/routes/auth.ts](../server/routes/auth.ts)
+
+Darbības:
+1. Ģenerē state JWT (30s TTL, payload `{provider:'google', nonce}`)
+2. Uzstāda HttpOnly cookie `oauth_state` ar šo JWT
+3. Redirect'o uz `https://accounts.google.com/o/oauth2/v2/auth?client_id=...&redirect_uri=<APP_URL>/api/auth/google/callback&response_type=code&scope=openid+email+profile&state=<jwt>&prompt=select_account`
+
+### 5.2. Callback
+
+**Endpoint:** `GET /api/auth/google/callback?code=...&state=...`
+
+Pakāpeniski:
+1. Verificē `state` pret cookie (abas vērtības identiskas, JWT derīgs, provider='google')
+2. POST uz `https://oauth2.googleapis.com/token` ar `code + client_id + client_secret + redirect_uri` → iegūst `id_token`
+3. Verificē `id_token` ar `google-auth-library` (paraksts, audience, issuer, exp)
+4. Ekstraktē `sub`, `email`, `email_verified`, `name`
+
+### 5.3. Konta linkēšanas politika
+
+```
+┌─ (provider='google', provider_uid=<sub>) eksistē user_identities? ─┐
+│                                                                    │
+│ YES → pieslēdz to lietotāju                                        │
+│ NO  → email_verified=true un users.email (case-insensitive) match? │
+│        YES → INSERT user_identities (saistījam), pieslēdz           │
+│        NO  → izveido jaunu user + INSERT user_identities            │
+│              (jaunam 50 punktu reģistrācijas bonuss)                │
+│                                                                    │
+│ email_verified=false un nav sub match → NORAIDA ar sso_error        │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### 5.4. Admin izņēmums
+
+Ja atrastais lietotājs ir `role='admin'` un `totp_enabled=true`:
+- Servers izsniedz **tempToken** ar `totp_pending=true` (5 min TTL)
+- Redirect uz `/login?sso_2fa=1&sso_temp=<tempToken>`
+- Frontend Login lapā turpina standartu 2FA flow (TwoFactorSettings + `/api/auth/2fa/verify`)
+
+Lietotāji bez 2FA vai bez admin lomas saņem pilnu JWT:
+- Redirect uz `/login?sso_token=<JWT>`
+- Frontend izveido profilu caur `/api/auth/me` un signIn
+
+### 5.5. Kļūdu apstrāde
+
+Visos kļūdu gadījumos (state mismatch, Google nedeva code, email_verified=false, token exchange fail) servers redirect'o uz `/login?sso_error=<ziņojums>`, un Login lapa parāda to sarkanā brīdinājuma kastītē.
+
+### 5.6. CSRF aizsardzība
+
+- State JWT dzīvo gan URL parametrā, gan HttpOnly cookie
+- Pretinieks, kurš spēj izveidot ļaunu `/callback?state=X`, **nevar** arī iestatīt `oauth_state` cookie (cross-origin)
+- JWT `nonce` + 30s TTL padara replay neiespējamu
+
+### 5.7. Env mainīgie
+
+- `GOOGLE_OAUTH_CLIENT_ID` — no [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials → OAuth 2.0 Client IDs → Web application
+- `GOOGLE_OAUTH_CLIENT_SECRET` — tas pats avots
+- `APP_URL` — jau eksistē, izmanto redirect_uri veidošanai
+
+Ja `GOOGLE_OAUTH_CLIENT_ID` trūkst, `/api/auth/google` uzreiz atgriež `sso_error: "Google SSO nav konfigurēts"`.
+
+### 5.8. Authorized redirect URIs
+
+Google Cloud Console → OAuth client → Authorized redirect URIs sarakstam jāsatur:
+- `https://balticmarket.net/api/auth/google/callback` (produkcija)
+- `http://localhost:3000/api/auth/google/callback` (lokālā izstrāde)
+
+Ja URI neatbilst **precīzi**, Google noraida ar `redirect_uri_mismatch`.
+
+---
+
+## 6. Smart-ID (simulēts)
 
 **Status:** Simulēts. Ražošanā prasa `SMART_ID_PROVIDER_URL` env; bez tā `smartIdGuard` middleware atgriež 503.
 
@@ -272,7 +350,7 @@ Frontend [src/pages/Profile.tsx:550](../src/pages/Profile.tsx#L550) jau prasa de
 
 ---
 
-## 6. Drošības garantijas visām plūsmām
+## 7. Drošības garantijas visām plūsmām
 
 | Aspekts | Vērtība | Kur |
 |---|---|---|
@@ -291,11 +369,14 @@ Frontend [src/pages/Profile.tsx:550](../src/pages/Profile.tsx#L550) jau prasa de
 | TOTP 2FA | Opt-in, RFC 6238, secret AES-256-GCM encrypted | [totp.ts](../server/utils/totp.ts) |
 | 2FA recovery codes | 8 × vienreizēji, bcrypt hash, normalizēti | totp.ts |
 | 2FA tempToken TTL | 5 min (starp login un /2fa/verify) | auth.ts |
+| Google SSO CSRF state | 30s JWT, HttpOnly cookie + URL param match | [oauthState.ts](../server/utils/oauthState.ts) |
+| Google SSO admin izņēmums | Admin + totp_enabled vienmēr prasa TOTP step-up | auth.ts |
+| Google SSO email bez verifikācijas | Nekad auto-link | auth.ts |
 | Stripe webhook verification | `stripe.webhooks.constructEvent` | [server/routes/payments.ts](../server/routes/payments.ts) |
 
 ---
 
-## 7. Env mainīgie
+## 8. Env mainīgie
 
 **Obligāti produkcijā:**
 - `DATABASE_URL` — PostgreSQL (Neon)
@@ -312,13 +393,18 @@ Frontend [src/pages/Profile.tsx:550](../src/pages/Profile.tsx#L550) jau prasa de
 **Obligāti TOTP 2FA:**
 - `TOTP_ENCRYPTION_KEY` — 32 baitu atslēga AES-256-GCM secret šifrēšanai. Ja trūkst, 2FA setup atgriež 503 un esošie 2FA lietotāji nevar verificēt kodu.
 
+**Obligāti Google SSO:**
+- `GOOGLE_OAUTH_CLIENT_ID` — Web application OAuth 2.0 client ID no Google Cloud Console
+- `GOOGLE_OAUTH_CLIENT_SECRET` — tā pati vieta, slepenā daļa
+- Ja kāds trūkst, `/api/auth/google` uzreiz redirect'o uz `/login?sso_error=...` un Google poga UI rāda kļūdu — esošie lietotāji (email/phone/Smart-ID) netiek ietekmēti
+
 **Ja nav Twilio** — `NODE_ENV !== 'production'` → simulēts OTP; produkcijā → 503.
 
 **Smart-ID produkcijai:** `SMART_ID_PROVIDER_URL` (pagaidām placeholder — bez īstas integrācijas).
 
 ---
 
-## 8. Automatizēta verifikācija
+## 9. Automatizēta verifikācija
 
 Palaist smoke testu pret lokālo dev serveri:
 

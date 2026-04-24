@@ -292,6 +292,53 @@ async function main() {
     r.status === 200 && !r.data.requires2FA && !!r.data.token);
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Section F — Google SSO surface checks (no real Google dance)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // /api/auth/google should 302. Either to accounts.google.com (when
+  // GOOGLE_OAUTH_CLIENT_ID is set) or to /login?sso_error=... (when not).
+  // Both are valid; we just check that we get a redirect.
+  {
+    const res = await fetch(`${BASE}/api/auth/google`, {
+      redirect: 'manual',
+      headers: { 'X-Forwarded-For': `10.1.0.${(reqCounter++ % 254) + 1}` },
+    });
+    const loc = res.headers.get('location') || '';
+    const is302 = res.status >= 300 && res.status < 400;
+    const goesToGoogleOrError =
+      loc.startsWith('https://accounts.google.com/') ||
+      loc.includes('sso_error=');
+    record('GET /api/auth/google → 302 to Google or sso_error',
+      is302 && goesToGoogleOrError, `status=${res.status} loc="${loc.slice(0, 80)}"`);
+  }
+
+  {
+    const res = await fetch(`${BASE}/api/auth/google/callback?code=test&state=nothing`, {
+      redirect: 'manual',
+      headers: { 'X-Forwarded-For': `10.1.0.${(reqCounter++ % 254) + 1}` },
+    });
+    const loc = res.headers.get('location') || '';
+    const ok =
+      (res.status >= 300 && res.status < 400 && loc.includes('sso_error=')) ||
+      res.status === 400;
+    record('GET /api/auth/google/callback with bad state → redirect with sso_error or 400',
+      ok, `status=${res.status} loc="${loc.slice(0, 80)}"`);
+  }
+
+  {
+    const res = await fetch(`${BASE}/api/auth/google/callback`, {
+      redirect: 'manual',
+      headers: { 'X-Forwarded-For': `10.1.0.${(reqCounter++ % 254) + 1}` },
+    });
+    const loc = res.headers.get('location') || '';
+    const ok =
+      (res.status >= 300 && res.status < 400 && loc.includes('sso_error=')) ||
+      res.status === 400;
+    record('GET /api/auth/google/callback without params → redirect with sso_error or 400',
+      ok, `status=${res.status} loc="${loc.slice(0, 80)}"`);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Cleanup
   // ─────────────────────────────────────────────────────────────────────────
 
