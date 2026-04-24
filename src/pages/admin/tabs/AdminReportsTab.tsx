@@ -42,7 +42,7 @@ export default function AdminReportsTab() {
   }
   async function resolveDispute(id: number, action: 'refund' | 'release') {
     const notes = prompt(`Iemesls (${action}):`) ?? '';
-    await apiPost(`/api/admin/disputes/${id}/resolve`, { action, admin_notes: notes });
+    await apiPost(`/api/admin/disputes/${id}/resolve`, { action, adminNotes: notes });
     await load();
   }
 

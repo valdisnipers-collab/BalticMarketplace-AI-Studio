@@ -77,9 +77,12 @@ export default function Pricing() {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else alert(data.error || 'Neizdevās izveidot maksājuma sesiju');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        alert(data.error || 'Neizdevās izveidot maksājuma sesiju');
+        return;
+      }
+      window.location.href = data.url;
     } catch (e) {
       console.error(e);
       alert('Radās kļūda. Mēģiniet vēlreiz.');

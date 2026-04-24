@@ -49,8 +49,10 @@ export default function AdminUsersTab() {
     }, 'Lietotājs nevarēs pieslēgties. Darbība tiek ierakstīta audita žurnālā.');
   }
   async function unban(id: number) {
-    await apiPost(`/api/admin/users/${id}/unban`, {});
-    await load();
+    askConfirm('Atbloķēt lietotāju?', async () => {
+      await apiPost(`/api/admin/users/${id}/unban`, {});
+      await load();
+    }, 'Lietotājs atkal varēs pieslēgties un lietot platformu. Darbība tiek ierakstīta audita žurnālā.', false);
   }
   async function verify(id: number) {
     await apiPost(`/api/admin/users/${id}/verify`, {});

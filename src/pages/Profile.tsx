@@ -100,6 +100,7 @@ export default function Profile() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [verifying, setVerifying] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
+  const [personalCode, setPersonalCode] = useState('');
   const [selectedAd, setSelectedAd] = useState<AdData | null>(null);
   const [companyForm, setCompanyForm] = useState({
     company_name: '',
@@ -547,7 +548,13 @@ export default function Profile() {
     }
   };
 
+  const isValidPersonalCode = /^\d{6}-\d{5}$/.test(personalCode.trim());
+
   const handleSmartIdVerification = async () => {
+    if (!isValidPersonalCode) {
+      alert('Nepareizs personas kods. Formāts: NNNNNN-NNNNN');
+      return;
+    }
     setVerifying(true);
     try {
       const token = localStorage.getItem('auth_token');
@@ -557,7 +564,7 @@ export default function Profile() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ personalCode: '123456-12345', country: 'LV' })
+        body: JSON.stringify({ personalCode: personalCode.trim(), country: 'LV' })
       });
 
       if (!initRes.ok) throw new Error('Neizdevās uzsākt Smart-ID verifikāciju');
@@ -771,13 +778,24 @@ export default function Profile() {
                   )}
                 </div>
               ) : (
-                <Button
-                  onClick={handleSmartIdVerification}
-                  className="w-full bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
-                >
-                  <Fingerprint className="w-4 h-4 mr-2" />
-                  Verificēt ar Smart-ID
-                </Button>
+                <>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Personas kods</label>
+                  <Input
+                    value={personalCode}
+                    onChange={(e) => setPersonalCode(e.target.value)}
+                    placeholder="NNNNNN-NNNNN"
+                    maxLength={12}
+                    className="mb-3"
+                  />
+                  <Button
+                    onClick={handleSmartIdVerification}
+                    disabled={!isValidPersonalCode}
+                    className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-500/50 disabled:cursor-not-allowed text-white rounded-xl px-8 py-6 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
+                  >
+                    <Fingerprint className="w-4 h-4 mr-2" />
+                    Verificēt ar Smart-ID
+                  </Button>
+                </>
               )}
             </div>
           )}
@@ -1197,7 +1215,8 @@ export default function Profile() {
                             return;
                           }
                           if (!res.ok || !data.url) {
-                            throw new Error(data.error || 'Neizdevās atvērt abonementa pārvaldību');
+                            alert(data.error || 'Neizdevās atvērt abonementa pārvaldību. Mēģiniet vēlāk vai sazinieties ar atbalstu.');
+                            return;
                           }
                           window.location.href = data.url;
                         } catch (err: any) {

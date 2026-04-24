@@ -37,9 +37,20 @@ export default function AdminListingsTab() {
     await apiPost(`/api/admin/listings/${id}/status`, { status: s });
     await load();
   }
+  const BULK_ACTIONS = new Set(['pause', 'archive', 'delete']);
   async function bulk(action: string) {
     if (selected.size === 0) return;
-    setConfirm({ open: true, title: `Apstiprināt bulk "${action}" (${selected.size})?`, action: async () => {
+    if (!BULK_ACTIONS.has(action)) {
+      console.error('Invalid bulk action:', action);
+      return;
+    }
+    const destructive = action === 'delete';
+    const title = destructive
+      ? `Dzēst ${selected.size} sludinājumus neatgriezeniski?`
+      : action === 'archive'
+        ? `Arhivēt ${selected.size} sludinājumus?`
+        : `Pauzēt ${selected.size} sludinājumus?`;
+    setConfirm({ open: true, title, action: async () => {
       await apiPost('/api/admin/listings/bulk', { ids: Array.from(selected), action });
       setSelected(new Set()); await load();
     }});
