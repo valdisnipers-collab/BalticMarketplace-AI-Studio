@@ -1024,50 +1024,42 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     }
   });
 
-  // POST /api/listings/:id/highlight
-  router.post('/:id/highlight', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
-    const token = authHeader.split(' ')[1];
+  // POST /api/listings/:id/highlight — legacy; delegates to PromotionService
+  // so the price respects platform_settings and the row is recorded in
+  // listing_promotions alongside /promote results.
+  router.post('/:id/highlight', requireAuth, async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const listingId = req.params.id;
-
-      const listing = await db.get('SELECT user_id, is_highlighted FROM listings WHERE id = ?', [listingId]) as any;
-
-      if (!listing) return res.status(404).json({ error: 'Listing not found' });
-      if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized' });
-      if (listing.is_highlighted) return res.status(400).json({ error: 'Listing is already highlighted' });
-
-      const user = await db.get('SELECT points FROM users WHERE id = ?', [decoded.userId]) as any;
-      if (!user || user.points < 100) {
-        return res.status(400).json({ error: 'Nepietiekams punktu skaits (nepieciešami 100 punkti)' });
+      const listingId = Number(req.params.id);
+      if (!Number.isInteger(listingId) || listingId <= 0) {
+        return res.status(400).json({ error: 'Invalid listing id' });
       }
-
-      await db.transaction(async (client) => {
-        await db.clientRun(client, 'UPDATE users SET points = points - 100 WHERE id = ?', [decoded.userId]);
-        await db.clientRun(client, 'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)', [decoded.userId, -100, `Sludinājuma #${listingId} izcelšana`]);
-        await db.clientRun(client, 'UPDATE listings SET is_highlighted = 1 WHERE id = ?', [listingId]);
+      const result = await PromotionService.promote({
+        listingId,
+        userId: req.userId,
+        type: 'highlight',
+        req,
       });
-
-      const updatedUser = await db.get('SELECT points FROM users WHERE id = ?', [decoded.userId]) as any;
-      res.json({ message: 'Sludinājums izcelts veiksmīgi', points: updatedUser.points });
-    } catch (error) {
+      res.json({
+        message: 'Sludinājums izcelts veiksmīgi',
+        points: result.points_balance,
+        ...result,
+      });
+    } catch (error: any) {
+      const msg = error?.message || '';
+      if (msg === 'LISTING_NOT_FOUND') return res.status(404).json({ error: 'Sludinājums nav atrasts' });
+      if (msg === 'NOT_LISTING_OWNER') return res.status(403).json({ error: 'Nav tiesību' });
+      if (msg === 'LISTING_NOT_ACTIVE') return res.status(400).json({ error: 'Sludinājums nav aktīvs' });
+      if (msg === 'INSUFFICIENT_POINTS') return res.status(400).json({ error: 'Nepietiekams punktu skaits' });
+      if (msg === 'USER_NOT_FOUND') return res.status(404).json({ error: 'Lietotājs nav atrasts' });
       console.error('Error highlighting listing:', error);
       res.status(500).json({ error: 'Server error highlighting listing' });
     }
   });
 
   // POST /api/listings/:id/offers
-  router.post('/:id/offers', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-    const token = authHeader.split(' ')[1];
-
+  router.post('/:id/offers', requireAuth, async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const senderId = decoded.userId;
+      const senderId = req.userId as number;
       const listingId = req.params.id;
       const { amount, buyerId: providedBuyerId } = req.body;
 
@@ -1121,13 +1113,9 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
   });
 
   // POST /api/listings/:id/bids
-  router.post('/:id/bids', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
-    const token = authHeader.split(' ')[1];
+  router.post('/:id/bids', requireAuth, async (req: any, res) => {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const userId = req.userId as number;
       const listingId = req.params.id;
 
       const bidAmount = parseFiniteNumber(req.body?.amount, { min: 0.01, max: 10_000_000 });
@@ -1142,7 +1130,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         return res.status(400).json({ error: 'This auction has ended' });
       }
 
-      if (listing.user_id === decoded.userId) {
+      if (listing.user_id === userId) {
         return res.status(400).json({ error: 'Cannot bid on your own listing' });
       }
 
@@ -1166,7 +1154,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       // Strikes check — block bidding if 3+ strikes
       const strikesRow = await db.get(
         'SELECT COUNT(*) as c FROM user_strikes WHERE user_id = $1',
-        [decoded.userId]
+        [userId]
       ) as any;
       const strikes = Number(strikesRow?.c ?? 0);
       if (strikes >= 3) {
@@ -1235,7 +1223,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
           const insertResult = await db.clientRun(
             client,
             'INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)',
-            [listingId, decoded.userId, bidAmount]
+            [listingId, userId, bidAmount]
           );
           bidInsertId = insertResult.lastInsertRowid;
         });
@@ -1312,13 +1300,8 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
   });
 
   // POST /api/listings/generate-description  (was /api/generate-description)
-  router.post('/generate-description', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-    const token = authHeader.split(' ')[1];
-
+  router.post('/generate-description', requireAuth, async (req: any, res) => {
     try {
-      jwt.verify(token, JWT_SECRET);
       const { category, title, ...attributes } = req.body;
 
       const ai = getGenAI();
@@ -1350,10 +1333,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
   });
 
   // POST /api/listings/recommend-price  (was /api/recommend-price)
-  router.post('/recommend-price', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
+  router.post('/recommend-price', requireAuth, async (req: any, res) => {
     try {
       const { category, title, attributes } = req.body;
 
@@ -1394,10 +1374,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
   });
 
   // POST /api/listings/ai/generate-listing  (was /api/ai/generate-listing)
-  router.post('/ai/generate-listing', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
+  router.post('/ai/generate-listing', requireAuth, async (req: any, res) => {
     try {
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
@@ -1480,10 +1457,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
   });
 
   // POST /api/listings/ai/decode-vin  (was /api/ai/decode-vin)
-  router.post('/ai/decode-vin', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token' });
-
+  router.post('/ai/decode-vin', requireAuth, async (req: any, res) => {
     try {
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: 'AI pakalpojums nav pieejams' });
