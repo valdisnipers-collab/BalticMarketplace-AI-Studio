@@ -10,6 +10,8 @@ import { checkAndAwardBadges } from '../utils/badges';
 import { validateBody, registerSchema, loginSchema } from '../middleware/validate';
 import { validatePassword } from '../utils/passwordCheck';
 import { sendEmail, emailTemplates } from './../services/email';
+import * as TOTP from '../utils/totp';
+import QRCode from 'qrcode';
 
 const RESET_TOKEN_TTL_MINUTES = 60;
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
@@ -320,6 +322,18 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) return res.status(400).json({ error: 'Invalid credentials' });
 
+      // TOTP step-up: if the user has enabled 2FA, the password is only the
+      // first factor. Return a short-lived "pending" token that the client
+      // exchanges on /2fa/verify with the 6-digit code.
+      if (user.totp_enabled) {
+        const tempToken = jwt.sign(
+          { userId: user.id, totp_pending: true },
+          JWT_SECRET,
+          { expiresIn: '5m' },
+        );
+        return res.json({ requires2FA: true, tempToken });
+      }
+
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
       res.json({ token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone, user_type: user.user_type, role: user.role, points: user.points, early_access_until: user.early_access_until, company_name: user.company_name, company_reg_number: user.company_reg_number, company_vat: user.company_vat, is_verified: user.is_verified } });
     } catch (error) {
@@ -441,6 +455,274 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     }
   });
 
+  // ── TOTP 2FA endpoints ──────────────────────────────────────────────────
+  //
+  // Flow:
+  //   1. Client (logged in) POSTs /2fa/setup-init → gets a fresh secret + QR.
+  //      The secret is NOT yet stored against the user — only returned so
+  //      the client can render the QR. Client includes it as `pendingSecret`
+  //      on the follow-up call so the server does not have to stash pending
+  //      state between requests.
+  //   2. Client POSTs /2fa/setup-confirm { pendingSecret, code } → server
+  //      verifies the code against pendingSecret, encrypts the secret,
+  //      stores it on users, generates 8 recovery codes, returns them once.
+  //   3. During login, if totp_enabled=true, /login returns {requires2FA,
+  //      tempToken} instead of the JWT. Client POSTs /2fa/verify
+  //      { tempToken, code | recoveryCode } to receive the real JWT.
+  //   4. Client (logged in) POSTs /2fa/disable { code } to turn 2FA off.
+
+  function extractBearer(req: any): string | null {
+    const h = req.headers.authorization as string | undefined;
+    if (!h) return null;
+    const parts = h.split(' ');
+    return parts[1] || null;
+  }
+
+  function authenticatedUserId(req: any): number | null {
+    const token = extractBearer(req);
+    if (!token) return null;
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; totp_pending?: boolean };
+      if (decoded.totp_pending) return null; // pending tokens cannot access protected routes
+      return decoded.userId;
+    } catch { return null; }
+  }
+
+  router.post("/2fa/setup-init", authLimiter, async (req, res) => {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'No token' });
+    try {
+      const user = await db.get<{ email: string | null; totp_enabled: boolean | null }>(
+        'SELECT email, totp_enabled FROM users WHERE id = ?', [userId],
+      );
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      if (user.totp_enabled) return res.status(400).json({ error: '2FA jau ir aktivizēts' });
+
+      const secret = TOTP.generateSecret();
+      const label = user.email || `BalticMarket user #${userId}`;
+      const otpauthUrl = TOTP.buildOtpAuthUrl(secret, label);
+      const qrDataUrl = await QRCode.toDataURL(otpauthUrl, { margin: 1, width: 256 });
+
+      res.json({ pendingSecret: secret, otpauthUrl, qrDataUrl });
+    } catch (e: any) {
+      if (e?.message === 'MISSING_KEY') {
+        return res.status(503).json({ error: 'TOTP_ENCRYPTION_KEY nav konfigurēts serverī. Sazinieties ar atbalstu.' });
+      }
+      console.error('[2fa/setup-init]', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  router.post("/2fa/setup-confirm", authLimiter, async (req, res) => {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'No token' });
+
+    const { pendingSecret, code } = req.body || {};
+    if (typeof pendingSecret !== 'string' || pendingSecret.length < 16) {
+      return res.status(400).json({ error: 'Nederīgs setup' });
+    }
+    if (typeof code !== 'string' || !/^\d{6}$/.test(code.replace(/\s/g, ''))) {
+      return res.status(400).json({ error: 'Nederīgs 6-ciparu kods' });
+    }
+
+    try {
+      if (!TOTP.verifyCode(pendingSecret, code)) {
+        return res.status(400).json({ error: 'Nepareizs kods. Pārbaudiet laiku telefonā un mēģiniet vēlreiz.' });
+      }
+
+      const user = await db.get<{ totp_enabled: boolean | null }>(
+        'SELECT totp_enabled FROM users WHERE id = ?', [userId],
+      );
+      if (user?.totp_enabled) return res.status(400).json({ error: '2FA jau aktivizēts' });
+
+      const encrypted = TOTP.encryptSecret(pendingSecret);
+      const recovery = await TOTP.generateRecoveryCodes();
+
+      await db.transaction(async (client) => {
+        await db.clientRun(
+          client,
+          `UPDATE users SET totp_secret_enc = ?, totp_enabled = true, totp_enabled_at = NOW() WHERE id = ?`,
+          [encrypted, userId],
+        );
+        // Reset any previous recovery codes for this user (defensive — should
+        // be none when enabling, but matches regenerate semantics).
+        await db.clientRun(
+          client,
+          `UPDATE totp_recovery_codes SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL`,
+          [userId],
+        );
+        for (const r of recovery) {
+          await db.clientRun(
+            client,
+            `INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES (?, ?) RETURNING id`,
+            [userId, r.hash],
+          );
+        }
+      });
+
+      res.json({
+        ok: true,
+        recoveryCodes: recovery.map(r => r.plaintext),
+        message: 'Saglabājiet rezerves kodus drošā vietā. Tie parādās tikai vienreiz.',
+      });
+    } catch (e: any) {
+      if (e?.message === 'MISSING_KEY') {
+        return res.status(503).json({ error: 'TOTP_ENCRYPTION_KEY nav konfigurēts serverī.' });
+      }
+      console.error('[2fa/setup-confirm]', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  router.post("/2fa/verify", authLimiter, async (req, res) => {
+    const { tempToken, code, recoveryCode } = req.body || {};
+    if (typeof tempToken !== 'string') return res.status(400).json({ error: 'tempToken required' });
+
+    let decoded: { userId: number; totp_pending?: boolean };
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET) as typeof decoded;
+    } catch {
+      return res.status(401).json({ error: 'Derīguma termiņš beidzies. Ienāciet vēlreiz.' });
+    }
+    if (!decoded.totp_pending) return res.status(400).json({ error: 'Nederīgs tempToken' });
+
+    try {
+      const user = await db.get<any>(
+        'SELECT id, email, name, phone, role, user_type, points, early_access_until, company_name, company_reg_number, company_vat, is_verified, totp_secret_enc FROM users WHERE id = ?',
+        [decoded.userId],
+      );
+      if (!user?.totp_secret_enc) return res.status(400).json({ error: '2FA nav aktivizēts' });
+
+      let pass = false;
+
+      if (typeof code === 'string' && /^\d{6}$/.test(code.replace(/\s/g, ''))) {
+        const secret = TOTP.decryptSecret(user.totp_secret_enc);
+        pass = TOTP.verifyCode(secret, code);
+      } else if (typeof recoveryCode === 'string' && recoveryCode.length >= 6) {
+        const rows = await db.all<{ id: number; code_hash: string }>(
+          `SELECT id, code_hash FROM totp_recovery_codes WHERE user_id = ? AND used_at IS NULL`,
+          [user.id],
+        );
+        for (const r of rows) {
+          if (await TOTP.matchRecoveryHash(recoveryCode, r.code_hash)) {
+            await db.run(
+              `UPDATE totp_recovery_codes SET used_at = NOW() WHERE id = ?`,
+              [r.id],
+            );
+            pass = true;
+            break;
+          }
+        }
+      } else {
+        return res.status(400).json({ error: 'Kods vai rezerves kods nav padots' });
+      }
+
+      if (!pass) return res.status(400).json({ error: 'Nepareizs kods' });
+
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({
+        token,
+        user: {
+          id: user.id, email: user.email, name: user.name, phone: user.phone,
+          user_type: user.user_type, role: user.role, points: user.points,
+          early_access_until: user.early_access_until,
+          company_name: user.company_name, company_reg_number: user.company_reg_number,
+          company_vat: user.company_vat, is_verified: user.is_verified,
+        },
+      });
+    } catch (e: any) {
+      if (e?.message === 'MISSING_KEY' || e?.message === 'MALFORMED_SECRET') {
+        return res.status(503).json({ error: 'TOTP konfigurācija bojāta. Sazinieties ar atbalstu.' });
+      }
+      console.error('[2fa/verify]', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  router.post("/2fa/disable", authLimiter, async (req, res) => {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'No token' });
+
+    const { code } = req.body || {};
+    if (typeof code !== 'string' || !/^\d{6}$/.test(code.replace(/\s/g, ''))) {
+      return res.status(400).json({ error: 'Ievadiet 6-ciparu kodu, lai apstiprinātu' });
+    }
+
+    try {
+      const user = await db.get<{ totp_secret_enc: string | null; totp_enabled: boolean | null }>(
+        'SELECT totp_secret_enc, totp_enabled FROM users WHERE id = ?', [userId],
+      );
+      if (!user?.totp_enabled || !user.totp_secret_enc) {
+        return res.status(400).json({ error: '2FA nav aktivizēts' });
+      }
+
+      const secret = TOTP.decryptSecret(user.totp_secret_enc);
+      if (!TOTP.verifyCode(secret, code)) {
+        return res.status(400).json({ error: 'Nepareizs kods' });
+      }
+
+      await db.transaction(async (client) => {
+        await db.clientRun(
+          client,
+          `UPDATE users SET totp_enabled = false, totp_secret_enc = NULL, totp_enabled_at = NULL WHERE id = ?`,
+          [userId],
+        );
+        await db.clientRun(
+          client,
+          `UPDATE totp_recovery_codes SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL`,
+          [userId],
+        );
+      });
+
+      res.json({ ok: true, message: '2FA atslēgts' });
+    } catch (e) {
+      console.error('[2fa/disable]', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  router.post("/2fa/recovery-codes/regenerate", authLimiter, async (req, res) => {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'No token' });
+
+    const { code } = req.body || {};
+    if (typeof code !== 'string' || !/^\d{6}$/.test(code.replace(/\s/g, ''))) {
+      return res.status(400).json({ error: 'Ievadiet 6-ciparu kodu, lai apstiprinātu' });
+    }
+
+    try {
+      const user = await db.get<{ totp_secret_enc: string | null; totp_enabled: boolean | null }>(
+        'SELECT totp_secret_enc, totp_enabled FROM users WHERE id = ?', [userId],
+      );
+      if (!user?.totp_enabled || !user.totp_secret_enc) {
+        return res.status(400).json({ error: '2FA nav aktivizēts' });
+      }
+      const secret = TOTP.decryptSecret(user.totp_secret_enc);
+      if (!TOTP.verifyCode(secret, code)) return res.status(400).json({ error: 'Nepareizs kods' });
+
+      const recovery = await TOTP.generateRecoveryCodes();
+      await db.transaction(async (client) => {
+        await db.clientRun(
+          client,
+          `UPDATE totp_recovery_codes SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL`,
+          [userId],
+        );
+        for (const r of recovery) {
+          await db.clientRun(
+            client,
+            `INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES (?, ?) RETURNING id`,
+            [userId, r.hash],
+          );
+        }
+      });
+
+      res.json({ ok: true, recoveryCodes: recovery.map(r => r.plaintext) });
+    } catch (e) {
+      console.error('[2fa/recovery-codes/regenerate]', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   router.get("/me", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
@@ -448,7 +730,7 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const user = await db.get('SELECT id, email, name, role, phone, is_verified, user_type, points, early_access_until, company_name, company_reg_number, company_vat, company_address, b2b_subscription_status, stripe_customer_id FROM users WHERE id = ?', [decoded.userId]);
+      const user = await db.get('SELECT id, email, name, role, phone, is_verified, user_type, points, early_access_until, company_name, company_reg_number, company_vat, company_address, b2b_subscription_status, stripe_customer_id, totp_enabled FROM users WHERE id = ?', [decoded.userId]);
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json({ user });
     } catch (error) {
