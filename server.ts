@@ -10,6 +10,7 @@ import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 import { corsMiddleware, helmetMiddleware, generalLimiter, authLimiter, uploadLimiter } from './server/middleware/security';
 import { verifyTokenForSocket } from './server/utils/auth';
+import { runMigrations } from './server/migrations/runner';
 import { createAuthRouter } from './server/routes/auth';
 import { createUploadsRouter } from './server/routes/uploads';
 import { createListingsRouter } from './server/routes/listings';
@@ -87,6 +88,16 @@ async function startServer() {
       // room cleanup is automatic on disconnect
     });
   });
+
+  // Apply any pending SQL migrations before serving traffic. Runner is
+  // idempotent: already-applied files are skipped via `schema_migrations`.
+  try {
+    const { applied, skipped } = await runMigrations();
+    console.log(`[startup] migrations: applied=${applied.length} skipped=${skipped.length}`);
+  } catch (e) {
+    console.error('[startup] migration failure — aborting boot', e);
+    throw e;
+  }
 
   // Initialize Meilisearch and sync all listings from PostgreSQL
   if (process.env.MEILISEARCH_HOST) {

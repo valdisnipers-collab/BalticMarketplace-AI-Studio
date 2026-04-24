@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS listings (
   is_highlighted INTEGER DEFAULT 0,
   highlight_expires_at TIMESTAMPTZ,
   ai_trust_score INTEGER DEFAULT 100,
+  ai_moderation_status TEXT DEFAULT 'pending',
+  ai_moderation_reason TEXT,
+  ai_card_summary TEXT,
+  view_count INTEGER DEFAULT 0,
+  quality_score INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -109,6 +114,8 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT,
   image_url TEXT,
   is_read INTEGER DEFAULT 0,
+  is_phishing_warning BOOLEAN DEFAULT false,
+  system_warning TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -143,8 +150,13 @@ CREATE TABLE IF NOT EXISTS offers (
   buyer_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   sender_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
   amount DOUBLE PRECISION NOT NULL,
-  status TEXT DEFAULT 'pending',
+  status TEXT DEFAULT 'pending'
+    CHECK (status IN ('pending', 'accepted', 'rejected', 'countered',
+                      'expired', 'cancelled', 'converted_to_order')),
   message TEXT,
+  expires_at TIMESTAMPTZ,
+  parent_offer_id BIGINT REFERENCES offers(id) ON DELETE SET NULL,
+  order_id BIGINT REFERENCES orders(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -180,10 +192,14 @@ CREATE TABLE IF NOT EXISTS saved_searches (
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   query TEXT,
   category TEXT,
+  subcategory TEXT,
   min_price DOUBLE PRECISION,
   max_price DOUBLE PRECISION,
-  filters TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  filters TEXT, -- legacy; new writes use `attributes` instead
+  attributes JSONB,
+  notification_enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Settings (key-value store)
@@ -206,6 +222,7 @@ CREATE TABLE IF NOT EXISTS ads (
   image_url TEXT,
   link_url TEXT,
   size TEXT DEFAULT '728x90',
+  placement TEXT DEFAULT 'default',
   start_date TIMESTAMPTZ,
   end_date TIMESTAMPTZ,
   is_active INTEGER DEFAULT 1,
@@ -213,7 +230,9 @@ CREATE TABLE IF NOT EXISTS ads (
   user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
   status TEXT DEFAULT 'approved',
   price_points INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  budget_points INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Ad stats
@@ -324,11 +343,10 @@ CREATE TABLE IF NOT EXISTS listing_drafts (
 
 CREATE INDEX IF NOT EXISTS listing_drafts_user_idx ON listing_drafts(user_id);
 
--- Quality score kolonna uz listings (0-100)
-ALTER TABLE listings ADD COLUMN IF NOT EXISTS quality_score INTEGER DEFAULT 0;
-
--- Trust score kolonna uz users (0-100, bāze 50)
-ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 50;
+-- NOTE: quality_score (listings) and trust_score (users) columns are now
+-- declared inline above (listings) / applied via migration 001 (users).
+-- Ad-hoc ALTER TABLE statements removed — the `server/migrations/` runner
+-- handles all additive schema changes idempotently.
 
 -- User strikes (auction non-payment penalties)
 CREATE TABLE IF NOT EXISTS user_strikes (

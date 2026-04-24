@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import jwt from 'jsonwebtoken';
 import db from '../pg';
-import { requireAuth, JWT_SECRET } from '../utils/auth';
+import { requireAuth, JWT_SECRET, verifyTokenOptional } from '../utils/auth';
 import { createDraftsRouter } from './drafts';
 import { getGenAI } from '../utils/ai';
 import { geocodeLocation } from '../utils/geocode';
@@ -16,9 +16,30 @@ import { triggerSavedSearchAlerts } from '../utils/savedSearchTrigger';
 import { validateBody, listingSchema } from '../middleware/validate';
 import { sanitizePrompt, parseFiniteNumber } from '../utils/sanitize';
 import { isSafeExternalUrl } from '../utils/urlSafety';
+import { normalizeCategory, toLatvianLabel } from '../utils/categories';
 import type { Server as SocketIOServer } from 'socket.io';
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
+
+// Canonical listing_type values. 'fixed' (legacy frontend) maps to 'sale'.
+const LISTING_TYPES = new Set(['sale', 'auction', 'exchange', 'free', 'rent', 'offer']);
+
+/**
+ * Determine the canonical listing_type for a create/update request.
+ * Priority: explicit body.listing_type > attributes.saleType mapping > 'sale'.
+ * Keeps backward compatibility with frontends that still write attributes.saleType.
+ */
+function resolveListingType(body: any): string {
+  const direct = body?.listing_type;
+  if (typeof direct === 'string' && LISTING_TYPES.has(direct)) return direct;
+
+  const fromAttrs = body?.attributes?.saleType;
+  if (fromAttrs === 'auction') return 'auction';
+  if (fromAttrs === 'fixed') return 'sale';
+  if (typeof fromAttrs === 'string' && LISTING_TYPES.has(fromAttrs)) return fromAttrs;
+
+  return 'sale';
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -231,9 +252,8 @@ export function createListingsRouter(deps: { io: SocketIOServer }) {
   const { io } = deps;
   const router = Router();
 
-  // Run once at startup — safe to re-run
-  db.run(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS ai_card_summary TEXT`)
-    .catch(() => {}); // ignore if column already exists
+  // NOTE: ai_card_summary column is now created by migration
+  // 002_ai_listing_fields.sql — no runtime ALTER needed here.
 
   // POST /api/listings/ai-suggestions
   router.post('/ai-suggestions', requireAuth, async (req: any, res) => {
@@ -302,9 +322,13 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       if (location) parsed.location = (location as string);
 
       // Build legacy filter array for Meilisearch compatibility
-      const VALID_LISTING_TYPES = new Set(['sale', 'auction', 'exchange']);
+      const VALID_LISTING_TYPES = new Set(['sale', 'auction', 'exchange', 'free', 'rent', 'offer']);
       const filter: string[] = ['status = "active"'];
-      if (parsed.category) filter.push(`category = "${parsed.category.replace(/"/g, '\\"')}"`);
+      if (parsed.category) {
+        // AI parser may emit Latvian label — normalize before filtering.
+        const catId = normalizeCategory(parsed.category) ?? parsed.category;
+        filter.push(`category = "${catId.replace(/"/g, '\\"')}"`);
+      }
       if (parsed.minPrice != null) filter.push(`price >= ${parsed.minPrice}`);
       if (parsed.maxPrice != null) filter.push(`price <= ${parsed.maxPrice}`);
       if (listingType && listingType !== 'all' && VALID_LISTING_TYPES.has(listingType as string)) filter.push(`listing_type = "${listingType}"`);
@@ -325,6 +349,13 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
         });
       }
 
+      for (const h of hits as any[]) {
+        if (h?.category) {
+          h.category_id = h.category;
+          h.category = toLatvianLabel(h.category) ?? h.category;
+        }
+      }
+
       res.json({ listings: hits, aiSummary: parsed.summary });
     } catch (error) {
       console.error('Error searching listings:', error);
@@ -335,8 +366,19 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
   // GET /api/listings
   router.get('/', async (req, res) => {
     try {
-      const { category, subcategory, minPrice, maxPrice, sort, location, listingType, lat, lng, radius, ...restQuery } = req.query;
+      const { category, subcategory, minPrice, maxPrice, sort, location, listingType, lat, lng, radius, limit: rawLimit, offset: rawOffset, ...restQuery } = req.query;
       const { hasAccess, userId } = await hasEarlyAccess(req);
+
+      // Pagination bounds: default page size 50, hard cap 100 to prevent
+      // runaway queries. Negative or non-numeric values fall back to defaults.
+      const parsedLimit = Number(rawLimit);
+      const limit = Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(Math.floor(parsedLimit), 100)
+        : 50;
+      const parsedOffset = Number(rawOffset);
+      const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0
+        ? Math.floor(parsedOffset)
+        : 0;
 
       let query = `
         SELECT listings.*, users.name as author_name
@@ -356,8 +398,9 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       }
 
       if (category) {
+        // Accept either a canonical id or legacy Latvian label from the client.
         query += ` AND category = ?`;
-        params.push(category);
+        params.push(normalizeCategory(String(category)) ?? category);
       }
       if (subcategory) {
         query += ` AND (attributes::json)->>'subcategory' = ?`;
@@ -405,7 +448,17 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
         query += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
       }
 
-      const listings = await db.all(query, params);
+      query += ` LIMIT ? OFFSET ?`;
+      params.push(limit, offset);
+
+      const listings = await db.all(query, params) as any[];
+      // Dual-expose category as both canonical id and Latvian label.
+      for (const l of listings) {
+        if (l?.category) {
+          l.category_id = l.category;
+          l.category = toLatvianLabel(l.category) ?? l.category;
+        }
+      }
       res.json(listings);
     } catch (error) {
       console.error('Error fetching listings:', error);
@@ -421,15 +474,21 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url } = req.body;
+      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, exchange_for, video_url } = req.body;
 
       if (!title || price === undefined || !category) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
+      const resolvedListingType = resolveListingType(req.body);
+      const resolvedIsAuction = resolvedListingType === 'auction' || !!is_auction;
+      // Store canonical category id; legacy Latvian labels sent by older
+      // builds are accepted and translated here.
+      const canonicalCategory = normalizeCategory(category) ?? category;
+
       const info = await db.run(
         'INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [decoded.userId, title, description, price, category, image_url, attributes ? JSON.stringify(attributes) : null, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, video_url || null],
+        [decoded.userId, title, description, price, canonicalCategory, image_url, attributes ? JSON.stringify(attributes) : null, location || null, resolvedIsAuction ? 1 : 0, auction_end_date || null, resolvedListingType, exchange_for || null, video_url || null],
       );
 
       const listingId = info.lastInsertRowid;
@@ -479,7 +538,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
           price: Number(price),
           category,
           subcategory: (attributes && typeof attributes === 'object' ? (attributes as any).subcategory : null) || null,
-          listing_type: listing_type || 'sale',
+          listing_type: resolvedListingType,
           status: 'active',
           location: location || null,
           image_url: image_url || null,
@@ -645,13 +704,38 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         }
       }
 
-      const listing = await db.get(sql, params);
+      const listing = await db.get(sql, params) as any;
 
       if (!listing) return res.status(404).json({ error: 'Listing not found or not available yet' });
+      // Expose both forms so the legacy frontend keeps working (category =
+      // Latvian label for CATEGORY_SCHEMAS lookup) while new code can use
+      // category_id.
+      if (listing.category) {
+        listing.category_id = listing.category;
+        listing.category = toLatvianLabel(listing.category) ?? listing.category;
+      }
       res.json(listing);
     } catch (error) {
       console.error('Error fetching listing:', error);
       res.status(500).json({ error: 'Server error fetching listing' });
+    }
+  });
+
+  // POST /api/listings/:id/view — increment view_count (excludes owner's own views)
+  router.post('/:id/view', async (req, res) => {
+    try {
+      const listingId = req.params.id;
+      const viewerId = verifyTokenOptional(req.headers.authorization);
+      // Don't count the owner viewing their own listing.
+      const result = await db.run(
+        `UPDATE listings SET view_count = view_count + 1
+         WHERE id = ? AND (? IS NULL OR user_id != ?)`,
+        [listingId, viewerId, viewerId]
+      );
+      res.json({ incremented: (result.changes ?? 0) > 0 });
+    } catch (error) {
+      console.error('Error incrementing view count:', error);
+      res.status(500).json({ error: 'Server error' });
     }
   });
 
@@ -664,18 +748,22 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      const { title, description, price, category, image_url, location, is_auction, auction_end_date, listing_type, exchange_for } = req.body;
+      const { title, description, price, category, image_url, location, is_auction, auction_end_date, exchange_for } = req.body;
 
       const listing = await db.get('SELECT user_id, price, title FROM listings WHERE id = ?', [listingId]) as { user_id: number; price: number; title: string } | undefined;
 
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
       if (listing.user_id !== decoded.userId) return res.status(403).json({ error: 'Unauthorized to edit this listing' });
 
+      const resolvedListingType = resolveListingType(req.body);
+      const resolvedIsAuction = resolvedListingType === 'auction' || !!is_auction;
+      const canonicalCategory = normalizeCategory(category) ?? category;
+
       await db.run(`
         UPDATE listings
         SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?, listing_type = ?, exchange_for = ?
         WHERE id = ?
-      `, [title, description, price, category, image_url, location || null, is_auction ? 1 : 0, auction_end_date || null, listing_type || 'sale', exchange_for || null, listingId]);
+      `, [title, description, price, canonicalCategory, image_url, location || null, resolvedIsAuction ? 1 : 0, auction_end_date || null, resolvedListingType, exchange_for || null, listingId]);
 
       const updatedListing = await db.get('SELECT * FROM listings WHERE id = ?', [listingId]) as any;
       const qualityScore = calculateQualityScore({
@@ -831,15 +919,22 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         return res.status(400).json({ error: 'Invalid offer amount' });
       }
 
-      const listing = await db.get('SELECT user_id, title FROM listings WHERE id = ?', [listingId]) as any;
+      const listing = await db.get('SELECT user_id, title, status FROM listings WHERE id = ?', [listingId]) as any;
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
+      if (listing.status !== 'active') {
+        return res.status(400).json({ error: 'Piedāvājumus var sūtīt tikai aktīviem sludinājumiem' });
+      }
 
       const isSeller = listing.user_id === senderId;
-      const buyerId = isSeller ? providedBuyerId : senderId;
+      const buyerId = isSeller ? Number(providedBuyerId) : senderId;
       const receiverId = isSeller ? buyerId : listing.user_id;
 
       if (!buyerId) {
         return res.status(400).json({ error: 'Buyer ID is required for counter-offers' });
+      }
+      // Hard guard: buyer and seller must be different users.
+      if (buyerId === listing.user_id && !isSeller) {
+        return res.status(400).json({ error: 'Nevar piedāvāt savam sludinājumam' });
       }
 
       const info = await db.run('INSERT INTO offers (listing_id, buyer_id, sender_id, amount) VALUES (?, ?, ?, ?)', [listingId, buyerId, senderId, amount]);
@@ -884,7 +979,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         return res.status(400).json({ error: 'Nederīga solījuma summa' });
       }
 
-      const listing = await db.get('SELECT price, attributes, user_id, status FROM listings WHERE id = ?', [listingId]) as any;
+      const listing = await db.get('SELECT price, attributes, user_id, status, listing_type FROM listings WHERE id = ?', [listingId]) as any;
       if (!listing) return res.status(404).json({ error: 'Listing not found' });
 
       if (listing.status !== 'active') {
@@ -896,7 +991,10 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
       }
 
       const attributes = listing.attributes ? JSON.parse(listing.attributes) : {};
-      if (attributes.saleType !== 'auction') {
+      // Canonical check via listing_type. Fall back to legacy attributes.saleType
+      // for pre-migration rows (migration 001 backfills but defence in depth).
+      const isAuction = listing.listing_type === 'auction' || attributes.saleType === 'auction';
+      if (!isAuction) {
         return res.status(400).json({ error: 'This listing is not an auction' });
       }
 
@@ -921,32 +1019,89 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
         });
       }
 
-      const highestBid = await db.get('SELECT MAX(amount) as maxAmount FROM bids WHERE listing_id = ?', [listingId]) as { maxAmount: number | null };
-      const currentHighest = highestBid.maxAmount !== null ? highestBid.maxAmount : listing.price;
-
-      if (bidAmount <= currentHighest) {
-        return res.status(400).json({ error: `Bid must be higher than current highest bid: €${currentHighest}` });
-      }
-
+      // Critical section: SELECT listing FOR UPDATE so two concurrent bids
+      // cannot both pass the highest-bid check. Everything that reads and
+      // mutates the auction state happens inside the transaction.
       let auctionEndDate = attributes.auctionEndDate;
-      if (auctionEndDate) {
-        const endDate = new Date(auctionEndDate);
-        const now = new Date();
-        const timeDiffMs = endDate.getTime() - now.getTime();
+      let bidInsertId: number | bigint;
+      let extended = false;
+      try {
+        await db.transaction(async (client) => {
+          const locked = await db.clientGet<any>(
+            client,
+            'SELECT price, attributes, status FROM listings WHERE id = ? FOR UPDATE',
+            [listingId]
+          );
+          if (!locked) throw new Error('LISTING_DISAPPEARED');
+          if (locked.status !== 'active') throw new Error('AUCTION_ENDED');
 
-        if (timeDiffMs > 0 && timeDiffMs < 3 * 60 * 1000) {
-          const newEndDate = new Date(now.getTime() + 3 * 60 * 1000);
-          auctionEndDate = newEndDate.toISOString();
-          attributes.auctionEndDate = auctionEndDate;
-          await db.run('UPDATE listings SET attributes = ? WHERE id = ?', [JSON.stringify(attributes), listingId]);
-          io.to(`auction_${listingId}`).emit('auction_extended', {
-            listing_id: parseInt(listingId),
-            new_end_date: auctionEndDate,
-          });
+          const lockedAttrs = locked.attributes ? JSON.parse(locked.attributes) : {};
+          if (lockedAttrs.auctionEndDate) {
+            const lockedEnd = new Date(lockedAttrs.auctionEndDate);
+            if (Number.isFinite(lockedEnd.getTime()) && lockedEnd.getTime() <= Date.now()) {
+              throw new Error('AUCTION_ENDED');
+            }
+          }
+
+          const maxRow = await db.clientGet<{ maxamount: number | null }>(
+            client,
+            'SELECT MAX(amount) as maxAmount FROM bids WHERE listing_id = ?',
+            [listingId]
+          );
+          const currentHighest = (maxRow?.maxamount ?? null) !== null
+            ? Number(maxRow?.maxamount)
+            : Number(locked.price);
+          if (bidAmount <= currentHighest) {
+            throw new Error(`BID_TOO_LOW:${currentHighest}`);
+          }
+
+          // Anti-sniping: extend auction by 3 min if a bid lands in the last
+          // 3 min. Happens atomically under the row lock so two near-end
+          // bids cannot race the extension.
+          if (lockedAttrs.auctionEndDate) {
+            const endDate = new Date(lockedAttrs.auctionEndDate);
+            const now = new Date();
+            const timeDiffMs = endDate.getTime() - now.getTime();
+            if (timeDiffMs > 0 && timeDiffMs < 3 * 60 * 1000) {
+              const newEndDate = new Date(now.getTime() + 3 * 60 * 1000);
+              auctionEndDate = newEndDate.toISOString();
+              lockedAttrs.auctionEndDate = auctionEndDate;
+              attributes.auctionEndDate = auctionEndDate;
+              await db.clientRun(
+                client,
+                'UPDATE listings SET attributes = ? WHERE id = ?',
+                [JSON.stringify(lockedAttrs), listingId]
+              );
+              extended = true;
+            }
+          }
+
+          const insertResult = await db.clientRun(
+            client,
+            'INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)',
+            [listingId, decoded.userId, bidAmount]
+          );
+          bidInsertId = insertResult.lastInsertRowid;
+        });
+      } catch (e: any) {
+        const msg = e?.message || '';
+        if (msg === 'AUCTION_ENDED') return res.status(400).json({ error: 'Izsole jau ir noslēgusies' });
+        if (msg === 'LISTING_DISAPPEARED') return res.status(404).json({ error: 'Listing not found' });
+        if (msg.startsWith('BID_TOO_LOW:')) {
+          const currentHighest = msg.split(':')[1];
+          return res.status(400).json({ error: `Bid must be higher than current highest bid: €${currentHighest}` });
         }
+        throw e;
       }
 
-      const info = await db.run('INSERT INTO bids (listing_id, user_id, amount) VALUES (?, ?, ?)', [listingId, decoded.userId, bidAmount]);
+      if (extended) {
+        io.to(`auction_${listingId}`).emit('auction_extended', {
+          listing_id: parseInt(listingId),
+          new_end_date: auctionEndDate,
+        });
+      }
+
+      const info = { lastInsertRowid: bidInsertId! };
 
       const newBid = await db.get(`
         SELECT b.id, b.user_id, b.amount, b.created_at, u.name as bidder_name

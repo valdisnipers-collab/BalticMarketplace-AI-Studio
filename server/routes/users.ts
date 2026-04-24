@@ -24,7 +24,7 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
 
-      const viewsResult = await db.get('SELECT SUM(views) as total_views FROM listings WHERE user_id = ?', [decoded.userId]) as { total_views: number | null };
+      const viewsResult = await db.get('SELECT SUM(view_count) as total_views FROM listings WHERE user_id = ?', [decoded.userId]) as { total_views: number | null };
 
       const favoritesResult = await db.get(`
         SELECT COUNT(*) as total_favorites
@@ -343,6 +343,126 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
       res.json({ message: 'Saved search deleted' });
     } catch (error) {
       console.error("Error deleting saved search:", error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // PUT /api/users/me/saved-searches/:id — update an existing saved search
+  router.put('/me/saved-searches/:id', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId as number;
+      const searchId = req.params.id;
+      const { query, category, subcategory, min_price, max_price, attributes, notification_enabled } = req.body;
+
+      const result = await db.run(
+        `UPDATE saved_searches
+         SET query = ?, category = ?, subcategory = ?, min_price = ?, max_price = ?,
+             attributes = ?, notification_enabled = COALESCE(?, notification_enabled),
+             updated_at = NOW()
+         WHERE id = ? AND user_id = ?`,
+        [
+          query ?? null,
+          category ?? null,
+          subcategory ?? null,
+          min_price ?? null,
+          max_price ?? null,
+          attributes ? JSON.stringify(attributes) : null,
+          typeof notification_enabled === 'boolean' ? notification_enabled : null,
+          searchId,
+          userId,
+        ]
+      );
+
+      if (!result.changes) {
+        return res.status(404).json({ error: 'Saved search not found' });
+      }
+      res.json({ message: 'Saved search updated' });
+    } catch (error) {
+      console.error('Error updating saved search:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // POST /api/users/me/saved-searches/:id/toggle-notifications
+  router.post('/me/saved-searches/:id/toggle-notifications', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId as number;
+      const searchId = req.params.id;
+
+      const row = await db.get(
+        'SELECT notification_enabled FROM saved_searches WHERE id = ? AND user_id = ?',
+        [searchId, userId]
+      ) as { notification_enabled: boolean | null } | null;
+      if (!row) return res.status(404).json({ error: 'Saved search not found' });
+
+      const next = !row.notification_enabled;
+      await db.run(
+        'UPDATE saved_searches SET notification_enabled = ?, updated_at = NOW() WHERE id = ? AND user_id = ?',
+        [next, searchId, userId]
+      );
+      res.json({ notification_enabled: next });
+    } catch (error) {
+      console.error('Error toggling notifications:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /api/users/me/company — current user's company profile
+  router.get('/me/company', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId as number;
+      const row = await db.get(
+        `SELECT user_type, company_name, company_reg_number, company_vat, company_address
+         FROM users WHERE id = ?`,
+        [userId]
+      );
+      if (!row) return res.status(404).json({ error: 'User not found' });
+      res.json(row);
+    } catch (error) {
+      console.error('Error fetching company profile:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // PUT /api/users/me/company — update company profile fields
+  router.put('/me/company', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId as number;
+      const { company_name, company_reg_number, company_vat, company_address, user_type } = req.body ?? {};
+
+      // Simple length bounds; don't silently truncate.
+      const tooLong = [company_name, company_reg_number, company_vat, company_address]
+        .some(v => typeof v === 'string' && v.length > 200);
+      if (tooLong) return res.status(400).json({ error: 'Lauks pārāk garš (max 200)' });
+
+      const nextUserType = user_type === 'b2b' || user_type === 'c2c' ? user_type : null;
+
+      await db.run(
+        `UPDATE users
+         SET company_name = COALESCE(?, company_name),
+             company_reg_number = COALESCE(?, company_reg_number),
+             company_vat = COALESCE(?, company_vat),
+             company_address = COALESCE(?, company_address),
+             user_type = COALESCE(?, user_type)
+         WHERE id = ?`,
+        [
+          company_name ?? null,
+          company_reg_number ?? null,
+          company_vat ?? null,
+          company_address ?? null,
+          nextUserType,
+          userId,
+        ]
+      );
+
+      const row = await db.get(
+        `SELECT user_type, company_name, company_reg_number, company_vat, company_address
+         FROM users WHERE id = ?`,
+        [userId]
+      );
+      res.json(row);
+    } catch (error) {
+      console.error('Error updating company profile:', error);
       res.status(500).json({ error: 'Server error' });
     }
   });

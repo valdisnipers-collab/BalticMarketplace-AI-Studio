@@ -17,47 +17,23 @@ if (!process.argv.includes('--force')) {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-async function runMigrations() {
-  // listing_drafts (Phase 2)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS listing_drafts (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      data JSONB NOT NULL DEFAULT '{}',
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS listing_drafts_user_idx ON listing_drafts(user_id)
-  `);
-
-  // quality_score uz listings (Phase 2)
-  await pool.query(`
-    ALTER TABLE listings ADD COLUMN IF NOT EXISTS quality_score INTEGER DEFAULT 0
-  `);
-
-  // trust_score uz users (Phase 2)
-  await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 50
-  `);
-
-  console.log('[MIGRATION] Phase 2 schema additions applied');
-
-  // view_count for popular sort (Phase 3)
-  await pool.query(`
-    ALTER TABLE listings ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0
-  `);
-  console.log('[MIGRATION] view_count column added');
-}
+// init-db applies the base schema.sql (which DROPs the public schema) and
+// then delegates incremental alignment to the migration runner. Prefer
+// `npm run migrate` for routine updates; only run this script manually on a
+// fresh/empty database.
 
 async function initDb() {
   console.log('Initializing PostgreSQL schema...');
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
   try {
     await pool.query(schema);
-    console.log('✓ Schema created successfully');
-    await runMigrations();
+    console.log('✓ Base schema created successfully');
+
+    // Apply every migration so a freshly initialised DB ends up at the same
+    // alignment as a long-lived one.
+    const { runMigrations } = await import('./migrations/runner');
+    const { applied, skipped } = await runMigrations();
+    console.log(`✓ Migrations: applied=${applied.length} skipped=${skipped.length}`);
   } catch (error) {
     console.error('Schema error:', error);
     process.exit(1);

@@ -23,7 +23,15 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     if (!phone) return res.status(400).json({ error: 'Phone number is required' });
 
     if (!twilioClient || !TWILIO_VERIFY_SERVICE_SID) {
-      console.warn("Twilio is not configured. Simulating OTP sent.");
+      // Simulated OTP flow is only allowed outside production. In production
+      // a missing Twilio configuration must fail loudly so nobody can bypass
+      // phone verification with the known dev code.
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({
+          error: 'SMS verifikācijas serviss nav konfigurēts. Sazinieties ar administrāciju.',
+        });
+      }
+      console.warn("Twilio is not configured. Simulating OTP sent (dev only).");
       return res.json({ message: 'OTP sent (simulated)', simulated: true });
     }
 
@@ -44,7 +52,12 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     let isValid = false;
 
     if (!twilioClient || !TWILIO_VERIFY_SERVICE_SID) {
-      // Development fallback
+      // Dev-only fallback. Production must never accept the hardcoded code.
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({
+          error: 'SMS verifikācijas serviss nav konfigurēts. Sazinieties ar administrāciju.',
+        });
+      }
       isValid = code === '123456';
     } else {
       try {
@@ -79,7 +92,18 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     }
   });
 
-  router.post("/smart-id/register/init", authLimiter, async (req, res) => {
+  // Helper: Smart-ID flows are fully simulated. Block them in production
+  // until a real Smart-ID provider (e.g. Dokobit) is wired up.
+  const smartIdGuard = (req: any, res: any, next: any) => {
+    if (process.env.NODE_ENV === 'production' && !process.env.SMART_ID_PROVIDER_URL) {
+      return res.status(503).json({
+        error: 'Smart-ID autentifikācija nav pieejama. Sazinieties ar administrāciju.',
+      });
+    }
+    next();
+  };
+
+  router.post("/smart-id/register/init", authLimiter, smartIdGuard, async (req, res) => {
     const { personalCode, country, name, user_type, company_name, company_reg_number, company_vat } = req.body;
     if (!personalCode || !country || !name) return res.status(400).json({ error: 'Personal code, country and name required' });
 
@@ -91,7 +115,7 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     res.json({ sessionId, verificationCode, message: 'Registration initiated' });
   });
 
-  router.post("/smart-id/register/status", authLimiter, async (req, res) => {
+  router.post("/smart-id/register/status", authLimiter, smartIdGuard, async (req, res) => {
     const { sessionId, personalCode, name, user_type, company_name, company_reg_number, company_vat } = req.body;
     if (!sessionId || !personalCode) return res.status(400).json({ error: 'Session ID and personal code required' });
 
@@ -117,7 +141,7 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     }
   });
 
-  router.post("/smart-id/login/init", authLimiter, async (req, res) => {
+  router.post("/smart-id/login/init", authLimiter, smartIdGuard, async (req, res) => {
     const { personalCode, country } = req.body;
     if (!personalCode || !country) return res.status(400).json({ error: 'Personal code and country required' });
 
@@ -128,7 +152,7 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     res.json({ sessionId, verificationCode, message: 'Login initiated' });
   });
 
-  router.post("/smart-id/login/status", authLimiter, async (req, res) => {
+  router.post("/smart-id/login/status", authLimiter, smartIdGuard, async (req, res) => {
     const { sessionId, personalCode } = req.body;
     if (!sessionId || !personalCode) return res.status(400).json({ error: 'Session ID and personal code required' });
 
@@ -152,7 +176,7 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     }
   });
 
-  router.post("/smart-id/init", async (req, res) => {
+  router.post("/smart-id/init", smartIdGuard, async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
@@ -174,7 +198,7 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     }
   });
 
-  router.post("/smart-id/status", async (req, res) => {
+  router.post("/smart-id/status", smartIdGuard, async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token' });
     const token = authHeader.split(' ')[1];
