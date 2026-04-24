@@ -61,16 +61,31 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
+          TOTP_ENCRYPTION_KEY: ${{ secrets.TOTP_ENCRYPTION_KEY }}
         with:
           host: ${{ secrets.HETZNER_IP }}
           username: deploy
           key: ${{ secrets.HETZNER_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER
+          envs: GHCR_TOKEN,GHCR_USER,TOTP_ENCRYPTION_KEY
           script: |
             cd /opt/balticmarket
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            # Idempotently sync TOTP_ENCRYPTION_KEY from GitHub Secrets into
+            # the VPS .env so the app container picks it up. If the secret
+            # isn't set in GitHub, leave .env untouched.
+            if [ -n "$TOTP_ENCRYPTION_KEY" ]; then
+              touch .env
+              grep -v '^TOTP_ENCRYPTION_KEY=' .env > .env.new 2>/dev/null || true
+              echo "TOTP_ENCRYPTION_KEY=$TOTP_ENCRYPTION_KEY" >> .env.new
+              mv .env.new .env
+              chmod 600 .env
+            fi
+
             docker compose pull
-            docker compose up -d --remove-orphans
+            # --force-recreate app picks up the new env_file contents; other
+            # services are left alone so meilisearch keeps its data volume.
+            docker compose up -d --remove-orphans --force-recreate app
             docker system prune -f
             sleep 5
             docker compose exec -T app npx tsx scripts/migrate.ts
