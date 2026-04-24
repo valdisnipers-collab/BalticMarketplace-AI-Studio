@@ -6,6 +6,7 @@ import { LogIn, AlertCircle, Phone, KeyRound, Mail, Lock, Fingerprint, ArrowLeft
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import PhoneInput from '../components/PhoneInput';
 import {
   Select,
   SelectContent,
@@ -465,17 +466,7 @@ export default function Login() {
             <form className="mt-8 space-y-6" onSubmit={handleRequestOTP}>
               <div>
                 <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">Telefona numurs</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Phone className="h-5 w-5 text-slate-400" />
-                  </div>
-                  <Input
-                    id="phone" type="tel" required
-                    value={phone} onChange={(e) => setPhone(e.target.value)}
-                    className="pl-10"
-                    placeholder="+371 20000000"
-                  />
-                </div>
+                <PhoneInput id="phone" value={phone} onChange={setPhone} required autoFocus />
               </div>
               <Button
                 type="submit" disabled={loading || !phone}
