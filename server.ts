@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from "express";
+import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import db from "./server/pg";
@@ -139,8 +140,10 @@ async function startServer() {
     next();
   });
 
-  // Middleware to parse JSON bodies
+  // Middleware to parse JSON bodies + cookies (cookies are read by the
+  // OAuth state verifier in server/utils/oauthState.ts).
   app.use(express.json());
+  app.use(cookieParser());
 
   // Upload Routes
   app.use('/api/upload', createUploadsRouter({ uploadLimiter }));

@@ -537,6 +537,18 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 CREATE INDEX IF NOT EXISTS prt_user_idx ON password_reset_tokens(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS prt_expires_idx ON password_reset_tokens(expires_at) WHERE used_at IS NULL;
 
+-- SSO provider identities (migration 022)
+CREATE TABLE IF NOT EXISTS user_identities (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  provider_uid TEXT NOT NULL,
+  email_at_link TEXT,
+  linked_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(provider, provider_uid)
+);
+CREATE INDEX IF NOT EXISTS user_identities_user_idx ON user_identities(user_id);
+
 -- TOTP 2FA (migration 021)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_enc TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false;

@@ -12,6 +12,8 @@ import { validatePassword } from '../utils/passwordCheck';
 import { sendEmail, emailTemplates } from './../services/email';
 import * as TOTP from '../utils/totp';
 import QRCode from 'qrcode';
+import { OAuth2Client } from 'google-auth-library';
+import { generateState, verifyState } from '../utils/oauthState';
 
 const RESET_TOKEN_TTL_MINUTES = 60;
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
@@ -135,6 +137,18 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
           company_reg_number: company_reg_number || null,
           company_vat: company_vat || null,
         };
+      }
+
+      // Phone login also steps up if the user has TOTP enabled. New
+      // registrations never have TOTP enabled yet, so this only affects
+      // the login path.
+      if (user.totp_enabled) {
+        const tempToken = jwt.sign(
+          { userId: user.id, totp_pending: true },
+          JWT_SECRET,
+          { expiresIn: '5m' },
+        );
+        return res.json({ requires2FA: true, tempToken });
       }
 
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
@@ -720,6 +734,192 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     } catch (e) {
       console.error('[2fa/recovery-codes/regenerate]', e);
       res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // ── Google SSO ──────────────────────────────────────────────────────────
+  //
+  // Flow:
+  //   GET /api/auth/google
+  //     → generate stateless state JWT (30s TTL), set as HttpOnly cookie,
+  //       redirect to accounts.google.com
+  //   GET /api/auth/google/callback?code=&state=
+  //     → verify state cookie matches query param (CSRF), exchange code for
+  //       id_token, verify id_token via google-auth-library, find/link/create
+  //       user, issue our JWT (or 2FA tempToken for admins with TOTP),
+  //       redirect back to /login with the token in the query string.
+  //
+  // Account linking policy:
+  //   1. Primary: user_identities (provider='google', provider_uid=<sub>)
+  //   2. Fallback if email_verified=true: existing users.email case-insensitive
+  //   3. Otherwise: create new user + link
+
+  const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback';
+  const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+  const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+
+  function buildCallbackUri(): string {
+    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    return `${base}${GOOGLE_CALLBACK_PATH}`;
+  }
+
+  function ssoRedirect(res: any, params: Record<string, string>): void {
+    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const qs = new URLSearchParams(params).toString();
+    res.redirect(`${base}/login?${qs}`);
+  }
+
+  router.get('/google', authLimiter, (req: any, res) => {
+    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    if (!clientId) return ssoRedirect(res, { sso_error: 'Google SSO nav konfigurēts' });
+
+    const state = generateState('google', JWT_SECRET);
+    res.cookie('oauth_state', state, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 1000, // 60s — a hair longer than the 30s JWT TTL to avoid race
+      path: '/',
+    });
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: buildCallbackUri(),
+      response_type: 'code',
+      scope: 'openid email profile',
+      state,
+      prompt: 'select_account',
+    });
+    res.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`);
+  });
+
+  router.get('/google/callback', authLimiter, async (req: any, res) => {
+    const clearStateCookie = () =>
+      res.clearCookie('oauth_state', { httpOnly: true, path: '/', sameSite: 'lax' });
+
+    try {
+      const { code, state, error } = req.query as Record<string, string | undefined>;
+      const cookieState = req.cookies?.oauth_state;
+
+      clearStateCookie();
+
+      if (error) return ssoRedirect(res, { sso_error: `Google atteicās autentificēt (${error})` });
+      if (!code || !state) return ssoRedirect(res, { sso_error: 'Trūkst OAuth atbildes parametru' });
+
+      const statePayload = verifyState(state, cookieState, 'google', JWT_SECRET);
+      if (!statePayload) return ssoRedirect(res, { sso_error: 'Nederīgs state (CSRF aizsardzība)' });
+
+      const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+      if (!clientId || !clientSecret) {
+        return ssoRedirect(res, { sso_error: 'Google SSO nav konfigurēts serverī' });
+      }
+
+      // Exchange authorization code for tokens
+      const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: buildCallbackUri(),
+          grant_type: 'authorization_code',
+        }).toString(),
+      });
+      if (!tokenRes.ok) {
+        const body = await tokenRes.text();
+        console.error('[google/callback] token exchange failed', body);
+        return ssoRedirect(res, { sso_error: 'Neizdevās apmainīt kodu pret token' });
+      }
+      const tokenPayload = await tokenRes.json() as { id_token?: string };
+      if (!tokenPayload.id_token) return ssoRedirect(res, { sso_error: 'Nav id_token atbildē' });
+
+      // Verify id_token signature, issuer, audience, expiry.
+      const client = new OAuth2Client(clientId);
+      const ticket = await client.verifyIdToken({ idToken: tokenPayload.id_token, audience: clientId });
+      const p = ticket.getPayload();
+      if (!p || !p.sub) return ssoRedirect(res, { sso_error: 'Nederīgs id_token' });
+
+      const sub = p.sub;
+      const googleEmail = (p.email || '').toLowerCase();
+      const emailVerified = p.email_verified === true;
+      const displayName = p.name || googleEmail.split('@')[0] || 'User';
+
+      // 1. Primary: look up by (provider, provider_uid)
+      let linked = await db.get<{ user_id: number }>(
+        `SELECT user_id FROM user_identities WHERE provider = 'google' AND provider_uid = ?`,
+        [sub],
+      );
+      let userId: number;
+
+      if (linked) {
+        userId = linked.user_id;
+      } else if (emailVerified && googleEmail) {
+        // 2. Fallback: match existing account by verified email, then link
+        const existing = await db.get<{ id: number }>(
+          `SELECT id FROM users WHERE LOWER(email) = ?`,
+          [googleEmail],
+        );
+        if (existing) {
+          await db.run(
+            `INSERT INTO user_identities (user_id, provider, provider_uid, email_at_link)
+             VALUES (?, 'google', ?, ?) RETURNING id`,
+            [existing.id, sub, googleEmail],
+          );
+          userId = existing.id;
+        } else {
+          // 3. Create new user + link
+          const dummyPasswordHash = await bcrypt.hash(Math.random().toString(36), 10);
+          const role = googleEmail === 'valdis.nipers@gmail.com' ? 'admin' : 'user';
+          const info = await db.run(
+            `INSERT INTO users (email, password_hash, name, user_type, role, is_verified, points)
+             VALUES (?, ?, ?, 'c2c', ?, 1, 50)`,
+            [googleEmail, dummyPasswordHash, displayName, role],
+          );
+          userId = info.lastInsertRowid as number;
+          await db.run(
+            `INSERT INTO points_history (user_id, points, reason) VALUES (?, 50, 'Reģistrācijas bonuss (Google)') RETURNING id`,
+            [userId],
+          );
+          await db.run(
+            `INSERT INTO user_identities (user_id, provider, provider_uid, email_at_link)
+             VALUES (?, 'google', ?, ?) RETURNING id`,
+            [userId, sub, googleEmail],
+          );
+        }
+      } else {
+        return ssoRedirect(res, { sso_error: 'Google email nav apstiprināts — reģistrācija bloķēta' });
+      }
+
+      // Load user for admin + TOTP check
+      const user = await db.get<any>(
+        `SELECT id, email, name, phone, role, user_type, points, early_access_until,
+                company_name, company_reg_number, company_vat, is_verified, totp_enabled
+         FROM users WHERE id = ?`,
+        [userId],
+      );
+
+      // Admin policy: admin accounts with TOTP still get a step-up even
+      // after Google SSO, so platform control is never reduced to a Google
+      // account compromise.
+      if (user.role === 'admin' && user.totp_enabled) {
+        const tempToken = jwt.sign(
+          { userId: user.id, totp_pending: true },
+          JWT_SECRET,
+          { expiresIn: '5m' },
+        );
+        return ssoRedirect(res, { sso_2fa: '1', sso_temp: tempToken });
+      }
+
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+      // Mint a tiny payload the client can base64-decode if it wants (avoids
+      // another /me round-trip on redirect). But the canonical path is still
+      // signIn(token, user) from the Login page.
+      return ssoRedirect(res, { sso_token: token });
+    } catch (e: any) {
+      console.error('[google/callback]', e);
+      return ssoRedirect(res, { sso_error: 'Neizdevās pabeigt Google ienākšanu' });
     }
   });
 
