@@ -4,7 +4,9 @@ const DEBOUNCE_MS = 2000;
 
 export function useListingDraft(formData: Record<string, any>, isLoggedIn: boolean) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const token = localStorage.getItem('token');
+  // Canonical auth token key matches AuthContext.signIn(). Legacy 'token'
+  // removed — persistence was silently broken for logged-in users.
+  const token = localStorage.getItem('auth_token');
 
   const saveDraft = useCallback(async (data: Record<string, any>) => {
     if (!isLoggedIn || !token) return;

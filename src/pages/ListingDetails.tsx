@@ -176,6 +176,13 @@ export default function ListingDetails() {
         const data = await res.json();
         setListing(data);
 
+        // Fire-and-forget view increment. Backend ignores the owner's own
+        // views via user_id check.
+        fetch(`/api/listings/${id}/view`, {
+          method: 'POST',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        }).catch(() => { /* non-critical */ });
+
         const reviewsRes = await fetch(`/api/users/${data.user_id}/reviews`);
         if (reviewsRes.ok) {
           const reviewsData = await reviewsRes.json();

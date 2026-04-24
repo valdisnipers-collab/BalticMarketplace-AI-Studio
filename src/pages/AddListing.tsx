@@ -196,6 +196,7 @@ export default function AddListing() {
           location: carData.location,
           category: CAR_CATEGORY,
           image_url: JSON.stringify(carData.imageUrls),
+          listing_type: carData.saleType === 'auction' ? 'auction' : 'sale',
           attributes: {
             subcategory: CAR_SUBCATEGORY,
             brand: carData.make,
@@ -349,6 +350,9 @@ export default function AddListing() {
           category,
           image_url: JSON.stringify(imageUrls),
           video_url: videoUrl || null,
+          // Canonical listing_type sent explicitly; backend also falls back to
+          // attributes.saleType for legacy compatibility.
+          listing_type: saleType === 'auction' ? 'auction' : 'sale',
           attributes: {
             ...attributes,
             saleType,
