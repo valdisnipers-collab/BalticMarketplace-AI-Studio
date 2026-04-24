@@ -40,10 +40,44 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
         WHERE l.user_id = ? AND m.receiver_id = ?
       `, [decoded.userId, decoded.userId]) as { total_messages: number };
 
+      // 30-day time-series: aggregate views from the seller's listings +
+      // revenue from completed orders. Returns an empty array if no data
+      // exists; the frontend shows a friendly empty state in that case.
+      const history = await db.all<{ date: string; views: number; revenue: number }>(
+        `WITH days AS (
+           SELECT generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, INTERVAL '1 day')::date AS d
+         ),
+         views AS (
+           SELECT s.date, SUM(s.views)::int AS views
+           FROM listing_view_stats s
+           JOIN listings l ON s.listing_id = l.id
+           WHERE l.user_id = ?
+             AND s.date >= CURRENT_DATE - INTERVAL '29 days'
+           GROUP BY s.date
+         ),
+         rev AS (
+           SELECT date, revenue
+           FROM user_daily_stats
+           WHERE user_id = ?
+             AND date >= CURRENT_DATE - INTERVAL '29 days'
+         )
+         SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
+                COALESCE(views.views, 0) AS views,
+                COALESCE(rev.revenue, 0) AS revenue
+         FROM days
+         LEFT JOIN views ON views.date = days.d
+         LEFT JOIN rev ON rev.date = days.d
+         ORDER BY days.d ASC`,
+        [decoded.userId, decoded.userId],
+      );
+
+      const hasAnyData = (history ?? []).some(h => Number(h.views) > 0 || Number(h.revenue) > 0);
+
       res.json({
         total_views: viewsResult.total_views || 0,
         total_favorites: Number(favoritesResult.total_favorites) || 0,
-        total_messages: Number(messagesResult.total_messages) || 0
+        total_messages: Number(messagesResult.total_messages) || 0,
+        history: hasAnyData ? history : [],
       });
     } catch (error) {
       console.error("Error fetching analytics:", error);
@@ -407,12 +441,13 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
     }
   });
 
-  // GET /api/users/me/company — current user's company profile
+  // GET /api/users/me/company — current user's company profile + auto-reply settings
   router.get('/me/company', requireAuth, async (req: any, res) => {
     try {
       const userId = req.userId as number;
       const row = await db.get(
-        `SELECT user_type, company_name, company_reg_number, company_vat, company_address
+        `SELECT user_type, company_name, company_reg_number, company_vat, company_address,
+                auto_reply_enabled, auto_reply_text
          FROM users WHERE id = ?`,
         [userId]
       );
@@ -424,18 +459,39 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
     }
   });
 
-  // PUT /api/users/me/company — update company profile fields
+  // PUT /api/users/me/company — update company profile + auto-reply
   router.put('/me/company', requireAuth, async (req: any, res) => {
     try {
       const userId = req.userId as number;
-      const { company_name, company_reg_number, company_vat, company_address, user_type } = req.body ?? {};
+      const {
+        company_name, company_reg_number, company_vat, company_address, user_type,
+        auto_reply_enabled, auto_reply_text,
+      } = req.body ?? {};
 
-      // Simple length bounds; don't silently truncate.
       const tooLong = [company_name, company_reg_number, company_vat, company_address]
         .some(v => typeof v === 'string' && v.length > 200);
       if (tooLong) return res.status(400).json({ error: 'Lauks pārāk garš (max 200)' });
 
       const nextUserType = user_type === 'b2b' || user_type === 'c2c' ? user_type : null;
+
+      // Auto-reply: require text when enabling.
+      let autoReplyFlag: number | null = null;
+      let autoReplyText: string | null | undefined = undefined;
+      if (typeof auto_reply_enabled === 'boolean') {
+        autoReplyFlag = auto_reply_enabled ? 1 : 0;
+      }
+      if (typeof auto_reply_text === 'string') {
+        if (auto_reply_text.length > 2000) {
+          return res.status(400).json({ error: 'Auto-reply teksts pārāk garš (max 2000)' });
+        }
+        autoReplyText = auto_reply_text;
+      }
+      if (autoReplyFlag === 1) {
+        // If enabling, the text must exist (either provided now or already stored).
+        if (autoReplyText !== undefined && autoReplyText.trim().length === 0) {
+          return res.status(400).json({ error: 'Auto-reply tekstam jābūt aizpildītam' });
+        }
+      }
 
       await db.run(
         `UPDATE users
@@ -443,7 +499,9 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
              company_reg_number = COALESCE(?, company_reg_number),
              company_vat = COALESCE(?, company_vat),
              company_address = COALESCE(?, company_address),
-             user_type = COALESCE(?, user_type)
+             user_type = COALESCE(?, user_type),
+             auto_reply_enabled = COALESCE(?, auto_reply_enabled),
+             auto_reply_text = COALESCE(?, auto_reply_text)
          WHERE id = ?`,
         [
           company_name ?? null,
@@ -451,12 +509,15 @@ export function createUsersRouter(deps: { io: SocketIOServer }) {
           company_vat ?? null,
           company_address ?? null,
           nextUserType,
+          autoReplyFlag,
+          autoReplyText ?? null,
           userId,
         ]
       );
 
       const row = await db.get(
-        `SELECT user_type, company_name, company_reg_number, company_vat, company_address
+        `SELECT user_type, company_name, company_reg_number, company_vat, company_address,
+                auto_reply_enabled, auto_reply_text
          FROM users WHERE id = ?`,
         [userId]
       );

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../pg';
 import { requireAuth } from '../utils/auth';
 import { sendPushToUser } from '../services/push';
+import { maybeAutoReply } from '../services/AutoReplyService';
 import { getGenAI } from '../utils/ai';
 import type { Server as SocketIOServer } from 'socket.io';
 
@@ -183,6 +184,17 @@ export function createMessagesRouter(deps: { io: SocketIOServer }) {
           url: `/chat`,
         }).catch(e => console.error('Push error:', e));
       }
+
+      // Fire-and-forget B2B auto-responder. Must not block or fail the
+      // original message send.
+      maybeAutoReply({
+        senderId,
+        receiverId,
+        listingId: listingId || null,
+        content: content || '',
+        sourceMessageWarning: systemWarning,
+        io,
+      }).catch(e => console.error('[auto-reply] unexpected', e));
 
       res.json(message);
     } catch (error) {
