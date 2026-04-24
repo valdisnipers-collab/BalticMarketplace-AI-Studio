@@ -62,25 +62,33 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           TOTP_ENCRYPTION_KEY: ${{ secrets.TOTP_ENCRYPTION_KEY }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         with:
           host: ${{ secrets.HETZNER_IP }}
           username: deploy
           key: ${{ secrets.HETZNER_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER,TOTP_ENCRYPTION_KEY
+          envs: GHCR_TOKEN,GHCR_USER,TOTP_ENCRYPTION_KEY,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET
           script: |
             cd /opt/balticmarket
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-            # Idempotently sync TOTP_ENCRYPTION_KEY from GitHub Secrets into
-            # the VPS .env so the app container picks it up. If the secret
-            # isn't set in GitHub, leave .env untouched.
-            if [ -n "$TOTP_ENCRYPTION_KEY" ]; then
+            # Idempotently sync secrets from GitHub → VPS .env so the app
+            # container picks them up. Each secret that is set in GitHub is
+            # either replaced (if the key already exists) or appended. A
+            # helper function keeps the shell script short.
+            sync_env() {
+              local key="$1"; local value="$2"
+              if [ -z "$value" ]; then return 0; fi
               touch .env
-              grep -v '^TOTP_ENCRYPTION_KEY=' .env > .env.new 2>/dev/null || true
-              echo "TOTP_ENCRYPTION_KEY=$TOTP_ENCRYPTION_KEY" >> .env.new
+              grep -v "^${key}=" .env > .env.new 2>/dev/null || true
+              echo "${key}=${value}" >> .env.new
               mv .env.new .env
-              chmod 600 .env
-            fi
+            }
+            sync_env TOTP_ENCRYPTION_KEY "$TOTP_ENCRYPTION_KEY"
+            sync_env GOOGLE_OAUTH_CLIENT_ID "$GOOGLE_OAUTH_CLIENT_ID"
+            sync_env GOOGLE_OAUTH_CLIENT_SECRET "$GOOGLE_OAUTH_CLIENT_SECRET"
+            chmod 600 .env
 
             docker compose pull
             # --force-recreate app picks up the new env_file contents; other
