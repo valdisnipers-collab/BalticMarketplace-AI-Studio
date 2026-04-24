@@ -2,11 +2,21 @@ import { Router } from 'express';
 import type { RateLimitRequestHandler } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { randomBytes, createHash } from 'crypto';
 import twilio from 'twilio';
 import db from '../pg';
 import { JWT_SECRET } from '../utils/auth';
 import { checkAndAwardBadges } from '../utils/badges';
 import { validateBody, registerSchema, loginSchema } from '../middleware/validate';
+import { validatePassword } from '../utils/passwordCheck';
+import { sendEmail, emailTemplates } from './../services/email';
+
+const RESET_TOKEN_TTL_MINUTES = 60;
+const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+
+function hashResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 // Twilio Configuration
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
@@ -272,6 +282,120 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
       res.json({ token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone, user_type: user.user_type, role: user.role, points: user.points, early_access_until: user.early_access_until, company_name: user.company_name, company_reg_number: user.company_reg_number, company_vat: user.company_vat, is_verified: user.is_verified } });
     } catch (error) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // POST /api/auth/request-password-reset
+  // Always returns 200 regardless of whether the email exists — prevents
+  // account enumeration. If the email matches a user, we generate a one-time
+  // token (hashed in DB), invalidate any previous unused tokens for that
+  // user, and send a reset email with a 1h-expiring link.
+  router.post("/request-password-reset", authLimiter, async (req, res) => {
+    try {
+      const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+      if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+        return res.status(400).json({ error: 'Nederīgs e-pasts' });
+      }
+
+      const user = await db.get<{ id: number; email: string; name: string }>(
+        'SELECT id, email, name FROM users WHERE LOWER(email) = ?',
+        [rawEmail],
+      );
+
+      if (user) {
+        // Invalidate previous unused tokens so only the newest link works.
+        await db.run(
+          `UPDATE password_reset_tokens
+             SET used_at = NOW()
+           WHERE user_id = ? AND used_at IS NULL`,
+          [user.id],
+        );
+
+        const rawToken = randomBytes(32).toString('hex');
+        const tokenHash = hashResetToken(rawToken);
+        const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60 * 1000).toISOString();
+        const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim()
+          || req.socket.remoteAddress
+          || null;
+
+        await db.run(
+          `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_ip)
+           VALUES (?, ?, ?, ?)
+           RETURNING id`,
+          [user.id, tokenHash, expiresAt, ip],
+        );
+
+        const resetUrl = `${APP_URL}/reset-password?token=${rawToken}`;
+        const tmpl = emailTemplates.passwordReset(user.name || 'lietotāj', resetUrl, RESET_TOKEN_TTL_MINUTES);
+        sendEmail(user.email, tmpl.subject, tmpl.html).catch(e =>
+          console.error('[password-reset email]', e),
+        );
+      }
+
+      // Same response regardless — no enumeration.
+      res.json({ ok: true, message: 'Ja konts ar šo e-pastu eksistē, esam nosūtījuši paroles atjaunošanas saiti.' });
+    } catch (error) {
+      console.error('[request-password-reset]', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // POST /api/auth/reset-password
+  // Consumes a reset token and sets a new password. Token is one-time use
+  // (marked used_at after success) and subject to the same password policy
+  // as registration (min 10 chars + haveibeenpwned check).
+  router.post("/reset-password", authLimiter, async (req, res) => {
+    try {
+      const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+      const newPassword = req.body?.newPassword;
+      if (!token || token.length < 32) {
+        return res.status(400).json({ error: 'Nederīga paroles atjaunošanas saite' });
+      }
+
+      const validation = await validatePassword(newPassword);
+      if (!validation.ok) {
+        return res.status(400).json({ error: validation.error });
+      }
+
+      const tokenHash = hashResetToken(token);
+      const row = await db.get<{ id: number; user_id: number }>(
+        `SELECT id, user_id FROM password_reset_tokens
+           WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW()
+           LIMIT 1`,
+        [tokenHash],
+      );
+
+      if (!row) {
+        return res.status(400).json({ error: 'Saite nederīga vai novecojusi. Lūdzu, pieprasi jaunu.' });
+      }
+
+      const hash = await bcrypt.hash(newPassword, 10);
+      await db.transaction(async (client) => {
+        await db.clientRun(
+          client,
+          'UPDATE users SET password_hash = ? WHERE id = ?',
+          [hash, row.user_id],
+        );
+        await db.clientRun(
+          client,
+          'UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ?',
+          [row.id],
+        );
+        // Invalidate any other pending tokens for the same user so a leaked
+        // earlier link cannot be used after this reset.
+        await db.clientRun(
+          client,
+          `UPDATE password_reset_tokens
+             SET used_at = NOW()
+           WHERE user_id = ? AND used_at IS NULL`,
+          [row.user_id],
+        );
+      });
+
+      res.json({ ok: true, message: 'Parole atjaunota. Tagad vari ienākt ar jauno paroli.' });
+    } catch (error) {
+      console.error('[reset-password]', error);
       res.status(500).json({ error: 'Server error' });
     }
   });

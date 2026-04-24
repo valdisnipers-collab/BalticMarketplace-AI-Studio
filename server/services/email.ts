@@ -81,6 +81,28 @@ export const emailTemplates = {
     `,
   }),
 
+  passwordReset: (userName: string, resetUrl: string, expiresInMinutes: number) => ({
+    subject: 'Paroles atjaunošana | BalticMarket',
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #E64415;">Paroles atjaunošana</h2>
+        <p>Sveiks, <strong>${esc(userName)}</strong>!</p>
+        <p>Saņemts pieprasījums atjaunot paroli Jūsu BalticMarket kontam. Ja tas biji Tu, nospied pogu zemāk, lai iestatītu jaunu paroli:</p>
+        <a href="${resetUrl}"
+           style="display: inline-block; background: #E64415; color: white;
+                  padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
+          Iestatīt jaunu paroli
+        </a>
+        <p style="color: #666; font-size: 13px; margin-top: 24px;">
+          Šī saite derīga <strong>${expiresInMinutes} minūtes</strong>. Ja Tu nepieprasīji paroles atjaunošanu, ignorē šo e-pastu — Tava parole paliks nemainīga.
+        </p>
+        <p style="color: #999; font-size: 11px; margin-top: 16px; word-break: break-all;">
+          Ja poga nestrādā, iekopē šo saiti pārlūkā:<br>${esc(resetUrl)}
+        </p>
+      </div>
+    `,
+  }),
+
   disputeResolved: (userName: string, resolution: 'refund' | 'release', orderId: number) => ({
     subject: 'Strīds atrisināts | BalticMarket',
     html: `
