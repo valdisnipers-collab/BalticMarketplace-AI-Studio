@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { useNotification } from '../components/NotificationProvider';
 import { Pencil, Image as ImageIcon, AlertCircle, ArrowLeft, ChevronDown } from 'lucide-react';
 import { parseImages } from '../lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +20,7 @@ import {
 
 export default function EditListing() {
   const { user, loading } = useAuth();
+  const { addNotification } = useNotification();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -35,6 +37,12 @@ export default function EditListing() {
   const [isFetching, setIsFetching] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Clear a previous submit error as soon as the user starts editing again,
+  // so they are not left looking at a stale message while typing a fix.
+  useEffect(() => {
+    if (error) setError('');
+  }, [title, description, price, category, subcategory, imageUrls]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -63,7 +71,7 @@ export default function EditListing() {
       const data = await res.json();
       setImageUrls(prev => [...prev, ...data.urls]);
     } catch (err: any) {
-      alert(err.message);
+      addNotification({ title: 'Attēla augšupielādes kļūda', message: err?.message || 'Neizdevās augšupielādēt', type: 'error' });
     } finally {
       setIsUploading(false);
     }

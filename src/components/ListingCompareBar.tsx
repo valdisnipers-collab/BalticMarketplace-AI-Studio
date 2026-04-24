@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Scale, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useI18n } from './I18nContext';
 
 interface CompareBarListing {
   id: number;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function ListingCompareBar({ selected, onRemove, onClear, onCompare, loading }: Props) {
+  const { t } = useI18n();
   return (
     <AnimatePresence>
       {selected.length >= 2 && (
@@ -26,7 +28,7 @@ export function ListingCompareBar({ selected, onRemove, onClear, onCompare, load
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-2xl"
+          className="fixed bottom-16 md:bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-2xl"
         >
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
             {/* Thumbnails */}
@@ -74,7 +76,7 @@ export function ListingCompareBar({ selected, onRemove, onClear, onCompare, load
                 onClick={onClear}
                 className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-2"
               >
-                Notīrīt
+                {t('compare.bar.clear')}
               </button>
               <Button
                 onClick={onCompare}
@@ -86,7 +88,7 @@ export function ListingCompareBar({ selected, onRemove, onClear, onCompare, load
                 ) : (
                   <Scale className="w-4 h-4" />
                 )}
-                AI novērtēt
+                {t('compare.bar.evaluate')}
               </Button>
             </div>
           </div>

@@ -77,8 +77,8 @@ export function AIComparePanel({ isOpen, onClose, result, listings }: Props) {
             <div className="p-5 space-y-4">
               {/* Market insight from Google Search */}
               {result?.marketInsight && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 flex gap-2">
-                  <Globe className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+                <div className="bg-primary-50 border border-primary-200 rounded-xl px-4 py-3 text-sm text-primary-800 flex gap-2">
+                  <Globe className="w-4 h-4 shrink-0 mt-0.5 text-primary-500" />
                   <span>{result.marketInsight}</span>
                 </div>
               )}

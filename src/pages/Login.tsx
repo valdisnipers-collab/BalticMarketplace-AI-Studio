@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { useI18n } from '../components/I18nContext';
 import { LogIn, AlertCircle, Phone, KeyRound, Mail, Lock, Fingerprint, ArrowLeft, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 type AuthMethod = 'select' | 'email' | 'phone' | 'smart-id';
 
 export default function Login() {
+  const { t } = useI18n();
   const [authMethod, setAuthMethod] = useState<AuthMethod>('select');
   
   // Phone state
@@ -411,7 +413,7 @@ export default function Login() {
                 onClick={() => setSmartIdStep('init')}
                 className="mt-4"
               >
-                Atcelt
+                {t('auth.cancel')}
               </Button>
             </div>
           )

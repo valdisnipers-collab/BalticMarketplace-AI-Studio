@@ -65,8 +65,7 @@ export default function Chat() {
 
   useEffect(() => {
     if (user) {
-      socketRef.current = io();
-      socketRef.current.emit('join', user.id);
+      socketRef.current = io({ auth: { token } });
 
       socketRef.current.on('new_message', (newMessage: Message) => {
         // Check if the message belongs to the active conversation
@@ -101,14 +100,14 @@ export default function Chat() {
         try {
           // Fetch user info
           const userRes = await fetch(`/api/users/${initialUserId}`);
-          let userName = 'Lietotājs';
+          let userName = t('chat.labels.user');
           if (userRes.ok) {
             const userData = await userRes.json();
             userName = userData.name;
           }
 
           // Fetch listing info if available
-          let listingTitle = 'Sludinājums';
+          let listingTitle = t('chat.labels.listing');
           if (initialListingId) {
             const listingRes = await fetch(`/api/listings/${initialListingId}`);
             if (listingRes.ok) {
@@ -416,8 +415,15 @@ export default function Chat() {
               <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
             </div>
           ) : conversations.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">
-              <p>{t('chat.noConversations')}</p>
+            <div className="p-10 text-center">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-primary-50 flex items-center justify-center text-primary-600">
+                <Send className="w-6 h-6" />
+              </div>
+              <p className="text-slate-700 font-medium mb-1">{t('chat.noConversations')}</p>
+              <p className="text-xs text-slate-400 mb-4">Uzsāc sarunu, atverot sludinājumu un nospiežot "Sazināties"</p>
+              <Link to="/search">
+                <Button variant="outline" size="sm">Meklēt sludinājumus</Button>
+              </Link>
             </div>
           ) : (
             conversations.map((conv) => (

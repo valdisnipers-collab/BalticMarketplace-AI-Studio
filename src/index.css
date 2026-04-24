@@ -6,17 +6,18 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
-  --color-primary-950: #172554;
+  /* BalticMarket brand palette — anchored on #E64415 (primary-500). */
+  --color-primary-50: #fef3ef;
+  --color-primary-100: #fde4d5;
+  --color-primary-200: #fac6aa;
+  --color-primary-300: #f79f71;
+  --color-primary-400: #f3723e;
+  --color-primary-500: #e64415;
+  --color-primary-600: #cc3a10;
+  --color-primary-700: #a52e0e;
+  --color-primary-800: #842614;
+  --color-primary-900: #6c2212;
+  --color-primary-950: #3b0e06;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-heading: "Outfit", sans-serif;
@@ -91,7 +92,7 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.02 250);
   
-  --primary: oklch(0.45 0.15 260); /* Trustworthy deep blue */
+  --primary: oklch(0.62 0.19 38); /* BalticMarket brand #E64415 */
   --primary-foreground: oklch(0.99 0.01 250);
   
   --secondary: oklch(0.96 0.01 250); /* Soft cool gray */
@@ -106,7 +107,7 @@
   --destructive: oklch(0.6 0.2 25); /* Refined red */
   --border: oklch(0.92 0.01 250);
   --input: oklch(0.92 0.01 250);
-  --ring: oklch(0.45 0.15 260);
+  --ring: oklch(0.62 0.19 38);
   
   --chart-1: oklch(0.65 0.15 260);
   --chart-2: oklch(0.75 0.1 180);
@@ -118,12 +119,12 @@
   
   --sidebar: oklch(0.98 0.01 250);
   --sidebar-foreground: oklch(0.2 0.02 250);
-  --sidebar-primary: oklch(0.45 0.15 260);
+  --sidebar-primary: oklch(0.62 0.19 38);
   --sidebar-primary-foreground: oklch(0.99 0.01 250);
   --sidebar-accent: oklch(0.96 0.01 250);
   --sidebar-accent-foreground: oklch(0.3 0.02 250);
   --sidebar-border: oklch(0.92 0.01 250);
-  --sidebar-ring: oklch(0.45 0.15 260);
+  --sidebar-ring: oklch(0.62 0.19 38);
 }
 
 @layer utilities {
@@ -146,7 +147,7 @@
   --popover: oklch(0.18 0.02 250);
   --popover-foreground: oklch(0.98 0.01 250);
   
-  --primary: oklch(0.65 0.15 260); /* Lighter blue for dark mode */
+  --primary: oklch(0.7 0.17 38); /* Brand orange, lightened for dark mode */
   --primary-foreground: oklch(0.15 0.02 250);
   
   --secondary: oklch(0.25 0.02 250);
@@ -161,7 +162,7 @@
   --destructive: oklch(0.6 0.2 25);
   --border: oklch(0.25 0.02 250);
   --input: oklch(0.25 0.02 250);
-  --ring: oklch(0.65 0.15 260);
+  --ring: oklch(0.7 0.17 38);
   
   --chart-1: oklch(0.65 0.15 260);
   --chart-2: oklch(0.75 0.1 180);
@@ -171,12 +172,12 @@
   
   --sidebar: oklch(0.18 0.02 250);
   --sidebar-foreground: oklch(0.98 0.01 250);
-  --sidebar-primary: oklch(0.65 0.15 260);
+  --sidebar-primary: oklch(0.7 0.17 38);
   --sidebar-primary-foreground: oklch(0.15 0.02 250);
   --sidebar-accent: oklch(0.25 0.02 250);
   --sidebar-accent-foreground: oklch(0.98 0.01 250);
   --sidebar-border: oklch(0.25 0.02 250);
-  --sidebar-ring: oklch(0.65 0.15 260);
+  --sidebar-ring: oklch(0.7 0.17 38);
 }
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }

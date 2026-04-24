@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
+import { useNotification } from '../components/NotificationProvider';
 import { useListingDraft } from '../hooks/useListingDraft';
 import { DraftRecoveryBanner } from '../components/DraftRecoveryBanner';
 import { ListingQualityMeter } from '../components/ListingQualityMeter';
@@ -77,6 +78,7 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
 export default function AddListing() {
   const { t } = useI18n();
   const { user, loading } = useAuth();
+  const { addNotification } = useNotification();
   const navigate = useNavigate();
 
   // Wizard state
@@ -127,7 +129,7 @@ export default function AddListing() {
       const data = await res.json();
       setImageUrls(prev => [...prev, ...data.urls]);
     } catch (err: any) {
-      alert(err.message);
+      addNotification({ title: 'Attēla augšupielādes kļūda', message: err?.message || 'Neizdevās augšupielādēt', type: 'error' });
     } finally {
       setIsUploading(false);
     }
@@ -371,8 +373,14 @@ export default function AddListing() {
   };
 
   const nextStep = () => {
-    if (step === 1 && !category) return;
-    if (step === 2 && !subcategory) return;
+    if (step === 1 && !category) {
+      setError('Lūdzu, izvēlieties kategoriju');
+      return;
+    }
+    if (step === 2 && !subcategory) {
+      setError('Lūdzu, izvēlieties apakškategoriju');
+      return;
+    }
     if (step === 3 && !title) {
       setError('Lūdzu, ievadiet sludinājuma virsrakstu');
       return;
@@ -918,10 +926,10 @@ export default function AddListing() {
                               if (res.ok && data.price) {
                                 setPrice(data.price.toString());
                               } else {
-                                alert(data.error || 'Neizdevās noteikt ieteicamo cenu');
+                                addNotification({ title: 'Cenas ieteikums nav pieejams', message: data.error || 'Neizdevās noteikt ieteicamo cenu', type: 'warning' });
                               }
                             } catch (err) {
-                              alert('Kļūda sazinoties ar serveri');
+                              addNotification({ title: 'Servera kļūda', message: 'Neizdevās sazināties ar serveri', type: 'error' });
                             }
                           }}
                           disabled={!title || !category}

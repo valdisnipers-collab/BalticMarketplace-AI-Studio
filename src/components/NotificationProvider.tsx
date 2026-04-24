@@ -8,7 +8,7 @@ interface Notification {
   id: string;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning';
+  type: 'info' | 'success' | 'warning' | 'error';
 }
 
 interface NotificationContextType {
@@ -36,8 +36,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (user) {
-      socketRef.current = io();
-      socketRef.current.emit('join', user.id);
+      const token = localStorage.getItem('auth_token');
+      socketRef.current = io({ auth: { token } });
 
       socketRef.current.on('new_message', (message: any) => {
         // Don't show notification if we are on the chat page
@@ -88,12 +88,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
               className={`pointer-events-auto w-80 bg-white rounded-2xl shadow-xl border p-4 flex items-start gap-3 ${
                 notification.type === 'success' ? 'border-emerald-200' :
                 notification.type === 'warning' ? 'border-amber-200' :
+                notification.type === 'error' ? 'border-red-200' :
                 'border-blue-200'
               }`}
             >
               <div className={`mt-0.5 flex-shrink-0 ${
                 notification.type === 'success' ? 'text-emerald-500' :
                 notification.type === 'warning' ? 'text-amber-500' :
+                notification.type === 'error' ? 'text-red-500' :
                 'text-blue-500'
               }`}>
                 <Bell className="w-5 h-5" />

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
+import { useNotification } from '../components/NotificationProvider';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES, isAutoCategory } from '../lib/categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,6 +93,7 @@ export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const { user } = useAuth();
+  const { addNotification } = useNotification();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
@@ -255,14 +257,15 @@ export default function Search() {
     });
   }
 
+  const compareRequestId = React.useRef(0);
   async function handleCompare() {
     if (selectedIds.size < 2 || compareLoading) return;
-    console.log('[COMPARE] selectedIds:', Array.from(selectedIds), 'listings:', filteredListings.filter(l => selectedIds.has(l.id)).map(l => ({ id: l.id, title: l.title })));
     if (!user) {
-      alert('Lūdzu, piesakieties, lai izmantotu AI salīdzinājumu');
+      addNotification({ title: 'Nepieciešama pieteikšanās', message: 'Piesakieties, lai izmantotu AI salīdzinājumu', type: 'info' });
       return;
     }
     const token = localStorage.getItem('auth_token');
+    const thisRequestId = ++compareRequestId.current;
     setCompareResult(null);
     setCompareLoading(true);
     try {
@@ -279,13 +282,20 @@ export default function Search() {
         throw new Error(errBody.error || 'compare failed');
       }
       const data = await res.json();
+      // Drop stale responses that arrived after the user fired a newer compare request.
+      if (thisRequestId !== compareRequestId.current) return;
+      if (!data || typeof data !== 'object' || !Array.isArray(data.rankings)) {
+        throw new Error('Nederīga atbilde no AI');
+      }
       compareListingsSnapshot.current = selectedListingCards;
       setCompareResult(data);
       setComparePanelOpen(true);
     } catch (err: any) {
-      alert(err?.message || 'Neizdevās salīdzināt sludinājumus. Lūdzu, mēģiniet vēlreiz.');
+      if (thisRequestId === compareRequestId.current) {
+        addNotification({ title: 'Salīdzinājums neizdevās', message: err?.message || 'Lūdzu, mēģiniet vēlreiz.', type: 'error' });
+      }
     } finally {
-      setCompareLoading(false);
+      if (thisRequestId === compareRequestId.current) setCompareLoading(false);
     }
   }
 
@@ -304,10 +314,21 @@ export default function Search() {
     if (user) {
       fetchFavorites();
     }
-  }, [user, searchParams]); // Re-fetch when URL params change
+    // Any filter change invalidates the current selection — otherwise the user could
+    // run compare on IDs no longer present in the filtered result set.
+    setSelectedIds(new Set());
+  }, [user, searchParams]);
 
   const handleSearch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    // Reject nonsensical price ranges up front so the server isn't asked to
+    // resolve an empty intersection.
+    const minN = minPrice ? Number(minPrice) : null;
+    const maxN = maxPrice ? Number(maxPrice) : null;
+    if (minN !== null && maxN !== null && Number.isFinite(minN) && Number.isFinite(maxN) && minN > maxN) {
+      addNotification({ title: 'Nederīgs cenu diapazons', message: 'Minimālā cena nevar būt lielāka par maksimālo', type: 'warning' });
+      return;
+    }
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (category !== 'Visi') params.set('category', category);
@@ -451,7 +472,7 @@ export default function Search() {
 
           {/* Mobile header */}
           <div className="flex justify-between items-center px-5 py-4 border-b border-slate-100 md:hidden flex-shrink-0">
-            <h2 className="text-lg font-bold text-slate-900">Filtri</h2>
+            <h2 className="text-lg font-bold text-slate-900">{t('filters.title')}</h2>
             <button
               type="button"
               aria-label="Aizvērt filtrus"
@@ -626,14 +647,14 @@ export default function Search() {
               onClick={() => setShowFilters(false)}
             >
               <SearchIcon className="w-4 h-4 mr-2" />
-              Meklēt
+              {t('filters.apply')}
             </Button>
             <button
               type="button"
               onClick={clearFilters}
               className="w-full mt-2 py-1.5 text-sm text-slate-400 hover:text-[#E64415] transition-colors"
             >
-              Notīrīt filtrus
+              {t('filters.clear')}
             </button>
           </div>
 
@@ -653,7 +674,7 @@ export default function Search() {
             {user && (
               <Button variant="outline" onClick={handleSaveSearch} className="mr-2">
                 <Heart className="w-4 h-4 mr-2" />
-                Saglabāt meklējumu
+                {t('search.saveSearch')}
               </Button>
             )}
             <span className="text-sm text-slate-500">{t('search.sort')}:</span>

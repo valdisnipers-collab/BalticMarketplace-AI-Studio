@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-type Language = 'LV' | 'LT' | 'EE' | 'EN' | 'RU';
+export type Language = 'LV' | 'LT' | 'EE' | 'EN' | 'RU';
 
 interface Translations {
   [key: string]: {
@@ -96,6 +96,24 @@ const translations: Translations = {
   'home.trust.paymentsDesc': { LV: 'Jūsu dati un nauda ir drošībā.', LT: 'Jūsų duomenys ir pinigai yra saugūs.', EE: 'Teie andmed ja raha on kaitstud.', EN: 'Your data and money are safe.', RU: 'Ваши данные и деньги в безопасности.' },
   'home.trust.support': { LV: 'Atbalsts 24/7', LT: 'Pagalba 24/7', EE: 'Tugi 24/7', EN: 'Support 24/7', RU: 'Поддержка 24/7' },
   'home.trust.supportDesc': { LV: 'Mēs esam šeit, lai palīdzētu jebkurā laikā.', LT: 'Mes esame čia, kad padėtume bet kuriuo metu.', EE: 'Oleme siin, et aidata igal ajal.', EN: 'We are here to help anytime.', RU: 'Мы здесь, чтобы помочь в любое время.' },
+
+  // Filters / search UI
+  'filters.title':       { LV: 'Filtri',            LT: 'Filtrai',           EE: 'Filtrid',           EN: 'Filters',           RU: 'Фильтры' },
+  'filters.apply':       { LV: 'Meklēt',            LT: 'Ieškoti',           EE: 'Otsi',              EN: 'Search',            RU: 'Искать' },
+  'filters.clear':       { LV: 'Notīrīt filtrus',   LT: 'Išvalyti filtrus',  EE: 'Tühjenda filtrid',  EN: 'Clear filters',     RU: 'Очистить фильтры' },
+  'search.saveSearch':   { LV: 'Saglabāt meklējumu', LT: 'Išsaugoti paiešką', EE: 'Salvesta otsing',  EN: 'Save search',       RU: 'Сохранить поиск' },
+
+  // Compare bar
+  'compare.bar.clear':   { LV: 'Notīrīt',           LT: 'Išvalyti',          EE: 'Tühjenda',          EN: 'Clear',             RU: 'Очистить' },
+  'compare.bar.evaluate':{ LV: 'AI novērtēt',       LT: 'AI įvertinti',      EE: 'AI hinnang',        EN: 'AI evaluate',       RU: 'AI оценка' },
+
+  // Auth common
+  'auth.cancel':         { LV: 'Atcelt',            LT: 'Atšaukti',          EE: 'Tühista',           EN: 'Cancel',            RU: 'Отмена' },
+  'auth.back':           { LV: 'Atpakaļ',           LT: 'Atgal',             EE: 'Tagasi',            EN: 'Back',              RU: 'Назад' },
+
+  // Chat fallback labels
+  'chat.labels.user':    { LV: 'Lietotājs',         LT: 'Vartotojas',        EE: 'Kasutaja',          EN: 'User',              RU: 'Пользователь' },
+  'chat.labels.listing': { LV: 'Sludinājums',       LT: 'Skelbimas',         EE: 'Kuulutus',          EN: 'Listing',           RU: 'Объявление' },
 };
 
 interface I18nContextType {

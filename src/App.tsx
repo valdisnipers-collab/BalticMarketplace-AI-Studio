@@ -25,6 +25,9 @@ import AdminDashboard from './pages/AdminDashboard';
 import StorePage from './pages/StorePage';
 import Compare from './pages/Compare';
 import SellerDashboard from './pages/SellerDashboard';
+import Help from './pages/Help';
+import Rules from './pages/Rules';
+import About from './pages/About';
 
 const pageVariants = {
   initial: { opacity: 0, y: 10 },
@@ -54,6 +57,9 @@ function AnimatedRoutes() {
         <Route path="/store/:slug" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><StorePage /></motion.div>} />
         <Route path="/compare" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Compare /></motion.div>} />
         <Route path="/seller/dashboard" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><SellerDashboard /></motion.div>} />
+        <Route path="/help" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Help /></motion.div>} />
+        <Route path="/rules" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Rules /></motion.div>} />
+        <Route path="/about" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><About /></motion.div>} />
       </Routes>
     </AnimatePresence>
   );
@@ -71,7 +77,7 @@ export default function App() {
                 <Navbar />
                 {/* Fade-out efekts, kas darbojas zem galvenes */}
                 <div className="sticky top-0 z-[95] h-20 w-full bg-gradient-to-t from-transparent to-slate-50 pointer-events-none -mb-20" />
-                <main className="flex-grow">
+                <main className="flex-grow pb-16 md:pb-0">
                   <AnimatedRoutes />
                 </main>
                 <BottomNav />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { useI18n } from '../components/I18nContext';
 import { UserPlus, AlertCircle, Phone, KeyRound, Building2, User, Mail, Lock, ArrowLeft, Fingerprint } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Input } from '@/components/ui/input';
 type RegisterMethod = 'select' | 'email' | 'phone' | 'smart-id';
 
 export default function Register() {
+  const { t } = useI18n();
   const [registerMethod, setRegisterMethod] = useState<RegisterMethod>('select');
   const [userType, setUserType] = useState<'c2c' | 'b2b'>('c2c');
   
@@ -294,7 +296,7 @@ export default function Register() {
               className="mb-4 text-slate-500 hover:text-slate-700"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
-              Atpakaļ
+              {t('auth.back')}
             </Button>
           )}
           <div className="mx-auto h-12 w-12 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center">
@@ -578,7 +580,7 @@ export default function Register() {
                       onClick={() => setSmartIdStep('details')}
                       className="mt-4"
                     >
-                      Atcelt
+                      {t('auth.cancel')}
                     </Button>
                   </div>
                 )}

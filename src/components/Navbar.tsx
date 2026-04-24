@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { useI18n } from './I18nContext';
+import { useI18n, type Language } from './I18nContext';
 import { Plus, User, LogOut, MessageSquare, ShieldAlert, ShieldCheck, Coins, Bell, Globe, ChevronDown, ChevronUp, Search, Heart, Star, Info, PlusCircle, BarChart2 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -23,7 +23,7 @@ interface Notification {
   created_at: string;
 }
 
-const LANGUAGES = [
+const LANGUAGES: Array<{ code: Language; name: string }> = [
   { code: 'LV', name: 'Latviešu' },
   { code: 'LT', name: 'Lietuvių' },
   { code: 'EE', name: 'Eesti' },
@@ -142,7 +142,7 @@ export default function Navbar() {
                     {t('home.search.button')} {isSearchOpen ? <ChevronUp className="w-4 h-4 text-[#E64415]" /> : <ChevronDown className="w-4 h-4 opacity-50" />}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" sideOffset={20} className="w-[800px] p-0 overflow-hidden rounded-[32px] shadow-2xl border-none ring-1 ring-slate-200">
+                <DropdownMenuContent align="start" sideOffset={20} className="w-[calc(100vw-2rem)] max-w-[800px] p-0 overflow-hidden rounded-[32px] shadow-2xl border-none ring-1 ring-slate-200">
                   <div className="flex bg-white">
                     {/* Left Column - Visual/Featured */}
                     <div className="w-1/3 bg-slate-50/50 p-8 border-r border-slate-100">
@@ -267,7 +267,7 @@ export default function Navbar() {
                   {LANGUAGES.map((l) => (
                     <DropdownMenuItem 
                       key={l.code}
-                      onClick={() => setLang(l.code as any)}
+                      onClick={() => setLang(l.code)}
                       className={`cursor-pointer font-medium ${lang === l.code ? 'bg-primary-50 text-primary-700' : ''}`}
                     >
                       <span className="w-6 inline-block text-xs text-slate-400">{l.code}</span>
@@ -280,10 +280,12 @@ export default function Navbar() {
 
             <div className="flex items-center space-x-1 sm:space-x-2">
               <div className="relative" ref={notificationsRef}>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="icon"
                   onClick={() => setShowNotifications(!showNotifications)}
+                  aria-label={t('profile.notifications')}
+                  aria-expanded={showNotifications}
                   className="text-slate-600 hover:text-[#E64415] hover:bg-slate-50"
                 >
                   <Bell className="w-6 h-6" />
@@ -340,13 +342,13 @@ export default function Navbar() {
                 )}
               </div>
 
-              <Link to="/profile?tab=saved-searches">
+              <Link to="/profile?tab=saved-searches" aria-label="Saglabātie meklējumi">
                 <Button variant="ghost" size="icon" className="text-slate-600 hover:text-[#E64415] hover:bg-slate-50">
                   <Star className="w-6 h-6" />
                 </Button>
               </Link>
 
-              <Link to="/profile?tab=favorites">
+              <Link to="/profile?tab=favorites" aria-label="Favorīti">
                 <Button variant="ghost" size="icon" className="text-slate-600 hover:text-[#E64415] hover:bg-slate-50">
                   <Heart className="w-6 h-6" />
                 </Button>
