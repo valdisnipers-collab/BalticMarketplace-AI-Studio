@@ -9,6 +9,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { TrustScoreBadge } from '../components/TrustScoreBadge';
 import LoyaltyBadge from '../components/LoyaltyBadge';
 import ReferralWidget from '../components/ReferralWidget';
+import TwoFactorSettings from '../components/TwoFactorSettings';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -1441,6 +1442,8 @@ export default function Profile() {
                 </div>
               </form>
             </div>
+
+            <TwoFactorSettings />
 
             {user.user_type === 'b2b' && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">

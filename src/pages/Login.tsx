@@ -38,6 +38,12 @@ export default function Login() {
   const [smartIdCode, setSmartIdCode] = useState('');
   const [smartIdStep, setSmartIdStep] = useState<'init' | 'polling'>('init');
 
+  // 2FA state — shown after any first-factor auth succeeds for a
+  // user with TOTP enabled. We collect a 6-digit code or a recovery code.
+  const [twoFaTempToken, setTwoFaTempToken] = useState('');
+  const [twoFaCode, setTwoFaCode] = useState('');
+  const [twoFaMode, setTwoFaMode] = useState<'code' | 'recovery'>('code');
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
@@ -112,6 +118,38 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Nepareizs e-pasts vai parole');
+      if (data.requires2FA && data.tempToken) {
+        setTwoFaTempToken(data.tempToken);
+        setTwoFaCode('');
+        setTwoFaMode('code');
+        return;
+      }
+      signIn(data.token, data.user);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 2FA verify (shared between email and phone paths) ---
+  const handle2FAVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const body: Record<string, string> = { tempToken: twoFaTempToken };
+      if (twoFaMode === 'code') body.code = twoFaCode.replace(/\s/g, '');
+      else body.recoveryCode = twoFaCode.trim();
+
+      const res = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Nepareizs kods');
       signIn(data.token, data.user);
       navigate('/');
     } catch (err: any) {
@@ -209,7 +247,56 @@ export default function Login() {
           </div>
         )}
 
-        {authMethod === 'select' && (
+        {twoFaTempToken && (
+          <form className="mt-8 space-y-5" onSubmit={handle2FAVerify}>
+            <div className="text-center">
+              <div className="mx-auto h-10 w-10 bg-primary-100 text-[#E64415] rounded-full flex items-center justify-center">
+                <KeyRound className="h-5 w-5" />
+              </div>
+              <h3 className="mt-3 text-lg font-bold text-slate-900">Divfaktoru apstiprinājums</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                {twoFaMode === 'code'
+                  ? 'Ievadiet 6-ciparu kodu no authenticator lietotnes'
+                  : 'Ievadiet vienu no jūsu rezerves kodiem'}
+              </p>
+            </div>
+            <div>
+              <Input
+                type="text" required autoFocus autoComplete="one-time-code"
+                value={twoFaCode}
+                onChange={(e) => setTwoFaCode(e.target.value)}
+                className="text-center tracking-widest text-lg font-mono"
+                placeholder={twoFaMode === 'code' ? '000000' : 'XXXXX-XXXXX'}
+                maxLength={twoFaMode === 'code' ? 6 : 12}
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={loading || twoFaCode.trim().length < 5}
+              className="w-full bg-[#E64415] hover:bg-[#E64415]/90 text-white"
+            >
+              {loading ? 'Pārbauda...' : 'Apstiprināt'}
+            </Button>
+            <div className="flex justify-between text-xs">
+              <button
+                type="button"
+                className="text-slate-500 hover:text-slate-700"
+                onClick={() => { setTwoFaTempToken(''); setTwoFaCode(''); }}
+              >
+                Atcelt
+              </button>
+              <button
+                type="button"
+                className="text-[#E64415] hover:underline"
+                onClick={() => { setTwoFaMode(twoFaMode === 'code' ? 'recovery' : 'code'); setTwoFaCode(''); }}
+              >
+                {twoFaMode === 'code' ? 'Izmantot rezerves kodu' : 'Izmantot authenticator kodu'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {!twoFaTempToken && authMethod === 'select' && (
           <div className="mt-8 space-y-4">
             <Button
               variant="outline"

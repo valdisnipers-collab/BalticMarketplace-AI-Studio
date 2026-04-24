@@ -16,6 +16,7 @@ interface User {
   company_address?: string;
   b2b_subscription_status?: 'none' | 'active' | 'canceled' | null;
   stripe_customer_id?: string | null;
+  totp_enabled?: boolean | null;
 }
 
 interface AuthContextType {
