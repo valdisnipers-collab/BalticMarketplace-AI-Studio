@@ -76,6 +76,15 @@ export function createModerationRouter() {
     }
   });
 
+  // Must exactly match the CHECK constraint in migration 011 or the
+  // INSERT below will 500 at runtime.
+  const VALID_ACTIONS = new Set([
+    'approve','reject','flag','hide','unhide',
+    'suspend','ban','unban','warn',
+    'delete','restore','request_changes',
+    'resolve','dismiss','escalate','note',
+  ]);
+
   router.post('/:type/:id/action', async (req: any, res) => {
     try {
       const type = String(req.params.type);
@@ -83,9 +92,11 @@ export function createModerationRouter() {
       const action = String(req.body?.action || '').trim();
       const reason = typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 500) : null;
 
-      const validTypes = new Set(['listing','report','message','dispute','user']);
+      const validTypes = new Set(['listing','report','message','dispute','store','user']);
       if (!validTypes.has(type)) return res.status(400).json({ error: 'Invalid type' });
       if (!action) return res.status(400).json({ error: 'Action required' });
+      if (!VALID_ACTIONS.has(action)) return res.status(400).json({ error: 'Invalid action' });
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid target id' });
 
       // Apply the action based on type
       if (type === 'listing') {

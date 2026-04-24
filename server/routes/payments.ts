@@ -243,6 +243,17 @@ export function createPaymentsRouter(deps: { getStripe: () => Stripe; io: Socket
     }
   });
 
+  // Subscription plan allow-list: maps Pricing.tsx `planId` tokens to
+  // actual Stripe Price IDs configured via env. Without this, a malicious
+  // user could post ANY Price ID (including a €0.01 internal one) and get
+  // b2b_subscription_status='active' via the webhook.
+  const SUBSCRIPTION_PLAN_MAP: Record<string, string | undefined> = {
+    price_pro_monthly: process.env.STRIPE_PRICE_PRO_MONTHLY,
+    price_pro_yearly: process.env.STRIPE_PRICE_PRO_YEARLY,
+    price_sniper_monthly: process.env.STRIPE_PRICE_SNIPER_MONTHLY,
+    price_sniper_yearly: process.env.STRIPE_PRICE_SNIPER_YEARLY,
+  };
+
   // Stripe Checkout Session — wallet top-up / points / subscription
   router.post('/create-checkout-session', async (req, res) => {
     const authHeader = req.headers.authorization;
@@ -256,18 +267,18 @@ export function createPaymentsRouter(deps: { getStripe: () => Stripe; io: Socket
       const stripe = getStripe();
 
       if (type === 'subscription') {
+        const resolvedPrice = typeof planId === 'string' ? SUBSCRIPTION_PLAN_MAP[planId] : undefined;
+        if (!resolvedPrice) {
+          return res.status(400).json({ error: 'Nederīgs vai nekonfigurēts abonementa plāns' });
+        }
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ['card'],
-          line_items: [
-            {
-              price: planId, // This should be a Stripe Price ID
-              quantity: 1,
-            },
-          ],
+          line_items: [{ price: resolvedPrice, quantity: 1 }],
           mode: 'subscription',
           success_url: `${process.env.APP_URL}/profile?success=true&type=subscription`,
           cancel_url: `${process.env.APP_URL}/profile?canceled=true`,
           client_reference_id: decoded.userId.toString(),
+          metadata: { plan_token: planId },
         });
         return res.json({ url: session.url });
       }
