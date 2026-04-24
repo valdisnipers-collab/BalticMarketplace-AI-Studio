@@ -64,11 +64,14 @@ jobs:
           TOTP_ENCRYPTION_KEY: ${{ secrets.TOTP_ENCRYPTION_KEY }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
         with:
           host: ${{ secrets.HETZNER_IP }}
           username: deploy
           key: ${{ secrets.HETZNER_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER,TOTP_ENCRYPTION_KEY,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET
+          envs: GHCR_TOKEN,GHCR_USER,TOTP_ENCRYPTION_KEY,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,TWILIO_VERIFY_SERVICE_SID
           script: |
             cd /opt/balticmarket
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
@@ -88,6 +91,9 @@ jobs:
             sync_env TOTP_ENCRYPTION_KEY "$TOTP_ENCRYPTION_KEY"
             sync_env GOOGLE_OAUTH_CLIENT_ID "$GOOGLE_OAUTH_CLIENT_ID"
             sync_env GOOGLE_OAUTH_CLIENT_SECRET "$GOOGLE_OAUTH_CLIENT_SECRET"
+            sync_env TWILIO_ACCOUNT_SID "$TWILIO_ACCOUNT_SID"
+            sync_env TWILIO_AUTH_TOKEN "$TWILIO_AUTH_TOKEN"
+            sync_env TWILIO_VERIFY_SERVICE_SID "$TWILIO_VERIFY_SERVICE_SID"
             chmod 600 .env
 
             docker compose pull
