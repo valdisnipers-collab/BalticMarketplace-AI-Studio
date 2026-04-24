@@ -74,10 +74,22 @@ export default function Login() {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code })
+        body: JSON.stringify({ phone, code, mode: 'login' })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Nepareizs kods');
+      if (!res.ok) {
+        if (data.code === 'NOT_REGISTERED') {
+          // Offer a one-click path to registration with the phone prefilled.
+          const goRegister = window.confirm(
+            `${data.error}\n\nVai vēlaties reģistrēties ar šo numuru?`
+          );
+          if (goRegister) {
+            navigate(`/register?method=phone&phone=${encodeURIComponent(phone)}`);
+            return;
+          }
+        }
+        throw new Error(data.error || 'Nepareizs kods');
+      }
       signIn(data.token, data.user);
       navigate('/');
     } catch (err: any) {

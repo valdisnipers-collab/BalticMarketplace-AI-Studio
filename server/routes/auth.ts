@@ -56,7 +56,11 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
   });
 
   router.post("/verify-otp", authLimiter, async (req, res) => {
-    const { phone, code, name, user_type } = req.body;
+    const {
+      phone, code, name, user_type,
+      company_name, company_reg_number, company_vat,
+      mode, // 'login' | 'register' | undefined (legacy auto-create)
+    } = req.body;
     if (!phone || !code) return res.status(400).json({ error: 'Phone and code are required' });
 
     let isValid = false;
@@ -85,17 +89,54 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     try {
       let user = await db.get('SELECT * FROM users WHERE phone = ?', [phone]) as any;
 
+      // Enforce register/login intent when the client declares one. Falls
+      // back to legacy auto-create if no `mode` is sent (backwards compat
+      // for older mobile builds).
+      if (mode === 'login' && !user) {
+        return res.status(400).json({
+          error: 'Šis telefona numurs nav reģistrēts.',
+          code: 'NOT_REGISTERED',
+          hint: 'register',
+        });
+      }
+      if (mode === 'register' && user) {
+        return res.status(400).json({
+          error: 'Konts ar šo telefona numuru jau eksistē. Lūdzu, ienāciet sistēmā.',
+          code: 'ALREADY_REGISTERED',
+          hint: 'login',
+        });
+      }
+
       if (!user) {
-        // Create new user via phone
+        // Create new user via phone — includes company fields if the caller
+        // supplied them (Register.tsx phone flow for B2B).
         const email = `${phone.replace(/\+/g, '')}@phone.local`; // Dummy email for schema
         const hash = await bcrypt.hash(Math.random().toString(36), 10); // Dummy password
         const role = (phone === '29469877' || phone === '+37129469877') ? 'admin' : 'user';
-        const info = await db.run('INSERT INTO users (email, password_hash, name, phone, user_type, role) VALUES (?, ?, ?, ?, ?, ?)', [email, hash, name || 'User', phone, user_type || 'c2c', role]);
-        user = { id: info.lastInsertRowid, email, name: name || 'User', phone, role, user_type: user_type || 'c2c', is_verified: 0, points: 0 };
+        const uType = user_type === 'b2b' ? 'b2b' : 'c2c';
+        const info = await db.run(
+          `INSERT INTO users (email, password_hash, name, phone, user_type, role,
+                              company_name, company_reg_number, company_vat, points)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 50)`,
+          [email, hash, name || 'User', phone, uType, role,
+           company_name || null, company_reg_number || null, company_vat || null],
+        );
+        const userId = info.lastInsertRowid as number;
+        await db.run(
+          'INSERT INTO points_history (user_id, points, reason) VALUES (?, ?, ?)',
+          [userId, 50, 'Reģistrācijas bonuss'],
+        );
+        user = {
+          id: userId, email, name: name || 'User', phone, role, user_type: uType,
+          is_verified: 0, points: 50,
+          company_name: company_name || null,
+          company_reg_number: company_reg_number || null,
+          company_vat: company_vat || null,
+        };
       }
 
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      res.json({ token, user: { id: user.id, name: user.name, phone: user.phone, role: user.role, user_type: user.user_type, is_verified: user.is_verified, points: user.points } });
+      res.json({ token, user: { id: user.id, name: user.name, phone: user.phone, role: user.role, user_type: user.user_type, is_verified: user.is_verified, points: user.points, company_name: user.company_name, company_reg_number: user.company_reg_number, company_vat: user.company_vat } });
     } catch (error) {
       console.error("Error creating/logging in user:", error);
       res.status(500).json({ error: 'Server error' });

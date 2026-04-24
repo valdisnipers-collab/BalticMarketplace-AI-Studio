@@ -166,20 +166,32 @@ export default function Register() {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          phone, 
-          code, 
-          name, 
+        body: JSON.stringify({
+          phone,
+          code,
+          name,
           user_type: userType,
           company_name: userType === 'b2b' ? companyName : undefined,
           company_reg_number: userType === 'b2b' ? companyRegNumber : undefined,
-          company_vat: userType === 'b2b' ? companyVat : undefined
+          company_vat: userType === 'b2b' ? companyVat : undefined,
+          mode: 'register',
         })
       });
-      
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Nepareizs kods');
-      
+      if (!res.ok) {
+        if (data.code === 'ALREADY_REGISTERED') {
+          const goLogin = window.confirm(
+            `${data.error}\n\nVai vēlaties ienākt sistēmā?`
+          );
+          if (goLogin) {
+            navigate(`/login?method=phone&phone=${encodeURIComponent(phone)}`);
+            return;
+          }
+        }
+        throw new Error(data.error || 'Nepareizs kods');
+      }
+
       signIn(data.token, data.user);
       navigate('/');
     } catch (err: any) {
