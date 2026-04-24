@@ -159,6 +159,86 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     }
   });
 
+  // Link an existing account to a phone number via SMS verification.
+  // Prevents duplicate accounts when a user registered by email first and
+  // later tries SMS login — they use this flow to attach their phone
+  // instead of auto-creating a second account.
+  router.post("/link-phone/request-otp", authLimiter, async (req, res) => {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Nav autorizēts' });
+
+    const { phone } = req.body;
+    if (!phone || !/^\+\d{7,15}$/.test(phone)) {
+      return res.status(400).json({ error: 'Nederīgs telefona numurs (formāts: +371XXXXXXXX)' });
+    }
+
+    const owner = await db.get<{ id: number }>('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (owner && owner.id !== userId) {
+      return res.status(409).json({ error: 'Šis telefona numurs jau ir piesaistīts citam kontam' });
+    }
+
+    if (!twilioClient || !TWILIO_VERIFY_SERVICE_SID) {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({ error: 'SMS verifikācijas serviss nav konfigurēts' });
+      }
+      console.warn("Twilio is not configured. Simulating OTP for link-phone (dev only).");
+      return res.json({ message: 'OTP sent (simulated)', simulated: true });
+    }
+
+    try {
+      await twilioClient.verify.v2.services(TWILIO_VERIFY_SERVICE_SID)
+        .verifications.create({ to: phone, channel: 'sms' });
+      res.json({ message: 'OTP sent successfully' });
+    } catch (error) {
+      console.error("Twilio link-phone error:", error);
+      res.status(500).json({ error: 'Neizdevās nosūtīt SMS kodu' });
+    }
+  });
+
+  router.post("/link-phone/verify-otp", authLimiter, async (req, res) => {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Nav autorizēts' });
+
+    const { phone, code } = req.body;
+    if (!phone || !code) return res.status(400).json({ error: 'Telefons un kods ir obligāti' });
+
+    const owner = await db.get<{ id: number }>('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (owner && owner.id !== userId) {
+      return res.status(409).json({ error: 'Šis telefona numurs jau ir piesaistīts citam kontam' });
+    }
+
+    let isValid = false;
+    if (!twilioClient || !TWILIO_VERIFY_SERVICE_SID) {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({ error: 'SMS verifikācijas serviss nav konfigurēts' });
+      }
+      isValid = code === '123456';
+    } else {
+      try {
+        const verification = await twilioClient.verify.v2.services(TWILIO_VERIFY_SERVICE_SID)
+          .verificationChecks.create({ to: phone, code });
+        isValid = verification.status === 'approved';
+      } catch (error) {
+        console.error("Twilio link-phone verification error:", error);
+        return res.status(500).json({ error: 'Neizdevās pārbaudīt kodu' });
+      }
+    }
+
+    if (!isValid) return res.status(400).json({ error: 'Nepareizs SMS kods' });
+
+    try {
+      await db.run('UPDATE users SET phone = ? WHERE id = ?', [phone, userId]);
+      const updated = await db.get<any>(
+        'SELECT id, email, name, phone, role, user_type, is_verified, points FROM users WHERE id = ?',
+        [userId],
+      );
+      res.json({ message: 'Telefons veiksmīgi piesaistīts', user: updated });
+    } catch (error) {
+      console.error("link-phone DB update error:", error);
+      res.status(500).json({ error: 'Neizdevās saglabāt telefonu' });
+    }
+  });
+
   // Helper: Smart-ID flows are fully simulated. Block them in production
   // until a real Smart-ID provider (e.g. Dokobit) is wired up.
   const smartIdGuard = (req: any, res: any, next: any) => {

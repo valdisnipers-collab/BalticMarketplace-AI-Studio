@@ -10,6 +10,7 @@ import { TrustScoreBadge } from '../components/TrustScoreBadge';
 import LoyaltyBadge from '../components/LoyaltyBadge';
 import ReferralWidget from '../components/ReferralWidget';
 import TwoFactorSettings from '../components/TwoFactorSettings';
+import PhoneLinkSettings from '../components/PhoneLinkSettings';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -1442,6 +1443,8 @@ export default function Profile() {
                 </div>
               </form>
             </div>
+
+            <PhoneLinkSettings />
 
             <TwoFactorSettings />
 
