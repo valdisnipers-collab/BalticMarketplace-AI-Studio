@@ -14,6 +14,8 @@ interface User {
   company_reg_number?: string;
   company_vat?: string;
   company_address?: string;
+  b2b_subscription_status?: 'none' | 'active' | 'canceled' | null;
+  stripe_customer_id?: string | null;
 }
 
 interface AuthContextType {

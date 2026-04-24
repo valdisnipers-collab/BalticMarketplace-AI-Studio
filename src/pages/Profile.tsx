@@ -1160,60 +1160,86 @@ export default function Profile() {
             </div>
 
             {/* SaaS Subscription Section */}
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-[#E64415]/20 blur-[80px] rounded-full -mr-32 -mt-32" />
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-2xl font-bold uppercase tracking-tight flex items-center">
-                    <Star className="w-6 h-6 mr-3 text-amber-400" />
-                    B2B Pro Abonements
-                  </h3>
-                  <Badge className="bg-[#E64415] text-white border-none">Aktīvs</Badge>
+            {user.b2b_subscription_status === 'active' ? (
+              <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-[#E64415]/20 blur-[80px] rounded-full -mr-32 -mt-32" />
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-2xl font-bold uppercase tracking-tight flex items-center">
+                      <Star className="w-6 h-6 mr-3 text-amber-400" />
+                      B2B Pro Abonements
+                    </h3>
+                    <Badge className="bg-[#E64415] text-white border-none">Aktīvs</Badge>
+                  </div>
+                  <p className="text-slate-300 mb-8 max-w-2xl">
+                    Jūsu uzņēmums izmanto Pro plānu. Rēķinus, maksājumu metodes un atcelšanu pārvaldiet Stripe portālā.
+                  </p>
+                  <div className="flex flex-wrap gap-4">
+                    <Button
+                      className="bg-white text-slate-900 hover:bg-slate-100 rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
+                      onClick={async () => {
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          const res = await fetch('/api/create-portal-session', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`,
+                            },
+                          });
+                          const data = await res.json().catch(() => ({}));
+                          if (res.status === 503) {
+                            alert('Stripe nav konfigurēts. Lūdzu, sazinieties ar atbalstu.');
+                            return;
+                          }
+                          if (res.status === 400) {
+                            alert('Jums nav aktīva Stripe konta. Pirmo reizi iegādājieties abonementu no lapas Cenas.');
+                            return;
+                          }
+                          if (!res.ok || !data.url) {
+                            throw new Error(data.error || 'Neizdevās atvērt abonementa pārvaldību');
+                          }
+                          window.location.href = data.url;
+                        } catch (err: any) {
+                          alert(err.message);
+                        }
+                      }}
+                    >
+                      Pārvaldīt abonementu
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-white/20 text-white hover:bg-white/10 rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
+                      onClick={() => navigate('/pricing')}
+                    >
+                      Skatīt plānus
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-slate-300 mb-8 max-w-2xl">
-                  Jūsu uzņēmums izmanto Pro plānu, kas sniedz piekļuvi neierobežotiem sludinājumiem, prioritāram atbalstam un padziļinātai analītikai.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/10">
-                    <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Nākamais rēķins</div>
-                    <div className="text-xl font-bold">15. Maijs, 2026</div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                <div className="flex items-start justify-between gap-6 flex-wrap">
+                  <div>
+                    <h3 className="text-2xl font-bold text-slate-900 uppercase tracking-tight flex items-center mb-2">
+                      <Star className="w-6 h-6 mr-3 text-amber-400" />
+                      B2B Pro Abonements
+                    </h3>
+                    <p className="text-slate-600 max-w-2xl">
+                      {user.b2b_subscription_status === 'canceled'
+                        ? 'Jūsu iepriekšējais abonements ir atcelts. Atjauniniet to, lai atkal saņemtu neierobežotus sludinājumus un padziļinātu analītiku.'
+                        : 'Iegādājieties Pro plānu, lai iegūtu neierobežotus sludinājumus, prioritāro atbalstu un padziļinātu analītiku.'}
+                    </p>
                   </div>
-                  <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/10">
-                    <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Mēneša maksa</div>
-                    <div className="text-xl font-bold">€49.00</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/10">
-                    <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Sludinājumu limits</div>
-                    <div className="text-xl font-bold text-emerald-400">Neierobežots</div>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all" onClick={async () => {
-                    try {
-                      const token = localStorage.getItem('auth_token');
-                      const res = await fetch('/api/create-checkout-session', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({ type: 'subscription', planId: 'price_123456789' }) // Replace with actual Stripe Price ID
-                      });
-                      if (!res.ok) throw new Error('Neizdevās izveidot abonementu');
-                      const data = await res.json();
-                      window.location.href = data.url;
-                    } catch (err: any) {
-                      alert(err.message);
-                    }
-                  }}>
-                    Pārvaldīt abonementu
-                  </Button>
-                  <Button variant="outline" className="border-white/20 text-white hover:bg-white/10 rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all">
-                    Skatīt rēķinus
+                  <Button
+                    className="bg-[#E64415] hover:bg-[#E64415]/90 text-white rounded-xl px-6 py-5 font-bold uppercase tracking-wider text-xs shadow-sm transition-all"
+                    onClick={() => navigate('/pricing')}
+                  >
+                    Apskatīt plānus
                   </Button>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Store editor */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">

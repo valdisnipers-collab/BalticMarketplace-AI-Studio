@@ -283,7 +283,7 @@ export function createAuthRouter(deps: { authLimiter: RateLimitRequestHandler })
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const user = await db.get('SELECT id, email, name, role, phone, is_verified, user_type, points, early_access_until, company_name, company_reg_number, company_vat FROM users WHERE id = ?', [decoded.userId]);
+      const user = await db.get('SELECT id, email, name, role, phone, is_verified, user_type, points, early_access_until, company_name, company_reg_number, company_vat, company_address, b2b_subscription_status, stripe_customer_id FROM users WHERE id = ?', [decoded.userId]);
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json({ user });
     } catch (error) {
