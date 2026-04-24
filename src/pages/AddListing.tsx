@@ -348,7 +348,7 @@ export default function AddListing() {
         body: JSON.stringify({
           title,
           description,
-          price: parseFloat(price),
+          price: saleType === 'free' ? 0 : parseFloat(price),
           location,
           category,
           image_url: JSON.stringify(imageUrls),
@@ -940,6 +940,12 @@ export default function AddListing() {
                       </div>
                     )}
 
+                    {saleType === 'free' ? (
+                      <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4">
+                        <p className="text-sm font-semibold text-emerald-800">Bezmaksas atdošana — cena ir €0</p>
+                        <p className="text-xs text-emerald-700 mt-1">Šis sludinājums tiks publicēts bez cenas. Cenas lauks nav pieejams.</p>
+                      </div>
+                    ) : (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -992,6 +998,7 @@ export default function AddListing() {
                         />
                       </div>
                     </div>
+                    )}
 
                     {saleType === 'auction' && (
                       <div className="space-y-6">

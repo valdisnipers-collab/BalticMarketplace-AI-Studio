@@ -53,12 +53,22 @@ export default function AdminModerationTab() {
                 <TableCell className="text-right space-x-1">
                   {i.type === 'listing' && <>
                     <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'approve')}>Apstiprināt</Button>
+                    <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'hide')}>Slēpt</Button>
                     <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'reject')} className="text-red-600">Noraidīt</Button>
                   </>}
                   {i.type === 'report' && <>
                     <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'resolve')}>Atrisināt</Button>
+                    <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'escalate')}>Eskalēt</Button>
                     <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'dismiss')}>Noraidīt</Button>
                   </>}
+                  {i.type === 'message' && <>
+                    <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'warn')}>Brīdinājums</Button>
+                    <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'delete')} className="text-red-600">Dzēst ziņu</Button>
+                    <Button size="sm" variant="ghost" onClick={() => act(i.type, i.id, 'note')}>Piezīme</Button>
+                  </>}
+                  {i.type === 'dispute' && (
+                    <span className="text-xs text-slate-400">Pārvaldīt sadaļā "Sūdzības un strīdi"</span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
