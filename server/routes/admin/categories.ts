@@ -73,7 +73,8 @@ export function createCategoriesRouter() {
          ON CONFLICT (key) DO UPDATE
          SET value = EXCLUDED.value,
              updated_by = EXCLUDED.updated_by,
-             updated_at = NOW()`,
+             updated_at = NOW()
+         RETURNING key`,
         [key, JSON.stringify(payload), req.userId],
       );
 
