@@ -28,6 +28,9 @@ import SellerDashboard from './pages/SellerDashboard';
 import Help from './pages/Help';
 import Rules from './pages/Rules';
 import About from './pages/About';
+import Pricing from './pages/Pricing';
+// Dev-only icon preview route.
+import IconPreview from './pages/IconPreview';
 
 const pageVariants = {
   initial: { opacity: 0, y: 10 },
@@ -60,6 +63,10 @@ function AnimatedRoutes() {
         <Route path="/help" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Help /></motion.div>} />
         <Route path="/rules" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Rules /></motion.div>} />
         <Route path="/about" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><About /></motion.div>} />
+        <Route path="/pricing" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><Pricing /></motion.div>} />
+        {import.meta.env.DEV && (
+          <Route path="/icons" element={<motion.div initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}><IconPreview /></motion.div>} />
+        )}
       </Routes>
     </AnimatePresence>
   );

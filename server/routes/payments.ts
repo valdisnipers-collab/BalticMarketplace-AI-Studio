@@ -36,7 +36,23 @@ export function createPaymentsRouter(deps: { getStripe: () => Stripe; io: Socket
       const type = session.metadata?.type;
       const amount = parseInt(session.metadata?.amount || '0', 10);
 
-      if (type === 'escrow_purchase') {
+      // Subscription — persist Stripe customer + subscription id so the
+      // billing portal and UI can show status without polling Stripe.
+      if (session.mode === 'subscription' && userId) {
+        try {
+          await db.run(
+            `UPDATE users
+             SET stripe_customer_id = ?,
+                 stripe_subscription_id = ?,
+                 b2b_subscription_status = 'active'
+             WHERE id = ?`,
+            [session.customer, session.subscription, userId],
+          );
+          console.log(`Subscription activated for user ${userId}`);
+        } catch (dbError) {
+          console.error('Database error processing subscription webhook:', dbError);
+        }
+      } else if (type === 'escrow_purchase') {
         const orderId = session.metadata?.orderId;
         if (orderId) {
           try {
@@ -77,7 +93,52 @@ export function createPaymentsRouter(deps: { getStripe: () => Stripe; io: Socket
       }
     }
 
+    // Subscription cancellation — clear the active flag.
+    if (event.type === 'customer.subscription.deleted') {
+      const sub = event.data.object as Stripe.Subscription;
+      try {
+        await db.run(
+          `UPDATE users
+           SET b2b_subscription_status = 'canceled',
+               stripe_subscription_id = NULL
+           WHERE stripe_subscription_id = ?`,
+          [sub.id],
+        );
+      } catch (dbError) {
+        console.error('[subscription.deleted] db error', dbError);
+      }
+    }
+
     res.json({ received: true });
+  });
+
+  // Stripe Billing Portal — lets subscribed users self-manage.
+  router.post('/create-portal-session', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    const token = authHeader.split(' ')[1];
+    try {
+      if (!process.env.STRIPE_SECRET_KEY) {
+        return res.status(503).json({ error: 'Stripe nav konfigurēts' });
+      }
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+      const user = await db.get<{ stripe_customer_id: string | null }>(
+        `SELECT stripe_customer_id FROM users WHERE id = ?`,
+        [decoded.userId],
+      );
+      if (!user?.stripe_customer_id) {
+        return res.status(400).json({ error: 'Lietotājam nav Stripe konta' });
+      }
+      const stripe = getStripe();
+      const session = await stripe.billingPortal.sessions.create({
+        customer: user.stripe_customer_id,
+        return_url: `${process.env.APP_URL || ''}/profile?tab=settings`,
+      });
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error('Error creating portal session:', error);
+      res.status(500).json({ error: 'Server error creating portal session' });
+    }
   });
 
   // Stripe Payment Intent

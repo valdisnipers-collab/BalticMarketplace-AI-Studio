@@ -205,6 +205,44 @@ export function createAdminRouter(deps: { io: SocketIOServer }) {
     }
   });
 
+  // GET /api/admin/disputes/:id/chat — read-only message thread between
+  // the dispute's buyer and seller about the disputed listing. Admin-only.
+  router.get('/admin/disputes/:id/chat', isAdmin, async (req, res) => {
+    try {
+      const disputeId = Number(req.params.id);
+      if (!Number.isInteger(disputeId) || disputeId <= 0) {
+        return res.status(400).json({ error: 'Invalid dispute id' });
+      }
+      const ctx = await db.get<{
+        listing_id: number; buyer_id: number; seller_id: number;
+      }>(
+        `SELECT o.listing_id, o.buyer_id, o.seller_id
+         FROM disputes d
+         JOIN orders o ON d.order_id = o.id
+         WHERE d.id = ?`,
+        [disputeId],
+      );
+      if (!ctx) return res.status(404).json({ error: 'Dispute not found' });
+      const messages = await db.all(
+        `SELECT m.id, m.sender_id, m.receiver_id, m.listing_id, m.content,
+                m.image_url, m.created_at,
+                u.name AS sender_name
+         FROM messages m
+         LEFT JOIN users u ON m.sender_id = u.id
+         WHERE m.listing_id = ?
+           AND ((m.sender_id = ? AND m.receiver_id = ?)
+                OR (m.sender_id = ? AND m.receiver_id = ?))
+         ORDER BY m.created_at ASC
+         LIMIT 500`,
+        [ctx.listing_id, ctx.buyer_id, ctx.seller_id, ctx.seller_id, ctx.buyer_id],
+      );
+      res.json({ context: ctx, messages: messages ?? [] });
+    } catch (error) {
+      console.error('Error fetching dispute chat:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   router.post('/admin/disputes/:id/resolve', isAdmin, async (req, res) => {
     try {
       const disputeId = req.params.id;

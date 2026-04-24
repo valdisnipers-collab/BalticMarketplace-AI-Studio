@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { apiGet, apiPut, apiPost } from '@/lib/apiClient';
+
+interface ChatMessage { id: number; sender_id: number; sender_name: string | null; content: string | null; image_url: string | null; created_at: string }
+interface ChatResponse { context: { listing_id: number; buyer_id: number; seller_id: number }; messages: ChatMessage[] }
 
 interface Report { id: number; reporter_name: string | null; reported_listing_title: string | null; reason: string; status: string; created_at: string }
 interface Dispute { id: number; order_id: number; reason: string; description: string | null; status: string; admin_notes: string | null; listing_title: string | null; buyer_name: string | null; seller_name: string | null; created_at: string; order_amount: number }
@@ -11,6 +15,17 @@ export default function AdminReportsTab() {
   const [sub, setSub] = useState<'reports' | 'disputes'>('reports');
   const [reports, setReports] = useState<Report[]>([]);
   const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [chatDisputeId, setChatDisputeId] = useState<number | null>(null);
+  const [chatData, setChatData] = useState<ChatResponse | null>(null);
+
+  useEffect(() => {
+    if (chatDisputeId == null) { setChatData(null); return; }
+    let cancelled = false;
+    apiGet<ChatResponse>(`/api/admin/disputes/${chatDisputeId}/chat`)
+      .then(d => { if (!cancelled) setChatData(d); })
+      .catch(() => { if (!cancelled) setChatData({ context: { listing_id: 0, buyer_id: 0, seller_id: 0 }, messages: [] }); });
+    return () => { cancelled = true; };
+  }, [chatDisputeId]);
 
   async function load() {
     const [r, d] = await Promise.all([
@@ -76,6 +91,7 @@ export default function AdminReportsTab() {
                   <TableCell>€{d.order_amount}</TableCell>
                   <TableCell><Badge variant="outline">{d.status}</Badge></TableCell>
                   <TableCell className="text-right space-x-1">
+                    <Button size="sm" variant="ghost" onClick={() => setChatDisputeId(d.id)}>Skatīt saraksti</Button>
                     {d.status === 'open' && <>
                       <Button size="sm" variant="ghost" onClick={() => resolveDispute(d.id, 'refund')}>Atmaksāt</Button>
                       <Button size="sm" variant="ghost" onClick={() => resolveDispute(d.id, 'release')}>Pārdevējam</Button>
@@ -87,6 +103,32 @@ export default function AdminReportsTab() {
           </Table>
         </div>
       )}
+
+      <Dialog open={chatDisputeId != null} onOpenChange={(o) => !o && setChatDisputeId(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Strīda sarakste (#{chatDisputeId})</DialogTitle>
+          </DialogHeader>
+          {!chatData ? (
+            <p className="text-sm text-slate-500">Ielādē...</p>
+          ) : chatData.messages.length === 0 ? (
+            <p className="text-sm text-slate-500">Starp pusēm par šo sludinājumu saraksta nav.</p>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-2">
+              {chatData.messages.map(m => (
+                <div key={m.id} className="rounded-xl bg-slate-50 p-3">
+                  <div className="flex justify-between items-baseline gap-2 mb-1">
+                    <p className="text-xs font-semibold text-slate-700">{m.sender_name ?? `User #${m.sender_id}`}</p>
+                    <p className="text-[10px] text-slate-400">{new Date(m.created_at).toLocaleString()}</p>
+                  </div>
+                  {m.content && <p className="text-sm text-slate-800 whitespace-pre-wrap">{m.content}</p>}
+                  {m.image_url && <p className="text-xs text-slate-500 italic mt-1">[attēls]</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
