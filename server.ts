@@ -25,6 +25,8 @@ import { createNotificationsRouter } from './server/routes/notifications';
 import { createStoresRouter } from './server/routes/stores';
 import { createPaymentsRouter } from './server/routes/payments';
 import { createAdminRouter } from './server/routes/admin';
+import { createAdminExtendedRouter } from './server/routes/admin/index';
+import { createPublicContentRouter } from './server/routes/content';
 import { createDashboardRouter } from './server/routes/dashboard';
 
 
@@ -172,6 +174,10 @@ async function startServer() {
   app.use('/api/stores', createStoresRouter());
   app.use('/api/seller', createDashboardRouter());
   app.use('/api', createAdminRouter({ io }));
+  // Admin Control Center (15-module extended admin surface)
+  app.use('/api', createAdminExtendedRouter({ io }));
+  // Public read of admin-editable content and settings
+  app.use('/api/content', createPublicContentRouter());
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

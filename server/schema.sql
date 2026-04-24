@@ -372,3 +372,104 @@ CREATE INDEX IF NOT EXISTS referral_codes_code_idx ON referral_codes(code);
 
 -- referred_by column on users (Phase 9)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Admin Platform Control Center tables (migrations 008–016). Inlined here
+-- so a fresh `init-db` produces the same shape a fully-migrated long-lived
+-- DB has. `npm run migrate` is still authoritative for incremental changes.
+-- ────────────────────────────────────────────────────────────────────────
+
+-- User ban / suspension columns (migration 008)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS suspension_until TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_reason TEXT;
+
+-- Admin audit log (migration 009)
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  before_value JSONB,
+  after_value JSONB,
+  reason TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Admin private notes on users (migration 010)
+CREATE TABLE IF NOT EXISTS admin_user_notes (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  note TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Moderation action history (migration 011)
+CREATE TABLE IF NOT EXISTS moderation_actions (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  target_type TEXT NOT NULL,
+  target_id BIGINT NOT NULL,
+  action TEXT NOT NULL,
+  reason TEXT,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- System events (migration 012)
+CREATE TABLE IF NOT EXISTS system_events (
+  id BIGSERIAL PRIMARY KEY,
+  level TEXT NOT NULL,
+  source TEXT NOT NULL,
+  message TEXT NOT NULL,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Platform content (migration 013)
+CREATE TABLE IF NOT EXISTS platform_content (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Notification templates (migration 014)
+CREATE TABLE IF NOT EXISTS notification_templates (
+  key TEXT PRIMARY KEY,
+  title_lv TEXT,
+  body_lv TEXT,
+  title_ru TEXT,
+  body_ru TEXT,
+  title_en TEXT,
+  body_en TEXT,
+  channel TEXT NOT NULL DEFAULT 'email',
+  is_enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Structured platform settings (migration 015). Legacy `settings` K-V
+-- table above is kept for backward compat with wallet.ts.
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  category TEXT NOT NULL DEFAULT 'general',
+  description TEXT,
+  is_public BOOLEAN DEFAULT false,
+  updated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Store verification + order review flags (migration 016)
+ALTER TABLE stores ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'unverified';
+ALTER TABLE stores ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE stores ADD COLUMN IF NOT EXISTS verified_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS manual_review BOOLEAN DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS admin_notes TEXT;

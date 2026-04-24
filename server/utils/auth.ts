@@ -39,8 +39,13 @@ export async function isAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: 'Invalid token' });
   }
   try {
-    const user = await db.get('SELECT role FROM users WHERE id = $1', [decoded.userId]) as { role: string } | null;
-    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Forbidden: Admins only' });
+    const user = await db.get(
+      'SELECT role, is_banned FROM users WHERE id = $1',
+      [decoded.userId],
+    ) as { role: string; is_banned: boolean | null } | null;
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    if (user.is_banned) return res.status(403).json({ error: 'Account is banned' });
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Forbidden: Admins only' });
     req.userId = decoded.userId;
     next();
   } catch {
