@@ -17,6 +17,7 @@ import { validateBody, listingSchema } from '../middleware/validate';
 import { sanitizePrompt, parseFiniteNumber } from '../utils/sanitize';
 import { isSafeExternalUrl } from '../utils/urlSafety';
 import { normalizeCategory, toLatvianLabel } from '../utils/categories';
+import * as PromotionService from '../services/PromotionService';
 import type { Server as SocketIOServer } from 'socket.io';
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -440,12 +441,22 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
         }
       }
 
+      // Ranking: prefer active promotions (highlight/bump) above everything
+      // else, then fall back to the user's sort choice.
+      const promoBoost = `
+        (CASE WHEN listings.is_highlighted = 1
+              AND (listings.promoted_until IS NULL OR listings.promoted_until > NOW())
+              THEN 1 ELSE 0 END) DESC,
+        (CASE WHEN listings.last_bumped_at IS NOT NULL
+              AND listings.last_bumped_at > NOW() - INTERVAL '3 days'
+              THEN 1 ELSE 0 END) DESC`;
       if (sort === 'price_asc') {
-        query += ` ORDER BY listings.is_highlighted DESC, listings.price ASC`;
+        query += ` ORDER BY ${promoBoost}, listings.price ASC`;
       } else if (sort === 'price_desc') {
-        query += ` ORDER BY listings.is_highlighted DESC, listings.price DESC`;
+        query += ` ORDER BY ${promoBoost}, listings.price DESC`;
       } else {
-        query += ` ORDER BY listings.is_highlighted DESC, listings.created_at DESC`;
+        query += ` ORDER BY ${promoBoost},
+                   COALESCE(listings.last_bumped_at, listings.created_at) DESC`;
       }
 
       query += ` LIMIT ? OFFSET ?`;
@@ -474,7 +485,7 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, exchange_for, video_url } = req.body;
+      const { title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, exchange_for, video_url, moq, wholesale_price } = req.body;
 
       if (!title || price === undefined || !category) {
         return res.status(400).json({ error: 'Missing required fields' });
@@ -486,9 +497,19 @@ Esi konkrēts — neraksti "uzlabo aprakstu", raksti "Pievieno izstrādājuma di
       // builds are accepted and translated here.
       const canonicalCategory = normalizeCategory(category) ?? category;
 
+      // Per-type validation
+      if (resolvedListingType === 'exchange' && (!exchange_for || !String(exchange_for).trim())) {
+        return res.status(400).json({ error: 'Apmaiņas sludinājumam nepieciešams norādīt "Apmaiņā par"' });
+      }
+      if (resolvedListingType === 'free' || resolvedListingType === 'exchange') {
+        // free / exchange — cena nav obligāta; saglabā 0.
+      } else if (Number(price) <= 0) {
+        return res.status(400).json({ error: 'Cenai jābūt lielākai par 0' });
+      }
+
       const info = await db.run(
-        'INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [decoded.userId, title, description, price, canonicalCategory, image_url, attributes ? JSON.stringify(attributes) : null, location || null, resolvedIsAuction ? 1 : 0, auction_end_date || null, resolvedListingType, exchange_for || null, video_url || null],
+        'INSERT INTO listings (user_id, title, description, price, category, image_url, attributes, location, is_auction, auction_end_date, listing_type, exchange_for, video_url, moq, wholesale_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [decoded.userId, title, description, price, canonicalCategory, image_url, attributes ? JSON.stringify(attributes) : null, location || null, resolvedIsAuction ? 1 : 0, auction_end_date || null, resolvedListingType, exchange_for || null, video_url || null, Number.isInteger(moq) && moq >= 1 ? moq : 1, typeof wholesale_price === 'number' && Number.isFinite(wholesale_price) ? wholesale_price : null],
       );
 
       const listingId = info.lastInsertRowid;
@@ -680,6 +701,78 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     }
   });
 
+  // POST /api/listings/batch — fetch up to 12 listings by id (for
+  // "Recently viewed" and similar client-side lists). Preserves input
+  // order and filters out inactive/rejected listings.
+  // Registered BEFORE `/:id` so Express does not treat `batch` as an id.
+  router.post('/batch', async (req, res) => {
+    try {
+      const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+      const ids = rawIds
+        .map((n: unknown) => Number(n))
+        .filter((n: number) => Number.isInteger(n) && n > 0);
+      if (ids.length === 0) return res.json([]);
+      if (ids.length > 12) return res.status(400).json({ error: 'Too many ids (max 12)' });
+
+      const placeholders = ids.map(() => '?').join(', ');
+      const rows = await db.all<any>(
+        `SELECT id, title, price, category, image_url, location, created_at,
+                view_count, is_highlighted, attributes, listing_type
+         FROM listings
+         WHERE id IN (${placeholders})
+           AND status = 'active'
+           AND COALESCE(ai_moderation_status, 'approved') <> 'rejected'`,
+        ids,
+      );
+      // Preserve input order.
+      const byId = new Map<number, any>();
+      for (const r of rows ?? []) byId.set(Number(r.id), r);
+      const ordered = ids.map((id: number) => byId.get(id)).filter(Boolean);
+      res.json(ordered);
+    } catch (error) {
+      console.error('Error fetching batch listings:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /api/listings/:id/similar — 3–4 active listings in the same
+  // category, preferring highlighted/promoted, price-proximal items.
+  // Registered BEFORE `/:id` to ensure the 2-segment route is checked
+  // first on `/api/listings/123/similar`.
+  router.get('/:id/similar', async (req, res) => {
+    try {
+      const listingId = Number(req.params.id);
+      if (!Number.isInteger(listingId) || listingId <= 0) {
+        return res.status(400).json({ error: 'Invalid listing id' });
+      }
+      const src = await db.get<{ category: string; price: number; attributes: any }>(
+        `SELECT category, price, attributes FROM listings WHERE id = ?`,
+        [listingId],
+      );
+      if (!src) return res.status(404).json({ error: 'Listing not found' });
+
+      const rows = await db.all<any>(
+        `SELECT id, title, price, category, image_url, location, created_at,
+                view_count, is_highlighted, attributes
+         FROM listings
+         WHERE id != ?
+           AND status = 'active'
+           AND COALESCE(ai_moderation_status, 'approved') <> 'rejected'
+           AND category = ?
+         ORDER BY is_highlighted DESC,
+                  (CASE WHEN promoted_until IS NOT NULL AND promoted_until > NOW() THEN 1 ELSE 0 END) DESC,
+                  ABS(price - ?) ASC,
+                  created_at DESC
+         LIMIT 4`,
+        [listingId, src.category, Number(src.price) || 0],
+      );
+      res.json(rows ?? []);
+    } catch (error) {
+      console.error('Error fetching similar listings:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // GET /api/listings/:id
   router.get('/:id', async (req, res) => {
     try {
@@ -721,18 +814,51 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     }
   });
 
-  // POST /api/listings/:id/view — increment view_count (excludes owner's own views)
+  // POST /api/listings/:id/view — increment view_count + daily stats
   router.post('/:id/view', async (req, res) => {
     try {
-      const listingId = req.params.id;
+      const listingId = Number(req.params.id);
       const viewerId = verifyTokenOptional(req.headers.authorization);
+      if (!Number.isInteger(listingId) || listingId <= 0) {
+        return res.status(400).json({ error: 'Invalid listing id' });
+      }
       // Don't count the owner viewing their own listing.
-      const result = await db.run(
-        `UPDATE listings SET view_count = view_count + 1
-         WHERE id = ? AND (? IS NULL OR user_id != ?)`,
-        [listingId, viewerId, viewerId]
+      const listing = await db.get<{ id: number; user_id: number; status: string; view_count: number }>(
+        `SELECT id, user_id, status, view_count FROM listings WHERE id = ?`,
+        [listingId]
       );
-      res.json({ incremented: (result.changes ?? 0) > 0 });
+      if (!listing || listing.status !== 'active') {
+        return res.json({ success: false });
+      }
+      if (viewerId && viewerId === listing.user_id) {
+        return res.json({ success: false, view_count: listing.view_count, today_views: 0 });
+      }
+      await db.run(
+        `UPDATE listings SET view_count = view_count + 1 WHERE id = ?`,
+        [listingId]
+      );
+      // Upsert per-day stats for listing + seller.
+      await db.run(
+        `INSERT INTO listing_view_stats (listing_id, date, views)
+         VALUES (?, CURRENT_DATE, 1)
+         ON CONFLICT (listing_id, date) DO UPDATE SET views = listing_view_stats.views + 1`,
+        [listingId]
+      );
+      await db.run(
+        `INSERT INTO user_daily_stats (user_id, date, views)
+         VALUES (?, CURRENT_DATE, 1)
+         ON CONFLICT (user_id, date) DO UPDATE SET views = user_daily_stats.views + 1`,
+        [listing.user_id]
+      );
+      const today = await db.get<{ views: number }>(
+        `SELECT views FROM listing_view_stats WHERE listing_id = ? AND date = CURRENT_DATE`,
+        [listingId]
+      );
+      res.json({
+        success: true,
+        view_count: (listing.view_count ?? 0) + 1,
+        today_views: today?.views ?? 1,
+      });
     } catch (error) {
       console.error('Error incrementing view count:', error);
       res.status(500).json({ error: 'Server error' });
@@ -748,7 +874,7 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
       const listingId = req.params.id;
-      const { title, description, price, category, image_url, location, is_auction, auction_end_date, exchange_for } = req.body;
+      const { title, description, price, category, image_url, location, is_auction, auction_end_date, exchange_for, moq, wholesale_price } = req.body;
 
       const listing = await db.get('SELECT user_id, price, title FROM listings WHERE id = ?', [listingId]) as { user_id: number; price: number; title: string } | undefined;
 
@@ -761,9 +887,10 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
 
       await db.run(`
         UPDATE listings
-        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?, listing_type = ?, exchange_for = ?
+        SET title = ?, description = ?, price = ?, category = ?, image_url = ?, location = ?, is_auction = ?, auction_end_date = ?, listing_type = ?, exchange_for = ?,
+            moq = COALESCE(?, moq), wholesale_price = COALESCE(?, wholesale_price)
         WHERE id = ?
-      `, [title, description, price, canonicalCategory, image_url, location || null, resolvedIsAuction ? 1 : 0, auction_end_date || null, resolvedListingType, exchange_for || null, listingId]);
+      `, [title, description, price, canonicalCategory, image_url, location || null, resolvedIsAuction ? 1 : 0, auction_end_date || null, resolvedListingType, exchange_for || null, Number.isInteger(moq) && moq >= 1 ? moq : null, typeof wholesale_price === 'number' && Number.isFinite(wholesale_price) ? wholesale_price : null, listingId]);
 
       const updatedListing = await db.get('SELECT * FROM listings WHERE id = ?', [listingId]) as any;
       const qualityScore = calculateQualityScore({
@@ -865,6 +992,35 @@ Svarīgi: neizdomā faktus. Balsti analīzi tikai uz sniegtajiem datiem.`;
     } catch (error) {
       console.error('Error deleting listing:', error);
       res.status(500).json({ error: 'Server error while deleting listing' });
+    }
+  });
+
+  // POST /api/listings/:id/promote — unified promotion (highlight/bump/auto_bump).
+  // Legacy /:id/highlight route below stays for backward compat.
+  router.post('/:id/promote', requireAuth, async (req: any, res) => {
+    try {
+      const listingId = Number(req.params.id);
+      const type = String(req.body?.type || '').trim() as any;
+      if (!Number.isInteger(listingId) || listingId <= 0) {
+        return res.status(400).json({ error: 'Invalid listing id' });
+      }
+      const result = await PromotionService.promote({
+        listingId,
+        userId: req.userId,
+        type,
+        req,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error: any) {
+      const msg = error?.message || '';
+      if (msg === 'INVALID_TYPE') return res.status(400).json({ error: 'Nederīgs promocijas tips' });
+      if (msg === 'LISTING_NOT_FOUND') return res.status(404).json({ error: 'Sludinājums nav atrasts' });
+      if (msg === 'NOT_LISTING_OWNER') return res.status(403).json({ error: 'Nav tiesību' });
+      if (msg === 'LISTING_NOT_ACTIVE') return res.status(400).json({ error: 'Sludinājums nav aktīvs' });
+      if (msg === 'INSUFFICIENT_POINTS') return res.status(400).json({ error: 'Nepietiek punktu' });
+      if (msg === 'USER_NOT_FOUND') return res.status(404).json({ error: 'Lietotājs nav atrasts' });
+      console.error('Error promoting listing:', error);
+      res.status(500).json({ error: 'Server error promoting listing' });
     }
   });
 

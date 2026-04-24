@@ -473,3 +473,53 @@ ALTER TABLE stores ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS verified_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS manual_review BOOLEAN DEFAULT false;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS admin_notes TEXT;
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Parallel-project feature merge (migrations 017–019).
+-- ────────────────────────────────────────────────────────────────────────
+
+-- Listings: AI pricing, wholesale, promotion timestamps (migration 017)
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS ai_min_price DOUBLE PRECISION;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS ai_max_price DOUBLE PRECISION;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS ai_price_explanation TEXT;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS moq INTEGER DEFAULT 1;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS wholesale_price DOUBLE PRECISION;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS promoted_until TIMESTAMPTZ;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS auto_bump_until TIMESTAMPTZ;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS last_bumped_at TIMESTAMPTZ;
+
+-- Users: B2B + Stripe + auto-reply (migration 018)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_reply_enabled INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_reply_text TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS b2b_subscription_status TEXT DEFAULT 'none';
+
+-- Analytics + promotions tables (migration 019)
+CREATE TABLE IF NOT EXISTS listing_view_stats (
+  id BIGSERIAL PRIMARY KEY,
+  listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  views INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(listing_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS listing_promotions (
+  id BIGSERIAL PRIMARY KEY,
+  listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  points_spent INTEGER DEFAULT 0,
+  starts_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_daily_stats (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  views INTEGER DEFAULT 0,
+  revenue DOUBLE PRECISION DEFAULT 0,
+  UNIQUE(user_id, date)
+);
