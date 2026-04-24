@@ -7,7 +7,7 @@ import { useListingDraft } from '../hooks/useListingDraft';
 import { DraftRecoveryBanner } from '../components/DraftRecoveryBanner';
 import { ListingQualityMeter } from '../components/ListingQualityMeter';
 import { AISuggestions } from '../components/AISuggestions';
-import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown, ChevronRight } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, AlertCircle, Sparkles, ArrowRight, ArrowLeft, CheckCircle2, Info, Lock, ChevronDown, ChevronRight, Heart } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CATEGORY_SCHEMAS, CATEGORY_NAMES } from '../lib/categories';
 import { Button } from '@/components/ui/button';
@@ -98,7 +98,10 @@ export default function AddListing() {
   
   // Dynamic attributes state
   const [attributes, setAttributes] = useState<Record<string, string>>({});
-  const [saleType, setSaleType] = useState('fixed');
+  const [saleType, setSaleType] = useState<'fixed' | 'auction' | 'free' | 'exchange'>('fixed');
+  const [exchangeFor, setExchangeFor] = useState('');
+  const [moq, setMoq] = useState('');
+  const [wholesalePrice, setWholesalePrice] = useState('');
   const [auctionEndDate, setAuctionEndDate] = useState('');
   const [reservePrice, setReservePrice] = useState('');
 
@@ -352,7 +355,13 @@ export default function AddListing() {
           video_url: videoUrl || null,
           // Canonical listing_type sent explicitly; backend also falls back to
           // attributes.saleType for legacy compatibility.
-          listing_type: saleType === 'auction' ? 'auction' : 'sale',
+          listing_type: saleType === 'auction' ? 'auction'
+                     : saleType === 'free' ? 'free'
+                     : saleType === 'exchange' ? 'exchange'
+                     : 'sale',
+          exchange_for: saleType === 'exchange' ? (exchangeFor || null) : null,
+          moq: moq ? Math.max(1, parseInt(moq, 10)) : undefined,
+          wholesale_price: wholesalePrice ? parseFloat(wholesalePrice) : undefined,
           attributes: {
             ...attributes,
             saleType,
@@ -882,31 +891,54 @@ export default function AddListing() {
                   >
                     <div className="space-y-4">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Transaction Model</label>
-                      <div className="grid grid-cols-2 gap-6">
-                        <div 
-                          onClick={() => setSaleType('fixed')}
-                          className={`p-8 rounded-3xl border-2 cursor-pointer text-center transition-all duration-300
-                            ${saleType === 'fixed' ? 'border-primary-900 bg-primary-50 shadow-inner' : 'border-slate-50 hover:border-primary-200'}
-                          `}
-                        >
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 ${saleType === 'fixed' ? 'bg-primary-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                            <Lock className="w-6 h-6" />
-                          </div>
-                          <span className={`font-bold uppercase tracking-tight ${saleType === 'fixed' ? 'text-primary-900' : 'text-slate-600'}`}>Fixed Price</span>
-                        </div>
-                        <div 
-                          onClick={() => setSaleType('auction')}
-                          className={`p-8 rounded-3xl border-2 cursor-pointer text-center transition-all duration-300
-                            ${saleType === 'auction' ? 'border-primary-900 bg-primary-50 shadow-inner' : 'border-slate-50 hover:border-primary-200'}
-                          `}
-                        >
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 ${saleType === 'auction' ? 'bg-primary-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                            <Sparkles className="w-6 h-6" />
-                          </div>
-                          <span className={`font-bold uppercase tracking-tight ${saleType === 'auction' ? 'text-primary-900' : 'text-slate-600'}`}>Auction</span>
-                        </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {([
+                          { id: 'fixed', label: 'Fiksēta cena', Icon: Lock },
+                          { id: 'auction', label: 'Izsole', Icon: Sparkles },
+                          { id: 'free', label: 'Bez maksas', Icon: Heart },
+                          { id: 'exchange', label: 'Apmaiņa', Icon: PlusCircle },
+                        ] as const).map(opt => {
+                          const Ico = opt.Icon;
+                          const active = saleType === opt.id;
+                          return (
+                            <div
+                              key={opt.id}
+                              onClick={() => setSaleType(opt.id)}
+                              className={`p-6 rounded-3xl border-2 cursor-pointer text-center transition-all duration-300
+                                ${active ? 'border-primary-900 bg-primary-50 shadow-inner' : 'border-slate-50 hover:border-primary-200'}`}
+                            >
+                              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mx-auto mb-3 ${active ? 'bg-primary-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                <Ico className="w-5 h-5" />
+                              </div>
+                              <span className={`font-bold uppercase tracking-tight text-sm ${active ? 'text-primary-900' : 'text-slate-600'}`}>{opt.label}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
+
+                    {saleType === 'exchange' && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Apmaiņā par *</label>
+                        <Input value={exchangeFor} onChange={e => setExchangeFor(e.target.value)} placeholder="Piem., auto, elektronika, pakalpojumi" />
+                      </div>
+                    )}
+
+                    {user?.user_type === 'b2b' && (
+                      <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+                        <p className="text-sm font-semibold text-slate-800">B2B vairumtirdzniecība (nav obligāta)</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">MOQ (min. daudzums)</label>
+                            <Input type="number" min={1} value={moq} onChange={e => setMoq(e.target.value)} placeholder="1" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vairumcena (€)</label>
+                            <Input type="number" value={wholesalePrice} onChange={e => setWholesalePrice(e.target.value)} placeholder="Atstāj tukšu, ja nav" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">

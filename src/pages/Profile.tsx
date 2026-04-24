@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useI18n } from '../components/I18nContext';
-import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake, UserPlus, PlusCircle, ShoppingBag } from 'lucide-react';
+import { User, Package, Trash2, Clock, Image as ImageIcon, Pencil, Heart, Wallet, Plus, ShieldCheck, ShieldAlert, Fingerprint, Star, BarChart3, XCircle, Eye, TrendingUp, Settings, Building2, X, ChevronDown, MapPin, Handshake, UserPlus, PlusCircle, ShoppingBag, History } from 'lucide-react';
+import { getRecentlyViewedListingIds, clearRecentlyViewedListings } from '../lib/recentlyViewed';
 import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrustScoreBadge } from '../components/TrustScoreBadge';
@@ -90,7 +91,7 @@ export default function Profile() {
   const [isLoadingSavedSearches, setIsLoadingSavedSearches] = useState(true);
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet' | 'ads' | 'offers' | 'company' | 'settings' | 'saved-searches' | 'notifications' | 'orders'>('listings');
+  const [activeTab, setActiveTab] = useState<'listings' | 'favorites' | 'wallet' | 'ads' | 'offers' | 'company' | 'settings' | 'saved-searches' | 'notifications' | 'orders' | 'recently-viewed' | 'analytics'>('listings');
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
@@ -789,11 +790,12 @@ export default function Profile() {
             { id: 'favorites', label: t('profile.favorites'), icon: Heart },
             { id: 'orders', label: 'Mani pirkumi', icon: ShoppingBag },
             { id: 'saved-searches', label: t('profile.savedSearches'), icon: Eye },
+            { id: 'recently-viewed', label: 'Nesen skatītie', icon: History },
             { id: 'offers', label: t('profile.offers'), icon: Handshake },
             { id: 'notifications', label: t('profile.notifications'), icon: Fingerprint },
             { id: 'wallet', label: t('profile.wallet'), icon: Wallet },
             { id: 'ads', label: t('profile.ads'), icon: Star },
-            ...(user.user_type === 'b2b' ? [{ id: 'company', label: 'Uzņēmums', icon: BarChart3 }] : []),
+            ...(user.user_type === 'b2b' ? [{ id: 'company', label: 'Uzņēmums', icon: BarChart3 }, { id: 'analytics', label: 'Analītika', icon: TrendingUp }] : []),
             { id: 'settings', label: t('profile.settings'), icon: Pencil }
           ].map((tab) => (
             <Button
@@ -1705,8 +1707,16 @@ export default function Profile() {
         )}
 
         {/* Favorīti */}
+        {activeTab === 'recently-viewed' && (
+          <RecentlyViewedPanel />
+        )}
+
+        {activeTab === 'analytics' && user.user_type === 'b2b' && (
+          <AnalyticsPanel token={localStorage.getItem('auth_token')} />
+        )}
+
         {activeTab === 'favorites' && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="space-y-8"
@@ -2350,5 +2360,125 @@ function StoreEditor() {
         </p>
       )}
     </div>
+  );
+}
+
+// Recently viewed listings panel — reads the localStorage list, hydrates
+// via POST /api/listings/batch, offers a "Clear history" button.
+function RecentlyViewedPanel() {
+  const [ids, setIds] = useState<number[]>(() => getRecentlyViewedListingIds());
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (ids.length === 0) { setRows([]); return; }
+    let cancelled = false;
+    setLoading(true);
+    fetch('/api/listings/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((arr: any[]) => { if (!cancelled) setRows(Array.isArray(arr) ? arr : []); })
+      .catch(() => { if (!cancelled) setRows([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [ids]);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Nesen skatītie</h2>
+        {ids.length > 0 && (
+          <button
+            type="button"
+            className="text-sm text-slate-500 hover:text-[#E64415] transition-colors"
+            onClick={() => {
+              clearRecentlyViewedListings();
+              setIds([]);
+            }}
+          >
+            Notīrīt vēsturi
+          </button>
+        )}
+      </div>
+
+      {ids.length === 0 ? (
+        <div className="rounded-2xl bg-white border border-slate-200 p-12 text-center">
+          <p className="text-slate-500">Te vēl nav nesen skatītu sludinājumu.</p>
+        </div>
+      ) : loading ? (
+        <div className="text-slate-400 text-sm">Ielādē...</div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {rows.map(r => (
+            <a key={r.id} href={`/listing/${r.id}`} className="block rounded-2xl bg-white border border-slate-200 overflow-hidden hover:border-[#E64415] transition-colors">
+              <div className="w-full aspect-[4/3] bg-slate-100" />
+              <div className="p-3">
+                <p className="text-sm font-semibold text-slate-900 truncate">{r.title}</p>
+                <p className="text-sm text-[#E64415] font-bold">€{r.price}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function AnalyticsPanel({ token }: { token: string | null }) {
+  const [data, setData] = useState<{ total_views: number; total_favorites: number; total_messages: number; history: Array<{date:string; views:number; revenue:number}> } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/users/me/analytics', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(setData)
+      .catch(() => setData(null));
+  }, [token]);
+
+  if (!data) return <div className="text-slate-400 text-sm">Ielādē...</div>;
+  const hasData = (data.history?.length ?? 0) > 0;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Analītika</h2>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-2xl bg-white border border-slate-200 p-4">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">Kopējie skatījumi</p>
+          <p className="text-2xl font-bold text-slate-900">{data.total_views}</p>
+        </div>
+        <div className="rounded-2xl bg-white border border-slate-200 p-4">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">Favorītos</p>
+          <p className="text-2xl font-bold text-slate-900">{data.total_favorites}</p>
+        </div>
+        <div className="rounded-2xl bg-white border border-slate-200 p-4">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">Ziņas saņemtas</p>
+          <p className="text-2xl font-bold text-slate-900">{data.total_messages}</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-white border border-slate-200 p-4">
+        <p className="text-sm font-semibold text-slate-800 mb-3">30-dienu tendence</p>
+        {!hasData ? (
+          <p className="text-sm text-slate-500">Analītika parādīsies, kad jūsu sludinājumi saņems skatījumus vai darījumus.</p>
+        ) : (
+          <div className="h-56 flex items-end gap-1">
+            {data.history.map(h => {
+              const maxViews = Math.max(1, ...data.history.map(x => x.views));
+              const pct = (h.views / maxViews) * 100;
+              return (
+                <div key={h.date} className="flex-1 flex flex-col items-center" title={`${h.date}: ${h.views} skatījumi, €${h.revenue}`}>
+                  <div className="w-full bg-[#E64415]/70 rounded-t" style={{ height: `${pct}%`, minHeight: h.views > 0 ? 2 : 0 }} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </motion.div>
   );
 }

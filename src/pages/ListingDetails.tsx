@@ -64,6 +64,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { parseImages } from '../lib/utils';
+import { addRecentlyViewedListing } from '../lib/recentlyViewed';
 import { TrustScoreBadge } from '../components/TrustScoreBadge';
 import { AuctionCountdown } from '../components/AuctionCountdown';
 
@@ -110,6 +111,10 @@ export default function ListingDetails() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [listing, setListing] = useState<ListingDetails | null>(null);
+  const [similar, setSimilar] = useState<any[]>([]);
+  const [viewCount, setViewCount] = useState<number | null>(null);
+  const [todayViews, setTodayViews] = useState<number | null>(null);
+  const [promoBusy, setPromoBusy] = useState<string | null>(null);
   const [sellerBadges, setSellerBadges] = useState<any[]>([]);
   const [sellerStore, setSellerStore] = useState<any>(null);
   const [auctionEndDate, setAuctionEndDate] = useState<string | null>(null);
@@ -176,12 +181,36 @@ export default function ListingDetails() {
         const data = await res.json();
         setListing(data);
 
-        // Fire-and-forget view increment. Backend ignores the owner's own
-        // views via user_id check.
-        fetch(`/api/listings/${id}/view`, {
-          method: 'POST',
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-        }).catch(() => { /* non-critical */ });
+        // Track recently viewed for anonymous + authenticated users.
+        try { addRecentlyViewedListing(Number(id)); } catch { /* ignore */ }
+
+        // Per-day view gate to avoid spamming the counter when a user
+        // keeps reloading the same listing.
+        const today = new Date().toISOString().slice(0, 10);
+        const viewKey = `balticmarket_viewed_listing_${id}_${today}`;
+        try {
+          if (!localStorage.getItem(viewKey)) {
+            fetch(`/api/listings/${id}/view`, {
+              method: 'POST',
+              headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            })
+              .then(r => r.ok ? r.json() : null)
+              .then(j => {
+                if (j?.success) {
+                  try { localStorage.setItem(viewKey, '1'); } catch { /* ignore */ }
+                  if (typeof j.view_count === 'number') setViewCount(j.view_count);
+                  if (typeof j.today_views === 'number') setTodayViews(j.today_views);
+                }
+              })
+              .catch(() => { /* non-critical */ });
+          }
+        } catch { /* localStorage disabled — skip gate */ }
+
+        // Similar listings (non-critical; hide section if empty).
+        fetch(`/api/listings/${id}/similar`)
+          .then(r => r.ok ? r.json() : [])
+          .then((arr: any[]) => setSimilar(Array.isArray(arr) ? arr : []))
+          .catch(() => setSimilar([]));
 
         const reviewsRes = await fetch(`/api/users/${data.user_id}/reviews`);
         if (reviewsRes.ok) {
@@ -1432,6 +1461,85 @@ export default function ListingDetails() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Owner promotion controls (compact) */}
+      {listing && user && listing.user_id === user.id && (
+        <div className="max-w-5xl mx-auto px-4 mt-8">
+          <div className="rounded-2xl bg-white border border-slate-200 p-4">
+            <p className="text-sm font-semibold text-slate-800 mb-3">Promocijas rīki</p>
+            <div className="flex flex-wrap gap-2">
+              {(['highlight','bump','auto_bump'] as const).map(kind => {
+                const label = kind === 'highlight' ? 'Izcelt' : kind === 'bump' ? 'Pacelt augšā' : 'Auto-pacelšana';
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    disabled={!!promoBusy}
+                    onClick={async () => {
+                      if (promoBusy) return;
+                      if (!confirm(`Apstiprināt: ${label}?`)) return;
+                      setPromoBusy(kind);
+                      try {
+                        const token = localStorage.getItem('auth_token');
+                        const r = await fetch(`/api/listings/${listing.id}/promote`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                          },
+                          body: JSON.stringify({ type: kind }),
+                        });
+                        const j = await r.json().catch(() => ({}));
+                        if (!r.ok) {
+                          alert(j.error || 'Neizdevās veikt promociju');
+                        } else {
+                          alert(`Promocija ieslēgta. Atlikušie punkti: ${j.points_balance}`);
+                        }
+                      } finally {
+                        setPromoBusy(null);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium hover:border-[#E64415] hover:text-[#E64415] transition-colors disabled:opacity-50"
+                  >
+                    {promoBusy === kind ? 'Strādā...' : label}
+                  </button>
+                );
+              })}
+            </div>
+            {(viewCount != null || todayViews != null) && (
+              <p className="text-xs text-slate-500 mt-3">
+                {viewCount != null && <>Apskatīts: <strong>{viewCount}</strong> reizes</>}
+                {todayViews != null && todayViews > 0 && <> · Šodien: <strong>{todayViews}</strong></>}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Similar listings — hide when empty. */}
+      {similar.length > 0 && (
+        <div className="max-w-5xl mx-auto px-4 mt-8">
+          <h2 className="text-xl font-bold text-slate-900 mb-4">Līdzīgi sludinājumi</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {similar.map(s => (
+              <Link key={s.id} to={`/listing/${s.id}`} className="block rounded-2xl bg-white border border-slate-200 overflow-hidden hover:border-[#E64415] transition-colors">
+                {(() => {
+                  const imgs = parseImages(s.image_url);
+                  const img = imgs[0];
+                  return img
+                    ? <img src={img} alt={s.title} className="w-full aspect-[4/3] object-cover" />
+                    : <div className="w-full aspect-[4/3] bg-slate-100" />;
+                })()}
+                <div className="p-3">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{s.title}</p>
+                  <p className="text-sm text-[#E64415] font-bold">€{s.price}</p>
+                  {s.location && <p className="text-xs text-slate-500 truncate">{s.location}</p>}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Lightbox */}
       <AnimatePresence>
