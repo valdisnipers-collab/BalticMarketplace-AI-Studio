@@ -11,6 +11,7 @@
 import 'dotenv/config';
 import pg from 'pg';
 import { createHash, randomBytes } from 'crypto';
+import { authenticator } from 'otplib';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const EMAIL = process.env.TEST_EMAIL || 'valdis.nipers@gmail.com';
@@ -206,6 +207,89 @@ async function main() {
   record('phone verify-otp: no mode (legacy auto-create) → 200',
     r.status === 200 && r.data.user?.phone === PHONE_LEGACY,
     `user_id=${r.data.user?.id}`);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Section E — TOTP 2FA lifecycle
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Clean any leftover 2FA state on the admin user from a previous run.
+  await pool.query(
+    `UPDATE users SET totp_enabled = false, totp_secret_enc = NULL, totp_enabled_at = NULL WHERE id = $1`,
+    [userId],
+  );
+  await pool.query(`DELETE FROM totp_recovery_codes WHERE user_id = $1`, [userId]);
+
+  // Fresh session token for authenticated 2FA endpoints.
+  r = await req('/api/auth/login', { body: { email: EMAIL, password: PASSWORD } });
+  const sessionToken = r.data.token;
+  record('2fa baseline: login returns plain JWT (no 2FA yet)',
+    r.status === 200 && !r.data.requires2FA && !!sessionToken);
+
+  r = await req('/api/auth/2fa/setup-init', { token: sessionToken });
+  const pendingSecret = r.data.pendingSecret;
+  record('2fa setup-init: returns pendingSecret + QR',
+    r.status === 200 && !!pendingSecret && typeof r.data.qrDataUrl === 'string' && r.data.qrDataUrl.startsWith('data:image/'));
+
+  r = await req('/api/auth/2fa/setup-confirm', {
+    token: sessionToken,
+    body: { pendingSecret, code: '000000' },
+  });
+  record('2fa setup-confirm: wrong code → 400', r.status === 400);
+
+  const firstCode = authenticator.generate(pendingSecret);
+  r = await req('/api/auth/2fa/setup-confirm', {
+    token: sessionToken,
+    body: { pendingSecret, code: firstCode },
+  });
+  const recovery = r.data.recoveryCodes || [];
+  record('2fa setup-confirm: correct code → 200 + 8 recovery codes',
+    r.status === 200 && recovery.length === 8);
+
+  r = await req('/api/auth/login', { body: { email: EMAIL, password: PASSWORD } });
+  const tempToken = r.data.tempToken;
+  record('login with 2FA enabled: returns requires2FA + tempToken',
+    r.status === 200 && r.data.requires2FA === true && !!tempToken);
+
+  r = await req('/api/auth/2fa/verify', { body: { tempToken, code: '000000' } });
+  record('2fa verify: wrong code → 400', r.status === 400);
+
+  const nowCode = authenticator.generate(pendingSecret);
+  r = await req('/api/auth/2fa/verify', { body: { tempToken, code: nowCode } });
+  record('2fa verify: correct code → 200 + full JWT',
+    r.status === 200 && !!r.data.token && r.data.user?.role === 'admin');
+
+  // Fresh tempToken for the recovery-code path
+  r = await req('/api/auth/login', { body: { email: EMAIL, password: PASSWORD } });
+  const tempToken2 = r.data.tempToken;
+  r = await req('/api/auth/2fa/verify', { body: { tempToken: tempToken2, recoveryCode: recovery[0] } });
+  record('2fa verify: recovery code accepted → 200', r.status === 200 && !!r.data.token);
+
+  r = await req('/api/auth/login', { body: { email: EMAIL, password: PASSWORD } });
+  const tempToken3 = r.data.tempToken;
+  r = await req('/api/auth/2fa/verify', { body: { tempToken: tempToken3, recoveryCode: recovery[0] } });
+  record('2fa verify: reuse recovery code → 400 (one-time)', r.status === 400);
+
+  r = await req('/api/auth/2fa/recovery-codes/regenerate', {
+    token: sessionToken,
+    body: { code: authenticator.generate(pendingSecret) },
+  });
+  record('2fa regenerate: returns 8 fresh recovery codes',
+    r.status === 200 && (r.data.recoveryCodes?.length === 8));
+
+  r = await req('/api/auth/login', { body: { email: EMAIL, password: PASSWORD } });
+  const tempToken4 = r.data.tempToken;
+  r = await req('/api/auth/2fa/verify', { body: { tempToken: tempToken4, recoveryCode: recovery[1] } });
+  record('2fa verify: old recovery code after regenerate → 400', r.status === 400);
+
+  r = await req('/api/auth/2fa/disable', {
+    token: sessionToken,
+    body: { code: authenticator.generate(pendingSecret) },
+  });
+  record('2fa disable: correct code → 200', r.status === 200);
+
+  r = await req('/api/auth/login', { body: { email: EMAIL, password: PASSWORD } });
+  record('login after 2fa disabled: plain JWT again',
+    r.status === 200 && !r.data.requires2FA && !!r.data.token);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Cleanup

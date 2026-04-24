@@ -156,7 +156,103 @@ Twilio Verify API ar SMS kanālu. Lokālā izstrādē (bez Twilio env) fallback 
 
 ---
 
-## 4. Smart-ID (simulēts)
+## 4. TOTP 2FA (divfaktoru apstiprināšana)
+
+Neobligāta papildu aizsardzība. Reāls RFC 6238 TOTP, savietojams ar
+Google Authenticator, Authy, 1Password, iCloud Keychain u.c.
+
+### 4.1. Ieslēgšana
+
+**Endpoint 1:** `POST /api/auth/2fa/setup-init` (autentificēts)
+**Fails:** [server/routes/auth.ts](../server/routes/auth.ts)
+
+**Response 200:**
+```json
+{
+  "pendingSecret": "JBSWY3DPEHPK3PXP",
+  "otpauthUrl": "otpauth://totp/BalticMarket:email@x?secret=...&issuer=BalticMarket",
+  "qrDataUrl": "data:image/png;base64,..."
+}
+```
+
+Serveris vēl **nesaglabā** secret DB — klients to atgriež nākamajā solī, lai nevajadzētu uzturēt pending state starp pieprasījumiem.
+
+**Endpoint 2:** `POST /api/auth/2fa/setup-confirm`
+```json
+{ "pendingSecret": "JBSWY3DPEHPK3PXP", "code": "123456" }
+```
+
+**Response 200:**
+```json
+{ "ok": true, "recoveryCodes": ["ABCDE-12345", ...8 kodi] }
+```
+
+Serveris verificē kodu pret pendingSecret, šifrē secret ar AES-256-GCM (`TOTP_ENCRYPTION_KEY`), saglabā DB, ģenerē 8 rezerves kodus (plaintext kopiju atgriež **tikai šoreiz**; DB paliek tikai bcrypt hash).
+
+### 4.2. Login ar 2FA
+
+Kad `users.totp_enabled = true`:
+
+- `POST /api/auth/login` vai `POST /api/auth/verify-otp` (abiem paroles/telefona flow) atgriež:
+```json
+{ "requires2FA": true, "tempToken": "<5 min JWT>" }
+```
+- Klients aizstāj formu ar 6-ciparu koda ievadi un izsauc:
+
+**Endpoint:** `POST /api/auth/2fa/verify`
+```json
+{ "tempToken": "...", "code": "123456" }
+```
+vai ar rezerves kodu:
+```json
+{ "tempToken": "...", "recoveryCode": "ABCDE-12345" }
+```
+
+**Response 200:** pilns 7-dienu JWT + user objekts (tāds pats kā tiešais login).
+
+**Response 400:** `"Nepareizs kods"` / `"Kods vai rezerves kods nav padots"`.
+**Response 401:** `"Derīguma termiņš beidzies. Ienāciet vēlreiz."` — tempToken expired (5 min).
+
+Rezerves kodi ir **vienreizēji** — pēc veiksmīgas izmantošanas `used_at` tiek atzīmēts un kods vairs neder.
+
+### 4.3. Atslēgšana
+
+**Endpoint:** `POST /api/auth/2fa/disable` (autentificēts)
+```json
+{ "code": "123456" }
+```
+
+Prasa pašreizējo TOTP kodu, lai apstiprinātu lēmumu. Pēc tam:
+- Izdzēš `totp_secret_enc`, uzstāda `totp_enabled=false`
+- Atzīmē visus neizmantotos rezerves kodus kā izmantotus
+
+### 4.4. Rezerves kodu pārģenerēšana
+
+**Endpoint:** `POST /api/auth/2fa/recovery-codes/regenerate` (autentificēts)
+```json
+{ "code": "123456" }
+```
+
+Prasa pašreizējo TOTP kodu. Atzīmē visus vecos neizmantotos kā izmantotus, ģenerē un atgriež 8 jaunus plaintext kodus.
+
+### 4.5. UI atsauces
+
+- Profile → Settings → **TwoFactorSettings** komponente: [src/components/TwoFactorSettings.tsx](../src/components/TwoFactorSettings.tsx) — setup wizard, recovery kodu display/copy/download, disable form
+- Login lapa 2FA solis: [src/pages/Login.tsx](../src/pages/Login.tsx) — otrais solis pēc paroles/telefona (code vai recovery)
+
+### 4.6. Šifrēšana
+
+TOTP secret glabājas DB kā `iv:tag:ciphertext` (base64), šifrēts ar AES-256-GCM. Atslēga `TOTP_ENCRYPTION_KEY` env mainīgajā. Formāts: 32 baitu raw vai base64. Ģenerē vienu reizi:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Ja atslēga trūkst, visi 2FA endpointi atgriež **503** ar kļūdu; esošie 2FA lietotāji nevar ienākt.
+
+---
+
+## 5. Smart-ID (simulēts)
 
 **Status:** Simulēts. Ražošanā prasa `SMART_ID_PROVIDER_URL` env; bez tā `smartIdGuard` middleware atgriež 503.
 
@@ -176,7 +272,7 @@ Frontend [src/pages/Profile.tsx:550](../src/pages/Profile.tsx#L550) jau prasa de
 
 ---
 
-## 5. Drošības garantijas visām plūsmām
+## 6. Drošības garantijas visām plūsmām
 
 | Aspekts | Vērtība | Kur |
 |---|---|---|
@@ -192,11 +288,14 @@ Frontend [src/pages/Profile.tsx:550](../src/pages/Profile.tsx#L550) jau prasa de
 | Account enumeration aizsardzība | Generic 200 response uz request-password-reset | auth.ts |
 | OTP dev fallback | `123456` tikai ne-produkcijā | auth.ts |
 | Phone register/login intent | `mode` parametrs | auth.ts |
+| TOTP 2FA | Opt-in, RFC 6238, secret AES-256-GCM encrypted | [totp.ts](../server/utils/totp.ts) |
+| 2FA recovery codes | 8 × vienreizēji, bcrypt hash, normalizēti | totp.ts |
+| 2FA tempToken TTL | 5 min (starp login un /2fa/verify) | auth.ts |
 | Stripe webhook verification | `stripe.webhooks.constructEvent` | [server/routes/payments.ts](../server/routes/payments.ts) |
 
 ---
 
-## 6. Env mainīgie
+## 7. Env mainīgie
 
 **Obligāti produkcijā:**
 - `DATABASE_URL` — PostgreSQL (Neon)
@@ -210,13 +309,16 @@ Frontend [src/pages/Profile.tsx:550](../src/pages/Profile.tsx#L550) jau prasa de
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_VERIFY_SERVICE_SID`
 
+**Obligāti TOTP 2FA:**
+- `TOTP_ENCRYPTION_KEY` — 32 baitu atslēga AES-256-GCM secret šifrēšanai. Ja trūkst, 2FA setup atgriež 503 un esošie 2FA lietotāji nevar verificēt kodu.
+
 **Ja nav Twilio** — `NODE_ENV !== 'production'` → simulēts OTP; produkcijā → 503.
 
 **Smart-ID produkcijai:** `SMART_ID_PROVIDER_URL` (pagaidām placeholder — bez īstas integrācijas).
 
 ---
 
-## 7. Automatizēta verifikācija
+## 8. Automatizēta verifikācija
 
 Palaist smoke testu pret lokālo dev serveri:
 
